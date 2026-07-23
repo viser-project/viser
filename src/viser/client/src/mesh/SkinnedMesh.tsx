@@ -95,13 +95,17 @@ export const SkinnedMesh = React.forwardRef<
 
     skeleton.init();
     return { geometry, skeleton };
+    // Keyed on the VIEWS, not their .buffer (BasicMesh's pattern): in a
+    // playback recording every array is a view on ONE shared ArrayBuffer,
+    // so .buffer identity never changes and a re-add with different
+    // geometry would silently keep rendering the old mesh.
   }, [
-    message.props.vertices.buffer,
-    message.props.faces.buffer,
-    message.props.skin_indices.buffer,
-    message.props.skin_weights?.buffer,
-    message.props.bone_wxyzs.buffer,
-    message.props.bone_positions.buffer,
+    message.props.vertices,
+    message.props.faces,
+    message.props.skin_indices,
+    message.props.skin_weights,
+    message.props.bone_wxyzs,
+    message.props.bone_positions,
   ]);
 
   // Handle initialization and cleanup.
@@ -114,7 +118,10 @@ export const SkinnedMesh = React.forwardRef<
     // (subtree-prefix removal in MessageHandler, reconnect clearing in
     // WebsocketInterface), so guard reads like the bone-message handlers do.
     const state = viewerMutable.skinnedMeshState[message.name];
-    if (state !== undefined) state.initialized = false;
+    if (state !== undefined) {
+      state.initialized = false;
+      state.claimed = true;
+    }
     ownedEntryRef.current = state ?? null;
     // The bones for this skeleton (added to the parent node imperatively in
     // useFrame below). Captured here so the cleanup can remove exactly these on
@@ -125,6 +132,14 @@ export const SkinnedMesh = React.forwardRef<
       const parentNode = viewerMutable.nodeRefFromName[message.name];
       if (parentNode !== undefined && addedBones !== undefined) {
         addedBones.forEach((bone) => parentNode.remove(bone));
+      }
+      // Release the claim so a successor (this instance's own next effect
+      // run, or a new mount) can take the entry over.
+      if (
+        ownedEntryRef.current !== null &&
+        viewerMutable.skinnedMeshState[message.name] === ownedEntryRef.current
+      ) {
+        ownedEntryRef.current.claimed = false;
       }
       if (skeleton) skeleton.dispose();
       if (geometry) geometry.dispose();
@@ -146,9 +161,18 @@ export const SkinnedMesh = React.forwardRef<
     // so throwing here would skip the remaining subscribers and gl.render.
     const state = viewerMutable.skinnedMeshState[message.name];
     if (state === undefined) return;
-    // Only the instance whose init effect claimed THIS entry may touch it
-    // (see ownedEntryRef above for the same-name delete + re-add race).
-    if (state !== ownedEntryRef.current) return;
+    // Only one live instance may drive an entry. Normally the init effect
+    // claims it; but FilePlayback can recreate the entry WITHOUT a remount
+    // (its loop and same-batch remove + re-add replay identical message
+    // refs into a kept-mounted tree), so an unclaimed fresh entry is
+    // adopted here. An entry claimed by a DIFFERENT live instance stays
+    // untouchable (same-name re-add race).
+    if (state !== ownedEntryRef.current) {
+      if (state.claimed) return;
+      state.claimed = true;
+      state.initialized = false;
+      ownedEntryRef.current = state;
+    }
     const bones = bonesRef.current;
     // Belt over the identity guard: never index poses beyond our bones (a
     // mismatched entry would crash the R3F subscriber loop and kill

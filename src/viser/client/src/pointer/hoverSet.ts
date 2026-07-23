@@ -38,6 +38,14 @@ export class HoverCursorManager {
     this.apply();
   }
 
+  /** Test probe: whether a scene-level click filter is registered (the server
+   * binding has ARRIVED). E2e tests dispatch synthetic modifier keydowns and
+   * assert the cursor; without this to wait on, they race the server->client
+   * binding message and flake by machine timing. */
+  hasSceneClickFilter(): boolean {
+    return this.getScenePointerFilter("click") !== undefined;
+  }
+
   setRectSelectActive(active: boolean): void {
     if (active === this.rectSelectActive) return;
     this.rectSelectActive = active;

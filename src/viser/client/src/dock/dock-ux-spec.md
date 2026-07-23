@@ -514,6 +514,21 @@ never shared with the dock's).
 - A frame of the host panel around the area stays hot for the HOST's
   zones, so a full-bleed area doesn't make the host undockable-beside
   (P5).
+- The reverse also holds (D58): when the HOST is unmergeable, its
+  content center — a dead zone on its own — routes a mergeable drop
+  into the nearest hosted area. The hint fills the HOST panel, exactly
+  like any other merge hint (user-adjudicated: the highlight marks the
+  surface that accepts the drop; a hint pinned to a short area's own
+  rect read as disconnected from the zone). Hovering the area's own
+  BODY inside an unmergeable host shows that same host-filling hint —
+  the panel is ONE drop surface, never two differently-sized zones for
+  the same destination (user-adjudicated); only the area's tab strip
+  keeps its precise insertion lines. (Inside a MERGEABLE host the
+  area's body keeps its area-sized hint: there the two zones are
+  genuinely different destinations — host tabs vs area tabs.) The
+  host's body backs the area up, so "merge into this panel" works from
+  anywhere in the content center (the host's side/top/bottom zones
+  still win), not just over the area's own pixels.
 
 ---
 
@@ -631,15 +646,28 @@ constants in `hitTest.ts`; changing one is a spec change.
   the parent-handle run above it (the scanner extends its drop rect to
   the column top): the parent handle is a GRIP, and D48 gives grips the
   above-claim, so a slam to the top of an occupied dock splits above
-  the top cell. (Rails differ, D53: their header is dominated by the
-  `+`/chevron CONTROLS and claims nothing.)
+  the top cell. The extension moves the hit ZONE only: the hint LINE
+  draws at the cell's own top — the seam where the new cell actually
+  lands, below the handle — never at the extended rect's top, which
+  would claim the handle's own pixels (P1; the same rule as the rail's
+  stack-below line, anchored at the spine's true content bottom). The
+  difference is invisible in a single-column region, whose handle is
+  the REGION's and sits outside the column box, but a multi-column
+  region draws a handle per column (D27), and there the line was
+  landing a full handle-height too high. (Rails differ, D53: their
+  header is dominated by the `+`/chevron CONTROLS and claims nothing.)
 - Over the tab strip: insert at that tab position (2D nearest-tab, works
   with wrapped rows).
 - Content side bands (30% of width, ≤120px): insert a NEW FULL-HEIGHT
   COLUMN beside this cell's column, on that side (D46) — the canonical
   seam insert of §5.1 item 3 (D55): the left band is seam k, the right
   band seam k+1 of the cell's column k, with the one region-tall seam
-  line (P1) shared with the region bands and divider gaps.
+  line (P1) shared with the region bands and divider gaps. The side
+  bands outrank the top/bottom split bands (D57): they run the FULL
+  content height, corners included, on every target — merge-suppressed
+  ones too. The outermost column's outer band additionally reaches
+  through the D54 edge gutter to the screen edge (D57): flush-slams
+  dock a new outermost column rather than dying in the gutter.
 - Content bottom band (25%, ≤100px): split below this cell, within its
   column. There is NO content-top band (D48): the strip and everything
   below it down to the bottom band merges, so overshooting the strip
@@ -656,7 +684,15 @@ constants in `hitTest.ts`; changing one is a spec change.
   unmergeable panel) keep the pre-D48 top band as split-above: their
   merge is null, so overshoot-lands-in-merge cannot hold (the zone
   would be a P5 no-drop hole), and no strip island exists there — the
-  strip insert is suppressed too.
+  strip insert is suppressed too. One escape (D58): when the TARGET is
+  the unmergeable one, the drag is mergeable, and the target's panel
+  hosts a nested area (§3.7), the otherwise-dead content center routes
+  to that area — the drop appends into the area's group, and the merge
+  hint fills the host cell like any other merge hint (the highlight
+  marks the accepting surface; the tab lands in the hosted area).
+  Several hosted areas: the nearest to the pointer wins. No visible
+  hosted area, or an unmergeable drag (it can't become tabs anywhere):
+  the center stays a quiet null.
 
 ### 5.3 Rail cell zones (§5.2 rotated; D48 deliberately does NOT
 rotate here — a rail cell has no content body to re-claim above, its
@@ -717,6 +753,15 @@ bottom). Interior cells keep their own boxes.
   change, container scroll, or window resize; a floating window growing
   MID-DRAG also marks the cached rects stale. Hints never lag the
   visible geometry.
+- Targets are clipped to the container's visible box. The dock root
+  clips paint at its edges, and a floating window's body may legally
+  overflow the right/bottom edge (the corner clamp keeps only its
+  top-left reachable; an auto-height window can be taller than the
+  container) — the invisible overflow is not a drop surface. Window
+  ownership (§3.5), cell zones, and hints all compute from the clipped
+  rect, so zone geometry depends on VISUAL height, never content height.
+  A target whose visible remnant is sub-8px is removed entirely (P11) —
+  the same rule as cells scrolled out of a squeezed docked column.
 - Divider gaps are never dead spots, in EITHER axis: the horizontal gap
   between stacked docked cells maps to the seam split it sits in the
   middle of; the vertical gap between side-by-side columns to the ONE
@@ -939,7 +984,14 @@ sizing subset. Both exist on `server.gui` (broadcast) and `client.gui`
   container state, so when stacked panels' collapse axes conflict, a
   late joiner replaying them in command order converges with live
   clients — per-panel replay order cannot decide a shared container's
-  final state.
+  final state. "Last" means after every panel's position has
+  CONVERGED, not merely after the current coordinator pass: a
+  split-anchored panel's position defers to a later pass (its anchor's
+  dock is invisible to the same pass's layout snapshot), so its
+  collapse axis joins the queue late — the queued axes are held,
+  persistently, until a pass with no deferred position, then drain as
+  one counter-sorted batch. Draining per pass let a lower-counter axis
+  apply in a later batch and win.
 - Reconnects have an explicit phase (D51): the server marks the end of
   its buffer replay per connection (`ReplayDoneMessage`), and until it
   arrives the client treats emptied stores as "not delivered yet" —
@@ -996,10 +1048,15 @@ Behaviors that MUST hold (each is or should be pinned by a test):
    WEIGHT (always-px, D40), never in regionWidth.
 6. A pinned-height window expands from minimized at its pinned height.
 7. The last panel leaving an edge nulls the region; the next dock
-   recreates it at the remembered width (P8). The memory is the edge's
-   preserved regionWidth when the region left expanded; a region that
-   left PACKED remembers only its strip run, so the recreate takes the
-   docked window's own width (which carried the restore px out).
+   recreates it at the remembered width (P8) — carried by the WINDOW
+   itself: undocking floats the panel at its measured docked width, and
+   a drag-dock takes the window's width (D3, empty edge included — a
+   float the user resized in between docks at the NEWER width, and a
+   never-docked edge's synthesized default never masquerades as a
+   memory). The edge's preserved regionWidth is the fallback for docks
+   with NO source window (server-built layouts); a region that left
+   PACKED remembers only its strip run, so the window's carried restore
+   px is the only truth there regardless.
 8. An emptied-then-revived docked panel reappears (no orphan group).
 9. Same-batch and reversed-order anchor splits both resolve (no race, no
    hang); never-dockable anchors fall back (§8).
@@ -1053,9 +1110,9 @@ at every consumer.
   time-throttled in production. Hard invariants include: no duplicate or
   orphaned panes/groups; no un-migrated legacy field (`regionCollapsed`
   or band-era `rows` — the injection/restore chokepoints run
-  `migrateRowsToColumnsInPlace` + `migrateRegionCollapsedInPlace` +
-  `migrateLoneColumnWidthInPlace`, the last adopting a pre-always-px
-  lone column's regionWidth into its weight);
+  `migrateRowsToColumnsInPlace` + `migrateRegionCollapsedInPlace`; a
+  pre-always-px lone column's regionWidth is adopted into its weight by
+  reconciliation's new-column carry, not a migration leg);
   `regionWidth` ≈ Σ over columns of (railed ? 36 : weight) — invariant
   #12, covering ANY column count.
 - **Single construction sites / choke points**: `movePaneInPlace`
@@ -1098,6 +1155,15 @@ Unadjudicated; do not resolve in code without recording the decision in
 - **Expanded panel inserted into a collapsed window**: collapse the
   newcomer (container rule — what code does consistently today) or
   expand the window? Adjudicate before wiring the snap zones.
+- **Escape-cancel vs mid-gesture server placement.** A gesture cancel
+  restores the pre-gesture snapshot wholesale, so a fresh placement
+  command that arrived (and recorded its marks) DURING the gesture is
+  rolled back and will not replay — the command is silently lost. The
+  drag path documents this as an accepted tradeoff; a real fix needs
+  gesture-scoped transactions (revert only the gesture-owned delta,
+  rebased onto concurrent programmatic commits). Rare in practice: it
+  requires a server command landing inside an active drag that the
+  user then Escapes.
 - **T3 — The bar breaks the handle anatomy.** A bar has no centered
   pill; its labels sit left; face bars replace the anatomy wholesale.
   The rail cap — the same scope, collapsed differently — keeps the pill
@@ -1110,8 +1176,9 @@ Unadjudicated; do not resolve in code without recording the decision in
 - **T7 — The region scope loses its handle in multi-column regions.**
   One-handle-per-scope fails there: the multi-column region has no
   region handle, so no one-gesture region-wide collapse or expand (each
-  column rails/expands individually; `railRegion`/`expandRegionRail`
-  exist as ops but have no multi-column affordance). The derivation (a
+  column rails/expands individually; `railRegion` exists as an op that
+  rails every column but has no multi-column affordance, and there is
+  no region-wide expand op at all). The derivation (a
   handle may not span what its drag would flatten — D27) makes this a
   geometric limit. Options: accept (current); or give the region scope
   a compound affordance railing every column.
@@ -1287,9 +1354,23 @@ consuming paragraphs.
   diverge from live clients ("B.expand() then A.minimize()" ended
   expanded on replay). Per-panel counters cannot order commands across
   panels; the global counter can, and the coordinator applies all
-  fresh collapse axes after all positions, sorted by counter within
-  each run (cross-run conflicts keep arrival order — counters aren't
-  comparable across runs).
+  fresh collapse axes after all positions have converged — the queue
+  persists across passes and drains only on a pass with no deferred
+  position, as one counter-sorted batch (a per-pass drain re-created
+  the divergence for split-anchored panels, whose collapse queues a
+  pass later than their neighbors') — sorted by counter within each
+  run (cross-run conflicts keep arrival order — counters aren't
+  comparable across runs). Held entries add ONE arbitration rule on
+  top of the D52 marks (which gate at RECORD time, before the hold): a
+  queued command dies if, between queue and drain, a USER gesture
+  changed its own target panel's container signature — the container's
+  collapse flag or which container holds the panel's panes (P6: the
+  immediate path would have let that later gesture win; deferral must
+  not resurrect the older intent). Scoped strictly per panel — an
+  unrelated panel's gesture, a geometry-only resize/move, or a tab
+  activation never invalidates a held command — and it is a property
+  of the QUEUE alone, not a revival of the deleted gesture-inference
+  layer: unheld commands still apply on marks only.
 - **D51** — reconnects are an explicit phase, never inferred. The
   server injects a per-connection end-of-replay marker
   (`ReplayDoneMessage`) after its buffer backlog; until it arrives the
@@ -1373,6 +1454,29 @@ consuming paragraphs.
   scope: no semantic width target exists (panel width is a reading
   preference, not a natural size), so a width detent would be
   meaningless stickiness. Full statement in §6.
+- **D57** — content side bands outrank the top/bottom split bands
+  (user-adjudicated): hovering a docked cell's left/right edge means
+  "dock beside", at any height — the corners belong to the side
+  intent. Before this, the vertical bands were checked first and ate
+  the corners; worst on merge-suppressed targets, whose extra top band
+  (the pre-D48 keep) pushed the side band's start a full band lower
+  than on ordinary panels — the control panel's edges felt different
+  from everyone else's. Also: the region's outer edge gutter (D54)
+  belongs to the outermost column's side band — the scanner extends
+  that column's hit rect to the container edge, so a drop slammed
+  flush against the screen resolves to the outermost column insert
+  instead of dying in the 2px gutter (P5).
+- **D58** — a merge-suppressed target's dead center falls through to a
+  hosted nested area (user-adjudicated): the main control panel is
+  unmergeable, so when its GUI content (often holding an inline tab
+  group's area) fills only the top of a full-height docked cell, the
+  whole body below was a no-drop hole (P5) — a drop meant to "merge
+  into this panel" only worked over the area's own pixels. Now:
+  unmergeable target + mergeable drag + a visible hosted area → the
+  content center merges into the nearest hosted area, hint filling the
+  host cell like any other merge hint. An unmergeable drag still nulls (it can't become
+  tabs), and a host with no visible area keeps the quiet null. Full
+  statement in §5.2/§3.7.
 
 Retired — one line per ID; the pointer is where any surviving content
 lives:

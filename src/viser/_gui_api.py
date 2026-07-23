@@ -218,6 +218,7 @@ def get_type_hints_cached(cls: type[Any]) -> dict[str, Any]:
 
 
 class _FileUploadState(TypedDict):
+    client_id: ClientId
     filename: str
     mime_type: str
     part_count: int
@@ -378,6 +379,19 @@ class GuiApi:
 
         # GUI element has been updated!
         handle_state.update_timestamp = time.time()
+
+        # Broadcast to the other clients BEFORE awaiting update callbacks, so
+        # the mutation above and its broadcast are adjacent on the event loop:
+        # with the broadcast after the awaits, (a) two near-simultaneous
+        # updates could interleave at a callback's await point and leave the
+        # buffer coalesced to a different value than the server state, and
+        # (b) a callback that writes back (e.g. clamps handle.value) had its
+        # own broadcast clobbered by the stale echo of the pre-clamp value --
+        # every OTHER client (and every late joiner) kept the un-clamped
+        # value while the server and the acting client held the clamped one.
+        if handle_state.sync_cb is not None:
+            handle_state.sync_cb(client_id, updates_cast)
+
         client = self._resolve_client(client_id)
         if client is None:
             return
@@ -388,9 +402,6 @@ class GuiApi:
                 self._thread_executor.submit(
                     cb, GuiEvent(client, client_id, handle)
                 ).add_done_callback(print_threadpool_errors)
-
-        if handle_state.sync_cb is not None:
-            handle_state.sync_cb(client_id, updates_cast)
 
     async def _handle_gui_button_hold(
         self, client_id: ClientId, message: _messages.GuiButtonHoldMessage
@@ -464,6 +475,10 @@ class GuiApi:
         if message.source_component_uuid not in self._gui_input_handle_from_uuid:
             return
         self._current_file_upload_states[message.transfer_uuid] = {
+            # Owner, so a disconnect can purge this client's in-flight
+            # transfers -- entries are otherwise only removed on completion,
+            # and a tab closed mid-upload leaked its buffered parts forever.
+            "client_id": client_id,
             "filename": message.filename,
             "mime_type": message.mime_type,
             "part_count": message.part_count,
@@ -489,6 +504,18 @@ class GuiApi:
                 client_id, message.transfer_uuid, message.source_component_uuid
             )
 
+    def _drop_uploads_from_client(self, client_id: ClientId) -> None:
+        """Purge in-flight upload buffers owned by a disconnected client.
+        Entries are otherwise only removed on completion, so a tab closed
+        mid-upload would leak its accumulated parts forever (and a hostile
+        client could grow that leak without bound)."""
+        for transfer_uuid in [
+            tid
+            for tid, state in self._current_file_upload_states.items()
+            if state["client_id"] == client_id
+        ]:
+            self._current_file_upload_states.pop(transfer_uuid, None)
+
     def _finish_file_upload(
         self,
         client_id: ClientId,
@@ -512,9 +539,22 @@ class GuiApi:
             return
         handle_state = handle._impl
 
+        content = b"".join(state["parts"][i] for i in range(state["part_count"]))
+        if len(content) != state["total_bytes"]:
+            # All part slots filled but the bytes don't match the declared
+            # size: a buggy/hostile client. Discard rather than surface a
+            # file that lies about its length (state is already popped above,
+            # so nothing leaks).
+            warnings.warn(
+                f"[viser] Dropping upload {state['filename']!r}: received "
+                f"{len(content)} bytes but the client declared "
+                f"{state['total_bytes']}."
+            )
+            return
+
         value = UploadedFile(
             name=state["filename"],
-            content=b"".join(state["parts"][i] for i in range(state["part_count"])),
+            content=content,
         )
 
         # Update state.
@@ -547,10 +587,20 @@ class GuiApi:
         # state and then no-ops on the removed/missing handle.
 
         state = self._current_file_upload_states[message.transfer_uuid]
-        state["parts"][message.part_index] = message.content
+        part_count = state["part_count"]
         total_bytes = state["total_bytes"]
 
         with state["lock"]:
+            # Drop duplicate or out-of-range parts instead of letting them
+            # corrupt the transfer: a repeated part_index used to inflate the
+            # byte-count completion gate, so assembly ran with missing part
+            # slots (KeyError) or overshot the declared size (assert) -- both
+            # crashing the handler task and leaking the transfer state.
+            if message.part_index in state["parts"] or not (
+                0 <= message.part_index < part_count
+            ):
+                return
+            state["parts"][message.part_index] = message.content
             state["transferred_bytes"] += len(message.content)
 
             # Send ack to the server.
@@ -563,11 +613,13 @@ class GuiApi:
                 )
             )
 
-            if state["transferred_bytes"] < total_bytes:
+            # Complete only when every part slot is filled: the byte count
+            # alone can't distinguish "all parts arrived" from a client whose
+            # parts don't add up to its declared size.
+            if len(state["parts"]) < part_count:
                 return
 
         # Finish the upload.
-        assert state["transferred_bytes"] == total_bytes
         self._finish_file_upload(
             client_id, message.transfer_uuid, message.source_component_uuid
         )
@@ -1864,6 +1916,20 @@ class GuiApi:
         value = initial_value
 
         assert isinstance(value, (int, float))
+        if min is not None and max is not None and max < min:
+            raise ValueError(f"add_number: max ({max}) must be >= min ({min}).")
+        # `not (value >= min)` (rather than `value < min`) so a NaN initial
+        # value is rejected too -- matching add_slider, whose `not (max >=
+        # value >= min)` already does. A bare `<`/`>` is False for NaN.
+        if (min is not None and not (value >= min)) or (
+            max is not None and not (value <= max)
+        ):
+            raise ValueError(
+                f"add_number: initial_value ({value}) is outside of "
+                f"[min, max] = [{min}, {max}]."
+            )
+        if step is not None and step <= 0:
+            raise ValueError(f"add_number: step ({step}) must be > 0.")
 
         if step is None:
             # It's ok that `step` is always a float, even if the value is an integer,
@@ -1939,6 +2005,21 @@ class GuiApi:
         value = cast_vector(value, 2)
         min = cast_vector(min, 2) if min is not None else None
         max = cast_vector(max, 2) if max is not None else None
+        if (
+            min is not None
+            and max is not None
+            and any(mn > mx for mn, mx in zip(min, max))
+        ):
+            raise ValueError(
+                f"add_vector2: min {min} must be component-wise <= max {max}."
+            )
+        if (min is not None and any(not (v >= mn) for v, mn in zip(value, min))) or (
+            max is not None and any(not (v <= mx) for v, mx in zip(value, max))
+        ):
+            raise ValueError(
+                f"add_vector2: initial_value {value} has components outside "
+                f"[min, max] = [{min}, {max}]."
+            )
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
@@ -2000,6 +2081,21 @@ class GuiApi:
         value = cast_vector(value, 3)
         min = cast_vector(min, 3) if min is not None else None
         max = cast_vector(max, 3) if max is not None else None
+        if (
+            min is not None
+            and max is not None
+            and any(mn > mx for mn, mx in zip(min, max))
+        ):
+            raise ValueError(
+                f"add_vector3: min {min} must be component-wise <= max {max}."
+            )
+        if (min is not None and any(not (v >= mn) for v, mn in zip(value, min))) or (
+            max is not None and any(not (v <= mx) for v, mx in zip(value, max))
+        ):
+            raise ValueError(
+                f"add_vector3: initial_value {value} has components outside "
+                f"[min, max] = [{min}, {max}]."
+            )
         uuid = _make_uuid()
         order = _apply_default_order(order)
 
@@ -2195,9 +2291,20 @@ class GuiApi:
             A handle that can be used to interact with the GUI element.
         """
         value: IntOrFloat = initial_value
-        assert max >= min
-        step = builtins.min(step, max - min)
-        assert max >= value >= min
+        if max < min:
+            raise ValueError(f"add_slider: max ({max}) must be >= min ({min}).")
+        if step <= 0:
+            raise ValueError(f"add_slider: step ({step}) must be > 0.")
+        if max > min:
+            # Clamped only for a non-degenerate range: min == max is allowed
+            # (an inert slider), but a clamped step of 0 must never reach the
+            # client.
+            step = builtins.min(step, max - min)
+        if not (max >= value >= min):
+            raise ValueError(
+                f"add_slider: initial_value ({value}) is outside of "
+                f"[min, max] = [{min}, {max}]."
+            )
 
         # GUI callbacks cast incoming values to match the type of the initial value. If
         # the min, max, or step is a float, we should cast to a float.
@@ -2277,9 +2384,30 @@ class GuiApi:
         Returns:
             A handle that can be used to interact with the GUI element.
         """
-        assert max >= min
-        step = builtins.min(step, max - min)
-        assert all(max >= x >= min for x in initial_value)
+        if max < min:
+            raise ValueError(f"add_multi_slider: max ({max}) must be >= min ({min}).")
+        if step <= 0:
+            raise ValueError(f"add_multi_slider: step ({step}) must be > 0.")
+        if min_range is not None and min_range > max - min:
+            raise ValueError(
+                f"add_multi_slider: min_range ({min_range}) exceeds the value "
+                f"range ({max - min}); the handle spacing would be unsatisfiable."
+            )
+        if max > min:
+            step = builtins.min(step, max - min)
+        if not all(max >= x >= min for x in initial_value):
+            raise ValueError(
+                f"add_multi_slider: initial_value {initial_value} has entries "
+                f"outside of [min, max] = [{min}, {max}]."
+            )
+        if any(b < a for a, b in zip(initial_value, initial_value[1:])):
+            # The client constrains each handle against its neighbors assuming
+            # sorted order; unsorted values made the first drag snap handles to
+            # surprising positions.
+            raise ValueError(
+                f"add_multi_slider: initial_value {initial_value} must be "
+                "sorted in non-decreasing order."
+            )
 
         # GUI callbacks cast incoming values to match the type of the initial value. If
         # any of the arguments are floats, we should always use a float value.

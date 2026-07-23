@@ -24,7 +24,11 @@ from ._gui_api import GuiApi, LiteralColor
 from ._gui_handles import _make_uuid
 from ._notification_handle import NotificationHandle, _NotificationHandleState
 from ._scene_api import SceneApi, cast_vector
-from ._threadpool_exceptions import print_threadpool_errors
+from ._threadpool_exceptions import (
+    print_awaited_callback_error,
+    print_task_error,
+    print_threadpool_errors,
+)
 from ._tunnel import ViserTunnel
 from .infra._infra import StateSerializer
 
@@ -250,6 +254,12 @@ class CameraHandle:
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
         position_array = np.asarray(position).astype(np.float64)
+        # Validate BEFORE mutating or queuing: this setter queues its message
+        # and then shifts look_at (which validates), so a non-finite position
+        # caught late would leave the client sent a bad position and the
+        # server state half-updated.
+        if not np.all(np.isfinite(position_array)):
+            raise ValueError(f"Camera position must be finite, got {position_array}.")
         if np.allclose(position_array, self._state.position):
             return
         offset = position_array - np.array(self.position)  # type: ignore
@@ -264,11 +274,40 @@ class CameraHandle:
 
     def _update_wxyz(self) -> None:
         """Compute and update the camera orientation from the internal look_at, position, and up vectors."""
+        # Reject non-finite inputs up front: a NaN/Inf position, look_at, or
+        # up_direction would otherwise produce a non-zero (NaN) norm that
+        # slips past the degeneracy checks below and stores a NaN quaternion
+        # -- the exact silent corruption these guards exist to prevent (every
+        # later camera read and on_update callback would then see it).
+        for _name, _vec in (
+            ("position", self._state.position),
+            ("look_at", self._state.look_at),
+            ("up_direction", self._state.up_direction),
+        ):
+            if not np.all(np.isfinite(_vec)):
+                raise ValueError(f"Camera {_name} must be finite, got {_vec}.")
         z = self._state.look_at - self._state.position
-        z /= np.linalg.norm(z)
+        z_norm = np.linalg.norm(z)
+        if z_norm == 0.0:
+            # look_at == position: the view direction is undefined. Reject
+            # rather than store a NaN quaternion (which every later camera
+            # read and on_update callback would then see, silently).
+            raise ValueError(
+                "Camera look_at cannot equal position (zero look distance)."
+            )
+        z /= z_norm
         y = tf.SO3.exp(z * np.pi) @ self._state.up_direction
         y = y - np.dot(z, y) * z
-        y /= np.linalg.norm(y)
+        y_norm = np.linalg.norm(y)
+        if y_norm == 0.0:
+            # No component of up_direction is perpendicular to the view: it is
+            # zero, or parallel to (look_at - position). Reject rather than
+            # store/broadcast a NaN basis.
+            raise ValueError(
+                "Camera up_direction must be nonzero and not parallel to the "
+                "view direction (look_at - position)."
+            )
+        y /= y_norm
         x = np.cross(y, z)
         # Cast to float64 explicitly: newer numpy stubs type np.cross() as
         # possibly complex, which from_matrix() rejects.
@@ -401,9 +440,18 @@ class CameraHandle:
         look_at_array = np.asarray(look_at).astype(np.float64)
         if np.allclose(self._state.look_at, look_at_array):
             return
+        old_look_at = self._state.look_at
+        old_timestamp = self._state.update_timestamp
         self._state.look_at = look_at_array
         self._state.update_timestamp = time.time()
-        self._update_wxyz()
+        try:
+            self._update_wxyz()
+        except Exception:
+            # Roll back so a caught error doesn't leave a desynced half-built
+            # camera (state mutated, orientation stale, nothing sent).
+            self._state.look_at = old_look_at
+            self._state.update_timestamp = old_timestamp
+            raise
         self._state.client._websock_connection.queue_message(
             _messages.SetCameraLookAtMessage(cast_vector(look_at, 3))
         )
@@ -421,8 +469,14 @@ class CameraHandle:
         up_direction_array = np.asarray(up_direction)
         if np.allclose(self._state.up_direction, up_direction_array):
             return
+        old_up = self._state.up_direction
         self._state.up_direction = np.asarray(up_direction_array)
-        self._update_wxyz()
+        try:
+            self._update_wxyz()
+        except Exception:
+            # Roll back so a caught error doesn't leave a desynced camera.
+            self._state.up_direction = old_up
+            raise
         self._state.update_timestamp = time.time()
         self._state.client._websock_connection.queue_message(
             _messages.SetCameraUpDirectionMessage(cast_vector(up_direction, 3))
@@ -447,6 +501,7 @@ class CameraHandle:
         height: int,
         width: int,
         transport_format: Literal["png", "jpeg"] = "jpeg",
+        timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
         return it as a numpy array. This is an alias for :meth:`ClientHandle.get_render()`.
@@ -457,9 +512,13 @@ class CameraHandle:
             transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
                 return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
                 too quickly for higher-resolution images.
+            timeout: Optional maximum seconds to wait for the frame. ``None``
+                (default) waits indefinitely; a disconnect still raises promptly
+                either way. Set this to bound a client that stays connected but
+                never returns a frame.
         """
         return self._state.client.get_render(
-            height, width, transport_format=transport_format
+            height, width, transport_format=transport_format, timeout=timeout
         )
 
 
@@ -662,6 +721,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         position: tuple[float, float, float] | np.ndarray,
         fov: float,
         transport_format: Literal["png", "jpeg"] = "jpeg",
+        timeout: float | None = None,
     ) -> np.ndarray: ...
 
     @overload
@@ -671,6 +731,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         width: int,
         *,
         transport_format: Literal["png", "jpeg"] = "jpeg",
+        timeout: float | None = None,
     ) -> np.ndarray: ...
 
     def get_render(
@@ -682,6 +743,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         position: tuple[float, float, float] | np.ndarray | None = None,
         fov: float | None = None,
         transport_format: Literal["png", "jpeg"] = "jpeg",
+        timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
         return it as a numpy array. If wxyz, position, and fov are not provided, the
@@ -699,6 +761,10 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
                 return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
                 too quickly for higher-resolution images.
+            timeout: Optional maximum seconds to wait for the frame. ``None``
+                (default) waits indefinitely; a disconnect still raises promptly
+                either way. Set this to bound a client that stays connected but
+                never returns a frame (raises ``TimeoutError``).
         """
 
         # Listen for a render reseponse message, which should contain the rendered
@@ -710,6 +776,25 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         render_uuid = _make_uuid()
 
+        # THREE exits race to unregister the handler: a frame arriving
+        # (got_render_cb, on the event loop), and the caller's disconnect /
+        # timeout branches below. infra's unregister_handler raises ValueError
+        # on a second remove, so exactly one exit may perform it; the losers
+        # defer to the winner instead of double-unregistering.
+        unregister_lock = threading.Lock()
+        unregistered = False
+
+        def unregister_once() -> bool:
+            nonlocal unregistered
+            with unregister_lock:
+                if unregistered:
+                    return False
+                unregistered = True
+            connection.unregister_handler(
+                _messages.GetRenderResponseMessage, got_render_cb
+            )
+            return True
+
         def got_render_cb(
             client_id: int, message: _messages.GetRenderResponseMessage
         ) -> None:
@@ -718,9 +803,12 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # client; only ours matches our request's uuid.
             if message.render_uuid != render_uuid:
                 return
-            connection.unregister_handler(
-                _messages.GetRenderResponseMessage, got_render_cb
-            )
+            if not unregister_once():
+                # The caller already gave up (timeout/disconnect) and
+                # unregistered us; we can still be invoked once more if the
+                # dispatch loop snapshotted the handler list before the
+                # removal. The caller is gone -- drop the frame.
+                return
             nonlocal out
             # An empty payload is the client's failure sentinel (capture threw,
             # or toBlob() returned null). Leave `out` as None and let the
@@ -756,7 +844,36 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 render_uuid=render_uuid,
             )
         )
-        render_ready_event.wait()
+        # Poll rather than wait unbounded: a client that DISCONNECTS (tab
+        # closed, network drop) never sends a response, so this raises as soon
+        # as it leaves _connected_clients instead of hanging the caller (and,
+        # from a sync callback, its pool worker). A client that stays
+        # connected but never returns a frame (frozen/backgrounded tab, wedged
+        # capture) is only bounded if the caller passes `timeout`.
+        deadline = None if timeout is None else time.time() + timeout
+        while not render_ready_event.wait(timeout=0.1):
+            if self.client_id not in self._viser_server._connected_clients:
+                if not unregister_once():
+                    # got_render_cb won the race: a frame was delivered in the
+                    # window between its unregister and its event.set(). Take
+                    # the frame rather than raising on a request that in fact
+                    # completed.
+                    render_ready_event.wait()
+                    break
+                raise RuntimeError(
+                    "Render request failed: the client disconnected before "
+                    "returning a frame."
+                )
+            if deadline is not None and time.time() > deadline:
+                if not unregister_once():
+                    # Same race as above: the frame beat the deadline's
+                    # unregister. Return it instead of raising TimeoutError.
+                    render_ready_event.wait()
+                    break
+                raise TimeoutError(
+                    f"Render request timed out after {timeout}s: the client "
+                    "did not return a frame."
+                )
         if out is None:
             raise RuntimeError(
                 "Render request failed: the client could not capture a frame."
@@ -877,15 +994,22 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 # received.
                 if first:
                     first = False
+                    # Register the client and snapshot the callback list in
+                    # one critical section, then invoke OUTSIDE the lock: an
+                    # async callback runs inline on the event loop, and any
+                    # server API it calls that takes _client_lock (e.g.
+                    # get_clients(), or on_scene_pointer registration) would
+                    # deadlock against the lock this thread already holds.
+                    # Exactly-once dispatch per (client, callback) pair only
+                    # needs the mutate+snapshot to be atomic: a concurrent
+                    # on_client_connect registration either lands in this
+                    # snapshot, or its own already-connected replay sees the
+                    # client in _connected_clients -- never both, never
+                    # neither.
                     with self._client_lock:
                         self._connected_clients[conn.client_id] = client
-                        for cb in self._client_connect_cb:
-                            if asyncio.iscoroutinefunction(cb):
-                                await cb(client)
-                            else:
-                                self._thread_executor.submit(
-                                    cb, client
-                                ).add_done_callback(print_threadpool_errors)
+                        connect_cbs = tuple(self._client_connect_cb)
+                    await self._dispatch_client_callbacks(connect_cbs, client)
 
                 for camera_cb in client.camera._state.camera_cb:
                     if asyncio.iscoroutinefunction(camera_cb):
@@ -900,28 +1024,37 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # Remove clients when they disconnect.
         @server.on_client_disconnect
         async def _(conn: infra.WebsockClientConnection) -> None:
+            # Never hold _client_lock across an await: the awaited user
+            # callbacks (and the synthesized drag-end callbacks below) run
+            # inline on the event loop, and any server API they call that
+            # takes the lock (e.g. get_clients()) would deadlock against
+            # the lock this thread already holds. Pop FIRST so no observer
+            # (get_clients(), connect-callback replay) can see a physically
+            # dead client while its teardown awaits user code.
             with self._client_lock:
-                if conn.client_id not in self._connected_clients:
-                    return
+                handle = self._connected_clients.pop(conn.client_id, None)
+                disconnect_cbs = tuple(self._client_disconnect_cb)
+            if handle is None:
+                return
 
-                # Drop any in-flight drag entries for this client; the
-                # corresponding ``phase="end"`` will never arrive, so
-                # without this the active-drag map leaks an entry per
-                # dropped drag and ``on_drag_end`` is silently skipped.
-                # Run this *before* popping from ``_connected_clients``
-                # so the synthesized end event can resolve a
-                # ``ClientHandle`` for ``event.client``.
-                await self.scene._drop_active_drags_for_client(
-                    cast(infra.ClientId, conn.client_id)
-                )
-                handle = self._connected_clients.pop(conn.client_id)
-                for cb in self._client_disconnect_cb:
-                    if asyncio.iscoroutinefunction(cb):
-                        await cb(handle)
-                    else:
-                        self._thread_executor.submit(cb, handle).add_done_callback(
-                            print_threadpool_errors
-                        )
+            # Drop this client's in-flight upload buffers (shared GUI and the
+            # client's own): nothing else removes them -- completion is the
+            # only other pop -- so a tab closed mid-upload leaked its
+            # accumulated parts forever.
+            self.gui._drop_uploads_from_client(cast(infra.ClientId, conn.client_id))
+            handle.gui._drop_uploads_from_client(cast(infra.ClientId, conn.client_id))
+
+            # Drop any in-flight drag entries for this client; the
+            # corresponding ``phase="end"`` will never arrive, so without
+            # this the active-drag map leaks an entry per dropped drag and
+            # ``on_drag_end`` is silently skipped. The popped handle is
+            # passed in explicitly so the synthesized end events can still
+            # resolve ``event.client`` without the client being publicly
+            # listed.
+            await self.scene._drop_active_drags_for_client(
+                cast(infra.ClientId, conn.client_id), event_client=handle
+            )
+            await self._dispatch_client_callbacks(disconnect_cbs, handle)
 
         # Start the server.
         server.start()
@@ -937,17 +1070,24 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         )
         """Handle for interacting with the GUI."""
 
+        # Dispatch the share-tunnel handlers to the thread pool, NOT inline on
+        # the event loop: request_share_url() blocks (HTTP round-trip to the
+        # share backend, and connect_event.wait() with no timeout). Run inline,
+        # a single ShareUrlRequest from any client would freeze the whole
+        # event loop -- every client stalls -- for the round-trip, or forever
+        # if the share backend is unreachable. On a pool thread the blocking is
+        # confined to that worker.
         server.register_handler(
             _messages.ShareUrlDisconnect,
-            lambda client_id, msg: self.disconnect_share_url(),
+            lambda client_id, msg: self._thread_executor.submit(
+                self.disconnect_share_url
+            ).add_done_callback(print_threadpool_errors),
         )
-
-        def request_share_url_no_return() -> None:  # To suppress type error.
-            self.request_share_url()
-
         server.register_handler(
             _messages.ShareUrlRequest,
-            lambda client_id, msg: cast(None, request_share_url_no_return()),
+            lambda client_id, msg: self._thread_executor.submit(
+                self.request_share_url
+            ).add_done_callback(print_threadpool_errors),
         )
 
         # Form status print.
@@ -985,6 +1125,11 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         )
 
         self._share_tunnel: ViserTunnel | None = None
+        # Guards the share-tunnel slot's check-then-act. The handlers now run
+        # on pool threads (not serialized on the event loop), so two
+        # concurrent requests could both see None and each create a tunnel,
+        # orphaning (leaking) the first.
+        self._share_tunnel_lock = threading.Lock()
 
         # Create share tunnel if requested.
         # This is deprecated: we should use get_share_url() instead.
@@ -1033,16 +1178,26 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         """
         buffer = self._websock_server._broadcast_buffer
         with buffer.buffer_lock:
-            # Skip GC while there are messages queued but not yet processed by
-            # the window generators. Without this, we could cull messages
-            # before they reach existing clients.
-            if (
-                not force
-                and self._websock_server._broadcast_buffer.message_event.is_set()
-            ):
-                return
+            # Deletion floor: only messages EVERY active window generator has
+            # already consumed may be purged. Do NOT gate on message_event --
+            # it is not a consumption watermark (any one generator clears
+            # it), so a BACKPRESSURED client's cursor can sit arbitrarily far
+            # behind, and purging a remove-tombstone it hadn't consumed makes
+            # it retain the entity forever (its cursor skips the hole),
+            # permanently diverging it from other clients. With no active
+            # generators everything is purgeable: a connecting client's
+            # generator registers only when its producer starts, and a fresh
+            # client must not replay removals of entities it never saw --
+            # which is this GC's entire purpose.
+            purge_floor = min(buffer.generator_cursors.values(), default=None)
 
-            # First pass: collect every tombstone's entity id.
+            def deletable(msg_id: int) -> bool:
+                return force or purge_floor is None or msg_id <= purge_floor
+
+            # First pass: collect every tombstone's entity id. The entity id
+            # set gates the second pass regardless of the floor; the tombstone
+            # MESSAGE itself is only deleted once every active client has
+            # consumed it.
             remove_message_ids: list[int] = []
             removed_ids_by_type: dict[str, set[str]] = {}
             for msg_id, message in buffer.message_from_id.items():
@@ -1051,15 +1206,31 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                         message.entity_type is not None
                         and message.entity_id_field is not None
                     )
-                    remove_message_ids.append(msg_id)
+                    if deletable(msg_id):
+                        remove_message_ids.append(msg_id)
                     removed_ids_by_type.setdefault(message.entity_type, set()).add(
                         getattr(message, message.entity_id_field)
                     )
 
             # Second pass: purge updates whose target entity has a tombstone,
             # including scene-adjacent Set*Message variants that target a
-            # removed scene node by `name` but aren't entity-declared. Skip
-            # the walk entirely when nothing was tombstoned this round.
+            # removed scene node by `name` but aren't entity-declared. The
+            # per-message taxonomy is Message.targets_entity_state -- the ONE
+            # definition, shared with the same-name-replacement purge -- with
+            # set-based id matching inlined here so the sweep stays a single
+            # pass over the buffer rather than per-name predicate calls.
+            # Skip the walk entirely when nothing was tombstoned this round.
+            #
+            # These deletes are NOT floor-gated, unlike the tombstones above:
+            # an update targeting a removed entity is dead weight for EVERY
+            # client. A laggard that hasn't consumed it still receives the
+            # (floor-retained) tombstone, so its final state is identical --
+            # while floor-gating it let a single backpressured client pin an
+            # update that sorts AFTER its entity's remove in the buffer, and
+            # every late-joiner then replayed "remove /x" (no-op) followed by
+            # "update /x": a ghost node other clients don't have. push()
+            # already purges pending updates on Remove with no floor gate;
+            # this sweep follows the same reasoning.
             if removed_ids_by_type:
                 for msg_id, message in buffer.message_from_id.items():
                     phase = message.lifecycle_phase
@@ -1115,57 +1286,74 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         Returns:
             Share URL as string, or None if connection fails or is closed.
         """
-        if self._share_tunnel is not None:
-            # Tunnel already exists.
-            while self._share_tunnel.get_status() in ("ready", "connecting"):
-                time.sleep(0.05)
-            return self._share_tunnel.get_url()
-        else:
-            # Create a new tunnel!.
-            if verbose:
-                import rich
-
-                rich.print("[bold](viser)[/bold] Share URL requested!")
-
-            connect_event = threading.Event()
-
-            self._share_tunnel = ViserTunnel(
-                "share.viser.studio", self._websock_server._port
-            )
-
-            @self._share_tunnel.on_disconnect
-            def _() -> None:
-                import rich
-
-                rich.print("[bold](viser)[/bold] Disconnected from share URL")
-                self._share_tunnel = None
-                self._websock_server.queue_message(_messages.ShareUrlUpdated(None))
-
-            @self._share_tunnel.on_connect
-            def _(max_clients: int) -> None:
-                assert self._share_tunnel is not None
-                share_url = self._share_tunnel.get_url()
+        # Claim the tunnel slot atomically: only ONE concurrent request
+        # creates a tunnel; the rest wait on it. The blocking waits below are
+        # OUTSIDE the lock so requests don't serialize on the connection.
+        with self._share_tunnel_lock:
+            tunnel = self._share_tunnel
+            we_created = tunnel is None
+            if we_created:
                 if verbose:
                     import rich
 
-                    if share_url is None:
-                        rich.print("[bold](viser)[/bold] Could not generate share URL")
-                    else:
-                        rich.print(
-                            f"[bold](viser)[/bold] Generated share URL (expires in 24 hours, max {max_clients} clients): {share_url}"
-                        )
-                self._websock_server.queue_message(_messages.ShareUrlUpdated(share_url))
-                connect_event.set()
+                    rich.print("[bold](viser)[/bold] Share URL requested!")
+                tunnel = self._share_tunnel = ViserTunnel(
+                    "share.viser.studio", self._websock_server._port
+                )
 
-            connect_event.wait()
+        if not we_created:
+            # Another request created (or is creating) the tunnel.
+            assert tunnel is not None
+            while tunnel.get_status() in ("ready", "connecting"):
+                time.sleep(0.05)
+            return tunnel.get_url()
 
-            url = self._share_tunnel.get_url()
-            return url
+        # We own the new tunnel: wire callbacks and wait for it to connect.
+        assert tunnel is not None
+        connect_event = threading.Event()
+
+        @tunnel.on_disconnect
+        def _() -> None:
+            import rich
+
+            rich.print("[bold](viser)[/bold] Disconnected from share URL")
+            with self._share_tunnel_lock:
+                # Only clear the slot if it still points at OUR tunnel (a
+                # newer request may have replaced it).
+                if self._share_tunnel is tunnel:
+                    self._share_tunnel = None
+            self._websock_server.queue_message(_messages.ShareUrlUpdated(None))
+
+        @tunnel.on_connect
+        def _(max_clients: int) -> None:
+            share_url = tunnel.get_url()
+            if verbose:
+                import rich
+
+                if share_url is None:
+                    rich.print("[bold](viser)[/bold] Could not generate share URL")
+                else:
+                    rich.print(
+                        f"[bold](viser)[/bold] Generated share URL (expires in 24 hours, max {max_clients} clients): {share_url}"
+                    )
+            self._websock_server.queue_message(_messages.ShareUrlUpdated(share_url))
+            connect_event.set()
+
+        # Wait for connect, but ALSO watch for failure: on_connect only fires
+        # on success, and a failed tunnel (share backend unreachable) sets
+        # status="failed" without touching connect_event -- a bare wait()
+        # blocked the creator forever instead of returning None as documented.
+        while not connect_event.wait(timeout=0.1):
+            if tunnel.get_status() in ("failed", "closed"):
+                return None
+        return tunnel.get_url()
 
     def disconnect_share_url(self) -> None:
         """Disconnect from the share URL server."""
-        if self._share_tunnel is not None:
-            self._share_tunnel.close()
+        with self._share_tunnel_lock:
+            tunnel = self._share_tunnel
+        if tunnel is not None:
+            tunnel.close()
         else:
             import rich
 
@@ -1178,6 +1366,40 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._websock_server.stop()
         if self._share_tunnel is not None:
             self._share_tunnel.close()
+        # Let the background event loop finish its connection teardown before
+        # shutting the pool: that teardown submits disconnect/camera callbacks
+        # to the pool, and websock_server.stop() only join()s the loop thread
+        # for 0.1s -- so shutting the pool right after would make those late
+        # submits raise "cannot schedule new futures after shutdown" and drop
+        # the user's callbacks silently. Bounded so a hung callback can't
+        # block stop() forever (in that pathological case the pool still
+        # shuts and the straggler is dropped, as before this join).
+        loop_thread = self._websock_server._server_thread
+        if loop_thread is not None:
+            loop_thread.join(timeout=5.0)
+        # Release the callback/get_render worker pool: stop() otherwise left
+        # its (up to 32) threads alive until the server object was GC'd out of
+        # its callback ref-cycles, contradicting "stops associated threads".
+        self._thread_executor.shutdown(wait=False)
+
+    async def _dispatch_client_callbacks(
+        self,
+        callbacks: tuple[Callable[[ClientHandle], None | Coroutine], ...],
+        client: ClientHandle,
+    ) -> None:
+        """Run connect/disconnect callbacks for one client: async callbacks
+        awaited in order, sync callbacks on the thread pool, every callback
+        exception-isolated so one failure cannot starve its siblings."""
+        for cb in callbacks:
+            if asyncio.iscoroutinefunction(cb):
+                try:
+                    await cb(client)
+                except Exception as exc:
+                    print_awaited_callback_error(exc)
+            else:
+                self._thread_executor.submit(cb, client).add_done_callback(
+                    print_threadpool_errors
+                )
 
     def get_clients(self) -> dict[int, ClientHandle]:
         """Creates and returns a copy of the mapping from connected client IDs to
@@ -1214,7 +1436,8 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # connect between the two lines.
         for client in clients:
             if asyncio.iscoroutinefunction(cb):
-                self._event_loop.create_task(cb(client))
+                task = self._event_loop.create_task(cb(client))
+                task.add_done_callback(print_task_error)
             else:
                 self._thread_executor.submit(cb, client).add_done_callback(
                     print_threadpool_errors
@@ -1327,13 +1550,18 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         This can be used for saving .viser files, which are used for offline
         visualization.
         """
-        serializer = self._websock_server.get_message_serializer(
-            filter=lambda message: message.include_in_scene_serialization
-        )
-        # Insert current scene state.
+        # Register + snapshot atomically (under _record_lock, which
+        # queue_message also holds for its feed+push): otherwise a message
+        # queued from another thread between the two lands in BOTH the live
+        # recording and the snapshot, duplicating it in the .viser file.
         buffer = self._websock_server._broadcast_buffer
-        with buffer.buffer_lock:
-            messages = list(buffer.message_from_id.values())
-        for message in messages:
-            serializer._insert_message(message)
+        with self._websock_server._record_lock:
+            serializer = self._websock_server.get_message_serializer(
+                filter=lambda message: message.include_in_scene_serialization
+            )
+            # Insert current scene state.
+            with buffer.buffer_lock:
+                messages = list(buffer.message_from_id.values())
+            for message in messages:
+                serializer._insert_message(message)
         return serializer

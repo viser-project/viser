@@ -101,6 +101,15 @@ export type GroupContext =
 export interface GroupTarget {
   groupId: GroupId;
   rect: DOMRect;
+  /** The cell's TRUE top when `rect` was extended upward over parent chrome
+   * (a column's own handle bar, D27). The extension exists so that chrome is
+   * not a no-drop hole (P5), but a split-above LANDS below it -- the new cell
+   * goes inside the column, under the handle that moves the whole column. So
+   * the hint line must draw here, not at the extended rect's top, or it
+   * claims the handle's own pixels (P1: the hint shows exactly what lands).
+   * Mirrors the rail branch, which anchors its stack-below line at the
+   * spine's true content bottom rather than the extended rect's. */
+  contentTop?: number;
   /** Optional smaller rect used for hit detection only (which target the pointer
    * is over), while `rect` still drives the visual hint. Lets a full-bleed area
    * keep a full-width merge highlight while leaving an inset frame around it that
@@ -111,7 +120,15 @@ export interface GroupTarget {
    * DropTargets.windows for the owning-window mask. */
   winId?: string;
   stripRect: DOMRect | null;
-  tabs: { paneId: PaneId; rect: DOMRect }[];
+  /** The group's tab handles, for insertion hit-testing. `rect` is CLIPPED to
+   * the tab's visible box (a strip can be cut off by the container edge or a
+   * scrolled column), and fully-invisible tabs are omitted -- so an insertion
+   * line never paints outside the dock and a hidden tab is never the nearest
+   * target. `index` is therefore the tab's position in the GROUP's paneIds,
+   * carried explicitly because omissions break array-position indexing. It is
+   * optional only as a shorthand for callers that never filter (test literals
+   * build tabs in model order); omitted, the array position is used. */
+  tabs: { paneId: PaneId; rect: DOMRect; index?: number }[];
   ctx: GroupContext;
   /** True when the group is minimized (only its handle shows). Such a target
    * has no content area, so its whole bar is treated as a 5-way drop zone.
@@ -127,6 +144,10 @@ export interface GroupTarget {
    * inserted into it, so its content area is merge-suppressed (drops there fall
    * back to a split / no-op) and its label is a header rather than a tab. */
   unmergeable?: boolean;
+  /** Area targets only: the group of the PANEL the area renders inside. Lets a
+   * merge-suppressed host's dead content center route a mergeable drop into
+   * its own hosted area (D58) without ever crossing into another panel's. */
+  hostGroupId?: GroupId;
 }
 
 export interface DropTargets {
@@ -195,7 +216,11 @@ const hitsTarget = (t: GroupTarget, x: number, y: number): boolean => {
  * multiple rows. Returns the insert index plus the insertion line's geometry
  * (in client coords), anchored to the matched tab's own row. */
 export const tabInsertion = (
-  tabs: { rect: DOMRect }[],
+  // `index` (the tab's position in the model's pane list) is optional: the
+  // in-strip reorder path passes a filtered "other tabs" array whose array
+  // positions ARE the insertion positions it wants. Drop-target arrays carry
+  // it, because they omit invisible/clipped tabs.
+  tabs: { rect: DOMRect; index?: number }[],
   x: number,
   y: number,
 ): {
@@ -237,8 +262,9 @@ export const tabInsertion = (
     );
     if (isRowLeftmost) lineLeft = r.left + 3;
   }
+  const modelIndex = tabs[best].index ?? best;
   return {
-    index: after ? best + 1 : best,
+    index: after ? modelIndex + 1 : modelIndex,
     lineLeft,
     lineTop: r.top + (r.height - lineHeight) / 2,
     lineHeight,
@@ -251,7 +277,7 @@ export const tabInsertion = (
  * land at a specific position in a minimized tab set, mirroring how dropping
  * between expanded horizontal tabs works. */
 const verticalTabInsertion = (
-  tabs: { rect: DOMRect }[],
+  tabs: { rect: DOMRect; index?: number }[],
   y: number,
 ): {
   index: number;
@@ -276,8 +302,9 @@ const verticalTabInsertion = (
   // Inset the horizontal line from both strip edges so it reads as an insertion
   // marker, not a full-width rule hugging the ~36px strip's borders (mirrors the
   // horizontal path, which nudges its line in from the leftmost tab edge).
+  const modelIndex = tabs[best].index ?? best;
   return {
-    index: after ? best + 1 : best,
+    index: after ? modelIndex + 1 : modelIndex,
     lineLeft: r.left + INSERT_LINE_INSET_PX,
     lineTop: after ? r.bottom : r.top,
     lineWidth: Math.max(2, r.width - 2 * INSERT_LINE_INSET_PX),
@@ -805,7 +832,10 @@ export function hitTest(
     // a line on a flush edge stays visible.
     const seam =
       gt.ctx.kind === "docked" ? dockedSeamSibling(gt, region) : null;
-    const edgeY = region === "top" ? r.top : r.bottom;
+    // `contentTop` is the honest landing seam when the rect was extended up
+    // over a column's parent handle (see its doc): the split lands BELOW
+    // that chrome, so the line draws there.
+    const edgeY = region === "top" ? (gt.contentTop ?? r.top) : r.bottom;
     const raw = (seam !== null ? seam.gapCenter : edgeY) - t / 2;
     const top = clamp(raw, crect.top, crect.top + crect.height - t);
     return rel({ left: r.left, top, width: r.width, height: t }, "line");
@@ -830,12 +860,44 @@ export function hitTest(
   };
 
   // An unmergeable group never participates in a merge, from either side: a
-  // drop over an unmergeable target's center is a no-op (return null) rather
-  // than appending a tab, and a dragged stack holding an unmergeable panel
-  // can't become tabs anywhere. Edge splits and floating snaps still apply.
+  // drop over an unmergeable target's center is a no-op rather than appending
+  // a tab, and a dragged stack holding an unmergeable panel can't become tabs
+  // anywhere. Edge splits and floating snaps still apply. D58 escape: an
+  // unmergeable TARGET hosting a nested area routes a mergeable drop into the
+  // nearest hosted area instead of dying -- the hint fills the host cell like
+  // any other merge hint (the highlight marks the accepting surface; the tab
+  // lands in the hosted area).
+  const hostedAreaFallback = (): {
+    result: DropResult;
+    hint: DropHint;
+  } | null => {
+    if (draggingUnmergeable) return null;
+    let best: GroupTarget | null = null;
+    let bestDist = Infinity;
+    for (const t of targets.groups) {
+      if (t.ctx.kind !== "area" || t.hostGroupId !== gt.groupId) continue;
+      // Same categorical rule as target selection (3.5): when a floating
+      // window owns the pointer, only its own hosted areas are candidates.
+      if (!eligible(t)) continue;
+      const ar = t.rect;
+      const dx = Math.max(ar.left - clientX, 0, clientX - ar.right);
+      const dy = Math.max(ar.top - clientY, 0, clientY - ar.bottom);
+      const dist = dx * dx + dy * dy;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = t;
+      }
+    }
+    return best === null
+      ? null
+      : {
+          result: { kind: "merge", targetGroupId: best.groupId },
+          hint: rel(r, "merge"),
+        };
+  };
   const mergeResult = (): { result: DropResult; hint: DropHint } | null =>
     gt.unmergeable || draggingUnmergeable
-      ? null
+      ? hostedAreaFallback()
       : {
           result: { kind: "merge", targetGroupId: gt.groupId },
           hint: rel(r, "merge"),
@@ -869,9 +931,26 @@ export function hitTest(
         };
       }
     }
+    // D58: inside an UNMERGEABLE host, the area's body shows the same
+    // host-filling merge hint as the dead-center fallback -- the panel is
+    // one drop surface, never two differently-sized zones for the same
+    // destination. (Inside a mergeable host the area-sized hint stays:
+    // there the host's own merge is a different destination.)
+    const unmergeableHostRect = (() => {
+      if (g.hostGroupId === undefined) return null;
+      for (const t of targets.groups) {
+        if (
+          t.ctx.kind !== "area" &&
+          t.groupId === g.hostGroupId &&
+          t.unmergeable === true
+        )
+          return t.rect;
+      }
+      return null;
+    })();
     return {
       result: { kind: "merge", targetGroupId: g.groupId },
-      hint: rel(r, "merge"),
+      hint: rel(unmergeableHostRect ?? r, "merge"),
     };
   }
 
@@ -904,12 +983,20 @@ export function hitTest(
     // Top/bottom edge bands: rail cells keep thin 8px stack-above/below
     // zones; a floating bar (the only bar form, D32/D38) gets the wider
     // min(10px, height/3) snap band (spec 5.4).
+    // P11: every distinct zone is >=8px, and an undersized zone is REMOVED,
+    // not shrunk. A clipped remnant (a bar half-out of the container, a rail
+    // row half-scrolled away) can be as short as 8px; dividing that into
+    // thirds made three ~3px zones. Below 24px the top/bottom bands are
+    // dropped entirely -- the whole remnant is insert/merge, the one intent
+    // that degrades gracefully.
     const edgeBand =
-      g.bar === true
-        ? Math.min(BAR_SNAP_BAND_PX, r.height / 3)
-        : Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
-    const inTopEdge = clientY < r.top + edgeBand;
-    const inBottomEdge = clientY > r.bottom - edgeBand;
+      r.height < 3 * MINIMIZED_EDGE_BAND_PX
+        ? 0
+        : g.bar === true
+          ? Math.min(BAR_SNAP_BAND_PX, r.height / 3)
+          : Math.min(MINIMIZED_EDGE_BAND_PX, r.height / 3);
+    const inTopEdge = edgeBand > 0 && clientY < r.top + edgeBand;
+    const inBottomEdge = edgeBand > 0 && clientY > r.bottom - edgeBand;
     // Tab insertion matches the segment's orientation: rail cells stack rows
     // vertically (Y-based, horizontal line); bars lay labels out
     // horizontally (2D nearest-tab, vertical line) -- spec D9.
@@ -1101,10 +1188,13 @@ export function hitTest(
 
   // 3c. Content area: split bands (docked) / snap-below band (floating);
   // otherwise merge (append a tab).
-  const contentTop = strip !== null ? strip.bottom : r.top;
-  const ch = r.bottom - contentTop;
+  // (Named distinctly from GroupTarget.contentTop, which is the true cell
+  // top under a parent-handle rect extension -- this is the content AREA's
+  // top, below the strip.)
+  const contentAreaTop = strip !== null ? strip.bottom : r.top;
+  const ch = r.bottom - contentAreaTop;
   const rx = (clientX - r.left) / r.width;
-  const ry = ch > 0 ? (clientY - contentTop) / ch : 0;
+  const ry = ch > 0 ? (clientY - contentAreaTop) / ch : 0;
 
   // Above/below get a narrower band (smaller fraction, pixel-capped) so the
   // merge zone dominates the content area; left/right use the wider fraction,
@@ -1135,6 +1225,16 @@ export function hitTest(
     // these paths (the strip insert is suppressed too, so there is
     // nothing below the grip bar to aim at).
     const mergeSuppressed = gt.unmergeable || draggingUnmergeable;
+    // Side bands FIRST (D57): hovering the left/right edge means "dock
+    // beside", full height -- the corners belong to the side intent, not to
+    // the top/bottom splits. Checked before the vertical bands, or the
+    // corners resolve vertically and the side band's usable run shrinks;
+    // worst on merge-suppressed targets, whose extra top band ate the whole
+    // upper corner (docking beside one then only worked near the vertical
+    // middle).
+    if (rx < hBand) return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "left");
+    if (rx > 1 - hBand)
+      return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "right");
     const region: "top" | "bottom" | null =
       mergeSuppressed && ry < vBand ? "top" : ry > 1 - vBand ? "bottom" : null;
     if (region !== null) {
@@ -1148,10 +1248,6 @@ export function hitTest(
         hint: splitLine(region),
       };
     }
-    // Side bands: a full-height column at the adjacent seam (D55).
-    if (rx < hBand) return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "left");
-    if (rx > 1 - hBand)
-      return sideColumnInsert(g.ctx.edge, g.ctx.nodeId, "right");
   } else if (ry > 1 - vBand) {
     return {
       result: {

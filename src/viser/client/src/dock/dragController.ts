@@ -54,6 +54,7 @@ import {
   NodeId,
   PaneId,
   PaneRegistry,
+  REGION_EDGE_GAP_PX,
   regionWidthsOf,
   WindowId,
 } from "./types";
@@ -217,7 +218,12 @@ export function useDragController(deps: DragControllerDeps) {
       ctx: GroupContext,
     ): GroupTarget => {
       const stripEl = scopeEl.querySelector(`[data-dock-strip="${groupId}"]`);
-      const tabs: { paneId: PaneId; rect: DOMRect }[] = [];
+      const tabs: { paneId: PaneId; rect: DOMRect; index: number }[] = [];
+      // The model's pane order; a tab's index comes from HERE, not from its
+      // position in the collected array, which omits invisible and clipped
+      // tabs (an omission would otherwise shift every later tab's insertion
+      // index by one).
+      const paneOrder = layoutRef.current.groups[groupId]?.paneIds ?? [];
       scopeEl.querySelectorAll("[data-dock-tab]").forEach((t) => {
         // Skip tabs that belong to a nested group (their nearest group ancestor
         // isn't ours).
@@ -226,8 +232,15 @@ export function useDragController(deps: DragControllerDeps) {
         // badge): an invisible element must not be an insertion target (P1).
         if (getComputedStyle(t).visibility === "hidden") return;
         const paneId = t.getAttribute("data-dock-tab");
-        if (paneId !== null)
-          tabs.push({ paneId, rect: t.getBoundingClientRect() });
+        if (paneId === null) return;
+        const index = paneOrder.indexOf(paneId);
+        tabs.push({
+          paneId,
+          rect: t.getBoundingClientRect(),
+          // A tab whose pane isn't in the model (mid-commit DOM) keeps its
+          // DOM position -- harmless: the op guards its own bounds.
+          index: index === -1 ? tabs.length : index,
+        });
       });
       return {
         groupId,
@@ -253,6 +266,59 @@ export function useDragController(deps: DragControllerDeps) {
       const groupId = el.getAttribute("data-dock-group");
       if (groupId === null) return null;
       return buildTarget(rectEl, el, groupId, ctx);
+    };
+
+    // Visual clip for floating-derived rects: the dock root is
+    // overflow:hidden, so any part of a floating window past a container
+    // edge is invisible (clampCorner keeps only the top-left corner
+    // reachable -- the body may legally overflow right/bottom, e.g. an
+    // auto-height window taller than the container). An invisible sliver
+    // must not be a drop surface, and zones/hints must compute from what is
+    // on screen (P1) -- the floating analog of the docked scroll clip
+    // below. Targets whose visible remnant is sub-8px are dropped entirely
+    // (P11: a zone that can't hold 8px is removed, not shrunk).
+    const cbox = container.getBoundingClientRect();
+    const clipRect = (
+      r: DOMRect,
+      box: DOMRect,
+      min: number,
+    ): DOMRect | null => {
+      const left = Math.max(r.left, box.left);
+      const top = Math.max(r.top, box.top);
+      const right = Math.min(r.right, box.right);
+      const bottom = Math.min(r.bottom, box.bottom);
+      if (right - left < min || bottom - top < min) return null;
+      return new DOMRect(left, top, right - left, bottom - top);
+    };
+    const clipToContainer = (r: DOMRect): DOMRect | null =>
+      clipRect(r, cbox, 8);
+    /** Clip a target's strip + tab rects to the box its cell is actually
+     * visible in, dropping tabs with nothing left. Zones and hints are then
+     * computed from painted pixels only: without this, an insertion line for
+     * a tab straddling the container edge (or scrolled out of its column)
+     * paints outside the dock, and a fully-hidden tab can still be the
+     * nearest insertion target. Tabs carry explicit model indices, so
+     * dropping them keeps insertion positions correct. A sub-1px sliver is
+     * treated as gone (tabs are hit by nearest-distance, not containment, so
+     * unlike the 8px zone floor there is no minimum useful size). */
+    const clipChromeTo = (t: GroupTarget, box: DOMRect): void => {
+      if (t.stripRect !== null) {
+        // A strip clipped to nothing keeps a DEGENERATE boundary at the top
+        // of the visible box rather than becoming null. hitTest reads
+        // `clientY < strip.top` as "above the strip -> split above this
+        // cell"; with a null strip that whole branch is skipped and the
+        // pointer falls through to the content rules, so a scrolled-out
+        // cell's parent-handle band silently became a MERGE target ("add a
+        // tab here") instead of the honest split (P1). Zero height, so it
+        // never claims a tab-insert row of its own.
+        t.stripRect =
+          clipRect(t.stripRect, box, 1) ??
+          new DOMRect(t.rect.left, box.top, t.rect.width, 0);
+      }
+      t.tabs = t.tabs.flatMap((tab) => {
+        const rect = clipRect(tab.rect, box, 1);
+        return rect === null ? [] : [{ ...tab, rect }];
+      });
     };
 
     // Nested dockable areas, collected up front and keyed by host window
@@ -281,8 +347,31 @@ export function useDragController(deps: DragControllerDeps) {
       // Skip an area whose host panel is minimized: its wrapper collapses to
       // (near) zero height, and flooring that into a hit band would put a
       // phantom "drop into area" target on top of the host's own handle/zones.
-      const areaRect = areaEl.getBoundingClientRect();
+      // Clipped to the container first: an area inside a window that
+      // overflows the container bottom must only claim its visible part.
+      // ALSO clipped to every scrolling ancestor (panel-body ScrollArea
+      // viewports and [data-dock-scroll] column/stack boxes, which can
+      // nest): an area scrolled out of any of them keeps a full-size
+      // bounding rect over pixels where other content paints, which would
+      // leave a phantom target there -- and D58's center fallback would
+      // route drops to (and draw its hint over) an area that isn't visible
+      // at all.
+      let areaRect: DOMRect | null = clipToContainer(
+        areaEl.getBoundingClientRect(),
+      );
+      for (
+        let el = areaEl.parentElement;
+        areaRect !== null && el !== null && el !== container;
+        el = el.parentElement
+      ) {
+        if (
+          el.matches(".mantine-ScrollArea-viewport") ||
+          el.matches("[data-dock-scroll]")
+        )
+          areaRect = clipRect(areaRect, el.getBoundingClientRect(), 1);
+      }
       if (
+        areaRect === null ||
         areaRect.height < AREA_MIN_TARGET_PX ||
         areaRect.width < AREA_MIN_TARGET_PX
       )
@@ -294,6 +383,14 @@ export function useDragController(deps: DragControllerDeps) {
         kind: "area",
         areaId,
       });
+      // The panel this area renders inside (closest() from the area wrapper
+      // never matches the area's own inner group, a descendant): D58 routes
+      // the host's dead merge-suppressed center into this area.
+      t.hostGroupId =
+        areaEl.closest("[data-dock-group]")?.getAttribute("data-dock-group") ??
+        undefined;
+      t.rect = areaRect;
+      clipChromeTo(t, areaRect);
       // Inset the area's hit rect on the left/right/bottom (not the top, which
       // holds its tab strip) so a frame around it falls through to the host
       // panel's own edge zones -- otherwise a full-bleed area (one that fills its
@@ -366,49 +463,120 @@ export function useDragController(deps: DragControllerDeps) {
             ? rr.bottom
             : Math.min(g.rect.bottom, rr.bottom);
         if (bottom - top < 8) return; // fully overflowed/scrolled out.
+        // Spine rows clip to the rail's VISIBLE box before the last cell's
+        // tail extension below, so a scrolled-out row is never the nearest
+        // vertical insertion target and its line never paints outside the
+        // rail (the rotated analog of the expanded strip's clip).
+        clipChromeTo(
+          g,
+          clipRect(g.rect, rr, 1) ??
+            new DOMRect(g.rect.left, rr.top, g.rect.width, 0),
+        );
         if (top !== g.rect.top || bottom !== g.rect.bottom) {
           g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
         }
       } else {
-        // Expanded columns: the parent-handle run above the first cell is
-        // region-owned chrome that must not be a no-drop hole (P5; the old
-        // top region band died with D46). Extend the column's first leaf
-        // up to the column box -- the pointer there resolves to that
-        // cell's above zone (split above the first cell: honest, P1).
+        // Expanded columns. Two boxes matter here and they are NOT the same:
+        // the cell's visible content (clipped to the column's scroll box) and
+        // the parent-handle run ABOVE that scroll box, which the first cell
+        // also claims (P5: region-owned chrome must not be a no-drop hole --
+        // the old top region band died with D46; a pointer there resolves to
+        // "split above the first cell", honest per P1).
         const columnEl = leaf.closest("[data-dock-column]");
-        if (columnEl !== null) {
-          const cells = columnEl.querySelectorAll("[data-dock-leaf]");
-          if (cells[0] === leaf) {
-            const cr = columnEl.getBoundingClientRect();
-            if (cr.top < g.rect.top) {
-              g.rect = new DOMRect(
-                g.rect.left,
-                cr.top,
-                g.rect.width,
-                g.rect.bottom - cr.top,
-              );
-            }
+        const isFirstCell =
+          columnEl !== null &&
+          columnEl.querySelectorAll("[data-dock-leaf]")[0] === leaf;
+        // Content box: with overflowY auto a squeezed, scrolled column
+        // reports leaf rects extending past its visible box, and hitTest's
+        // last-match rule would pick the invisible scrolled-out leaf over
+        // the visible one under the pointer (P1). (Rail cells never sit in
+        // a [data-dock-scroll]; their clamp is the rail-root branch above.)
+        const scrollEl = leaf.closest("[data-dock-scroll]");
+        let top = g.rect.top;
+        let bottom = g.rect.bottom;
+        let contentBox: DOMRect = g.rect;
+        if (scrollEl !== null) {
+          const sr = scrollEl.getBoundingClientRect();
+          top = Math.max(top, sr.top);
+          bottom = Math.min(bottom, sr.bottom);
+          if (bottom - top < 8) {
+            // Nothing of the cell's content is visible. For any cell but the
+            // first that means "not a target". The FIRST cell still owns the
+            // handle band above the scroll box, which never scrolls -- and no
+            // other cell can claim it (they aren't the first child), so
+            // dropping the target here would re-open the P5 hole for a column
+            // scrolled past its first cell.
+            if (!isFirstCell) return;
+            // Zero-height content box AT THE SCROLL BOX'S TOP: the band the
+            // cell keeps runs from the column top down to here, so this is
+            // where its (scrolled-away) strip logically begins -- and
+            // clipChromeTo anchors the degenerate strip boundary to it, which
+            // is what makes the band read as "above the strip" (split above)
+            // rather than falling through to the content rules (merge).
+            contentBox = new DOMRect(g.rect.left, sr.top, g.rect.width, 0);
+            top = sr.top;
+            bottom = sr.top;
+          } else {
+            contentBox = new DOMRect(
+              g.rect.left,
+              top,
+              g.rect.width,
+              bottom - top,
+            );
           }
         }
+        // Extend the first cell up over the parent-handle run. Ordered AFTER
+        // the scroll clip, which clamps to the scroll box and would otherwise
+        // undo this deliberate extension (the handle sits ABOVE that box).
+        if (isFirstCell) {
+          const cr = columnEl.getBoundingClientRect();
+          if (cr.top < top) {
+            // Remember where the cell really starts: the split-above LANDS
+            // below the column's handle bar, so the hint line must draw at
+            // this seam even though the hit zone covers the chrome (P5 vs
+            // P1 -- the zone is generous, the line is honest).
+            g.contentTop = top;
+            top = cr.top;
+          }
+        }
+        if (bottom - top < 8) return; // no usable band (P11)
+        g.rect = new DOMRect(g.rect.left, top, g.rect.width, bottom - top);
+        // One hit surface: keep hitRect in lockstep with the final rect --
+        // the extension must be part of the hittable box or the handle band
+        // misses.
+        g.hitRect = g.rect;
+        // Strip/tabs live in the CONTENT box, never the handle band: a
+        // scrolled-out strip must not offer tab insertions, and a partly
+        // scrolled one only where it paints.
+        clipChromeTo(g, contentBox);
       }
-      // Clip to the column's scroll box: with overflowY auto a squeezed,
-      // scrolled column reports leaf rects extending past its visible box,
-      // and hitTest's last-match rule would pick the invisible scrolled-out
-      // leaf over the visible one under the pointer (P1).
-      const scrollEl = leaf.closest("[data-dock-scroll]");
-      if (scrollEl !== null) {
-        const sr = scrollEl.getBoundingClientRect();
-        const top = Math.max(g.rect.top, sr.top);
-        const bottom = Math.min(g.rect.bottom, sr.bottom);
-        if (bottom - top < 8) return; // fully scrolled out: not a target
-        const clipped = new DOMRect(
-          g.rect.left,
-          top,
-          g.rect.width,
-          bottom - top,
+      // Outer-gutter reach: the region's D54 edge gutter (and any sub-pixel
+      // slack) sits between the outermost column and the screen edge, so a
+      // pointer flush against the screen hit NO target -- a dead sliver
+      // exactly where "dock a new outermost column" slams naturally (P5:
+      // chrome must not be a hole). Extend the outermost
+      // column's HIT rect to the container edge; `rect` stays put, so rx>1
+      // resolves to the outer side band's columnInsert with its normal
+      // on-screen hint. Only leaves within the gutter's width of the edge
+      // qualify (columns are >=96px wide, so only the outermost can).
+      const hr = g.hitRect ?? g.rect;
+      if (edge === "right" && cbox.right - hr.right <= REGION_EDGE_GAP_PX + 6) {
+        g.hitRect = new DOMRect(
+          hr.left,
+          hr.top,
+          cbox.right - hr.left,
+          hr.height,
         );
-        g.rect = clipped;
-        g.hitRect = clipped;
+      } else if (
+        edge === "left" &&
+        hr.left - cbox.left <= REGION_EDGE_GAP_PX + 6
+      ) {
+        g.hitRect = new DOMRect(
+          cbox.left,
+          hr.top,
+          hr.right - cbox.left,
+          hr.height,
+        );
       }
       targets.groups.push(g);
     });
@@ -425,9 +593,12 @@ export function useDragController(deps: DragControllerDeps) {
       if (winEl === null) return;
       // The window's full paper rect: the owning-window mask in hitTest
       // covers chrome slivers (header, dividers) that no cell rect claims.
+      // Clipped to the container -- ownership is by VISIBLE paper (3.5/P1).
+      const winRect = clipToContainer(winEl.getBoundingClientRect());
+      if (winRect === null) return;
       (targets.windows ??= []).push({
         windowId: win.id,
-        rect: winEl.getBoundingClientRect(),
+        rect: winRect,
       });
       winEl.querySelectorAll("[data-dock-group]").forEach((groupEl) => {
         const gid = groupEl.getAttribute("data-dock-group");
@@ -447,6 +618,31 @@ export function useDragController(deps: DragControllerDeps) {
           index,
         });
         if (g !== null) {
+          // Clip the cell to the container's visible box (same rule as the
+          // window mask above): an auto-height window taller than the
+          // container renders its tail past the bottom edge, and an
+          // unclipped rect would put the merge/snap zones on CONTENT
+          // height instead of visual height -- with the snap-below band
+          // and its hint line painted off-screen. A cell whose visible
+          // remnant is sub-8px is not a target at all.
+          // Clip to the container AND, for a fixed-height window whose stack
+          // is too short for its cells, to that stack's scroll viewport: a
+          // cell scrolled under the window header renders nothing, so it must
+          // not stay a drop target (P1) -- the floating analog of the docked
+          // column's scroll clip.
+          const stackScrollEl = groupEl.closest("[data-dock-scroll]");
+          const containerClipped = clipToContainer(g.rect);
+          const cellRect =
+            containerClipped === null || stackScrollEl === null
+              ? containerClipped
+              : clipRect(
+                  containerClipped,
+                  stackScrollEl.getBoundingClientRect(),
+                  8,
+                );
+          if (cellRect === null) return;
+          g.rect = cellRect;
+          clipChromeTo(g, cellRect);
           g.winId = win.id;
           targets.groups.push(g);
         }
@@ -635,6 +831,12 @@ export function useDragController(deps: DragControllerDeps) {
             container.querySelector<HTMLElement>(
               `[data-floating-window="${windowId}"]`,
             ) ?? el;
+          // Re-apply the drag styling the original node got at drag start
+          // (teardown resets these on whatever `el` points at then): without
+          // this the recreated window rides undimmed for the rest of the
+          // drag, occluding the drop target beneath it.
+          el.style.willChange = "transform";
+          el.style.opacity = "0.6";
         }
         // A mid-drag layout change may have moved the dragged window's
         // resting position (e.g. a server update). The transform is relative

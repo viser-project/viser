@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import io
+import math
+import threading
 import time
 import warnings
 from collections.abc import Coroutine
@@ -73,7 +75,11 @@ from ._scene_handles import (
     _RaycastSupportedSceneNodeHandle,
     _TransformControlsState,
 )
-from ._threadpool_exceptions import print_threadpool_errors
+from ._threadpool_exceptions import (
+    print_awaited_callback_error,
+    print_task_error,
+    print_threadpool_errors,
+)
 
 if TYPE_CHECKING:
     import trimesh
@@ -133,10 +139,25 @@ def _drag_input_matches_filter(
 def _encode_rgb(rgb: RgbTupleOrArray) -> tuple[int, int, int]:
     if isinstance(rgb, np.ndarray):
         assert rgb.shape == (3,)
-    rgb_fixed = tuple(
-        int(value) if np.issubdtype(type(value), np.integer) else int(value * 255)
-        for value in rgb
-    )
+
+    def channel(value: Any) -> int:
+        # Match the array-color path (colors_to_uint8) exactly: integers are
+        # [0,255], floats are [0,1] scaled by 255, everything clamped to
+        # [0,255] with int() truncation (mirrors astype(uint8)). Clamp the
+        # SCALED float BEFORE int() so a non-finite channel can't reach int()
+        # (int(nan)/int(inf) raise): NaN -> 0, +Inf -> 255, -Inf -> 0, the
+        # same values np.clip(...).astype(uint8) produces. Without the clamp,
+        # out-of-range channels bled into adjacent bytes on the client
+        # (rgbToInt shifts) and an extreme float overflowed msgpack's int
+        # range at flush -- a crash far from the offending call.
+        if np.issubdtype(type(value), np.integer):
+            return min(255, max(0, int(value)))
+        scaled = float(value) * 255.0
+        if math.isnan(scaled):
+            return 0
+        return int(min(255.0, max(0.0, scaled)))
+
+    rgb_fixed = tuple(channel(value) for value in rgb)
     assert len(rgb_fixed) == 3
     return rgb_fixed  # type: ignore
 
@@ -166,9 +187,17 @@ TVector = TypeVar("TVector", bound=tuple)
 
 
 def cast_vector(vector: TVector | np.ndarray, length: int) -> TVector:
-    if not isinstance(vector, tuple):
-        assert cast(np.ndarray, vector).shape == (length,), (
-            f"Expected vector of shape {(length,)}, but got {vector.shape} instead"
+    # Arity is checked for EVERY input form: tuples/lists used to pass
+    # through unchecked, so a 2-tuple handed to a 3-vector API silently
+    # desynced from the client's fixed component count.
+    if isinstance(vector, np.ndarray):
+        if vector.shape != (length,):
+            raise ValueError(
+                f"Expected vector of shape {(length,)}, but got {vector.shape} instead"
+            )
+    elif len(vector) != length:
+        raise ValueError(
+            f"Expected vector of length {length}, but got {len(vector)} instead"
         )
     return cast(TVector, tuple(map(float, vector)))
 
@@ -247,6 +276,18 @@ class SceneApi:
             str, TransformControlsHandle
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
+        self._node_lifecycle_lock = threading.RLock()
+        """Serializes scene-node lifecycle transitions (remove, same-name
+        supersede) against interaction-callback (de)registration. All
+        critical sections are short and synchronous (no awaits inside).
+        Reentrant defensively: no current teardown path re-enters (a 3D GUI
+        container's _on_remove removes GUI children only), but subclass
+        _on_remove hooks run under the lock and must stay safe to extend.
+        Without this lock, a registration racing a remove/supersede from
+        another thread could publish a name-keyed binding into the
+        persistent buffer AFTER the teardown's empty-bindings emit -- a
+        ghost a same-name successor would inherit on late-joining
+        clients."""
         self._children_from_node_name: dict[str, set[str]] = {}
         # Tracks handles with an in-flight drag gesture, plus the last
         # message we processed for that drag. Populated on
@@ -318,10 +359,17 @@ class SceneApi:
         """Whether the named scene node currently has any in-flight drag
         gesture (from any connected client). Used by ``remove()`` to
         decide whether to clear ``drag_cb`` immediately or preserve it
-        until the in-flight drag's ``end`` message arrives."""
-        return any(key[1] == name for key in self._active_drag_handles)
+        until the in-flight drag's ``end`` message arrives.
 
-    async def _drop_active_drags_for_client(self, client_id: ClientId) -> None:
+        Iterates a snapshot: this runs on the caller's thread while the
+        event loop's message handlers mutate the dict, and a live dict view
+        raises "dictionary changed size during iteration". (list(dict) is a
+        single C-level copy, atomic under the GIL.)"""
+        return any(key[1] == name for key in list(self._active_drag_handles))
+
+    async def _drop_active_drags_for_client(
+        self, client_id: ClientId, event_client: ClientHandle | None = None
+    ) -> None:
         """Drop any in-flight drag entries for a disconnecting client,
         synthesizing a ``phase="end"`` event so user state allocated in
         ``on_drag_start`` can be released. Without this, a mid-drag
@@ -330,6 +378,12 @@ class SceneApi:
         ``_is_drag_active_for`` will return spurious-true for the
         leaked node name -- preventing a future ``remove()`` from
         clearing its callbacks) and silently skips ``on_drag_end``."""
+        # Per-entry exception isolation for the setup that runs OUTSIDE
+        # _dispatch_callback's per-callback isolation (client resolution,
+        # event construction, callback filtering): a throwing entry must not
+        # strand the REMAINING entries (each pins a handle and blocks a
+        # future remove() from clearing its callbacks) or abort the caller's
+        # disconnect teardown.
         stale_keys = [k for k in self._active_drag_handles if k[0] == client_id]
         for k in stale_keys:
             entry = self._active_drag_handles.pop(k, None)
@@ -339,7 +393,12 @@ class SceneApi:
             # Synthesize an end event using the most recently observed
             # client-reported positions.
             synthetic = dataclasses.replace(last_msg, phase="end")
-            await self._dispatch_drag_callbacks(client_id, handle, synthetic)
+            try:
+                await self._dispatch_drag_callbacks(
+                    client_id, handle, synthetic, event_client
+                )
+            except Exception as exc:
+                print_awaited_callback_error(exc)
 
         # Same for in-flight transform-control gizmo drags.
         stale_tc_keys = [
@@ -349,7 +408,12 @@ class SceneApi:
             tc_handle = self._active_transform_drag_handles.pop(k, None)
             if tc_handle is None:
                 continue
-            await self._fire_transform_controls_callbacks(client_id, tc_handle, "end")
+            try:
+                await self._fire_transform_controls_callbacks(
+                    client_id, tc_handle, "end", event_client
+                )
+            except Exception as exc:
+                print_awaited_callback_error(exc)
 
     def _ensure_ancestors_exist(self, name: str) -> None:
         """Create intermediate frame nodes for any missing ancestors of `name`."""
@@ -1730,6 +1794,12 @@ class SceneApi:
         """
         _warn_wireframe_conflicts(wireframe, material, flat_shading)
 
+        # Normalized UP FRONT (as add_transform_controls does): _make()
+        # normalizes internally, so a bare name would leave the typed-handle
+        # registry swap keyed differently from the registration -- and the
+        # bones' SetBone messages addressed to a name no client node has.
+        name = _normalize_node_name(name)
+
         assert len(bone_wxyzs) == len(bone_positions)
         num_bones = len(bone_wxyzs)
         if num_bones == 0:
@@ -1776,9 +1846,9 @@ class SceneApi:
                 receive_shadow=receive_shadow,
             ),
         )
-        handle = MeshHandle._make(self, message, name, wxyz, position, visible)
-        return MeshSkinnedHandle(
-            handle._impl,
+        node_handle = MeshHandle._make(self, message, name, wxyz, position, visible)
+        handle = MeshSkinnedHandle(
+            node_handle._impl,
             bones=tuple(
                 MeshSkinnedBoneHandle(
                     _impl=BoneState(
@@ -1787,11 +1857,21 @@ class SceneApi:
                         bone_index=i,
                         wxyz=bone_wxyzs[i].copy(),
                         position=bone_positions[i].copy(),
+                        mesh_impl=node_handle._impl,
                     )
                 )
                 for i in range(num_bones)
             ),
         )
+        # Register the typed handle (not the plain MeshHandle from `_make`)
+        # so click/drag dispatch resolves a target that carries `.bones`.
+        # Under the lifecycle lock, and only while the registry still points
+        # at the handle _make just registered (same rule as
+        # add_transform_controls).
+        with self._node_lifecycle_lock:
+            if self._handle_from_node_name.get(name) is node_handle:
+                self._handle_from_node_name[name] = handle
+        return handle
 
     @deprecated_positional_shim
     def add_mesh_simple(
@@ -2655,11 +2735,17 @@ class SceneApi:
             sync_cb=sync_cb,
         )
         handle = TransformControlsHandle(node_handle._impl, state_aux)
-        self._handle_from_transform_controls_name[name] = handle
         # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
         # the node map so removal via `reset()` / re-add dedup goes through the
-        # same path that cleans up the transform-controls registry.
-        self._handle_from_node_name[name] = handle
+        # same path that cleans up the transform-controls registry. Under the
+        # lifecycle lock, and only while the registry still points at the
+        # handle _make just registered: a concurrent remove()/reset() or
+        # same-name re-add in the gap must not have its result overwritten
+        # with a dead handle.
+        with self._node_lifecycle_lock:
+            if self._handle_from_node_name.get(name) is node_handle:
+                self._handle_from_transform_controls_name[name] = handle
+                self._handle_from_node_name[name] = handle
         return handle
 
     def reset(self) -> None:
@@ -2688,10 +2774,10 @@ class SceneApi:
         # maintains a registry of connected clients, or ClientHandle, which should
         # only ever be dealing with its own client_id.
         if isinstance(self._owner, ViserServer):
-            # TODO: there's a potential race condition here when the client disconnects.
-            # This probably applies to multiple other parts of the code, we should
-            # revisit all of the cases where we index into connected_clients.
-            return self._owner._connected_clients[client_id]
+            handle = self._owner._connected_clients.get(client_id)
+            if handle is None:
+                raise KeyError(f"No connected client with id {client_id}.")
+            return handle
         else:
             assert client_id == self._owner.client_id
             return self._owner
@@ -2746,20 +2832,18 @@ class SceneApi:
         client_id: ClientId,
         handle: TransformControlsHandle,
         phase: DragPhase,
+        event_client: ClientHandle | None = None,
     ) -> None:
         event = TransformControlsEvent(
-            client=self._get_client_handle(client_id),
+            client=event_client
+            if event_client is not None
+            else self._get_client_handle(client_id),
             client_id=client_id,
             target=handle,
             phase=phase,
         )
         for cb in handle._impl_aux.update_cb:
-            if asyncio.iscoroutinefunction(cb):
-                await cb(event)
-            else:
-                self._thread_executor.submit(cb, event).add_done_callback(
-                    print_threadpool_errors
-                )
+            await self._dispatch_callback(cb, event)
 
     async def _dispatch_callback(
         self,
@@ -2767,10 +2851,15 @@ class SceneApi:
         event: Any,
     ) -> None:
         """Run a user callback either via ``await`` (async) or via the
-        thread pool (sync). The thread-pool branch routes exceptions
-        through ``print_threadpool_errors``."""
+        thread pool (sync). Exceptions are reported and isolated in BOTH
+        branches (print_awaited_callback_error / print_threadpool_errors):
+        one throwing callback must not starve its sibling callbacks or
+        abort the caller (message dispatch, disconnect teardown)."""
         if asyncio.iscoroutinefunction(cb):
-            await cb(event)
+            try:
+                await cb(event)
+            except Exception as exc:
+                print_awaited_callback_error(exc)
         else:
             self._thread_executor.submit(cb, event).add_done_callback(
                 print_threadpool_errors
@@ -2852,6 +2941,7 @@ class SceneApi:
         client_id: ClientId,
         handle: _RaycastSupportedSceneNodeHandle,
         message: _messages.SceneNodeDragMessage,
+        event_client: ClientHandle | None = None,
     ) -> None:
         """Run all matching ``handle`` drag callbacks for ``message``.
 
@@ -2863,7 +2953,9 @@ class SceneApi:
             return
 
         event = SceneNodeDragEvent(
-            client=self._get_client_handle(client_id),
+            client=event_client
+            if event_client is not None
+            else self._get_client_handle(client_id),
             client_id=client_id,
             target=cast(_RaycastSupportedSceneNodeHandle, handle),
             phase=message.phase,
@@ -3179,12 +3271,18 @@ class SceneApi:
 
     def _fire_scene_pointer_done_callbacks(self) -> None:
         # Snapshot -- each cleanup may unregister itself via the same
-        # handle without breaking iteration.
+        # handle without breaking iteration. Exceptions are reported and
+        # isolated like every other callback path: one throwing cleanup
+        # must not starve its siblings or leave the list uncleared.
         for cleanup in list(self._scene_pointer_done_cb):
             if asyncio.iscoroutinefunction(cleanup):
-                self._event_loop.create_task(cleanup())
+                task = self._event_loop.create_task(cleanup())
+                task.add_done_callback(print_task_error)
             else:
-                cleanup()
+                try:
+                    cleanup()
+                except Exception as exc:
+                    print_awaited_callback_error(exc)
         self._scene_pointer_done_cb = []
 
     @deprecated_positional_shim
@@ -3242,7 +3340,21 @@ class SceneApi:
         # Store the typed handle (not the plain SceneNodeHandle from `_make`) in
         # the node map so removal via `reset()` / re-add dedup / cascading parent
         # removal cleans up the container's GUI children and registry entry.
-        self._handle_from_node_name[name] = handle
+        # Under the lifecycle lock, and only while the registry still points
+        # at the handle _make just registered: a concurrent remove()/reset()
+        # or same-name re-add in the gap must not have its result overwritten
+        # with a dead handle.
+        with self._node_lifecycle_lock:
+            if self._handle_from_node_name.get(name) is node_handle:
+                self._handle_from_node_name[name] = handle
+                registered = True
+            else:
+                registered = False
+        if not registered:
+            # Superseded in the gap: the constructor registered the container
+            # UUID, and the superseder only saw the plain base handle -- so
+            # release the orphan registration here (no children exist yet).
+            handle._on_remove()
         return handle
 
     def get_handle_by_name(self, name: str) -> SceneNodeHandle | None:

@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyPanelPlacement,
   dropOnDockedLeaf,
+  makeGroup,
   findGroupLocation,
   findPaneGroup,
   floatGroup,
@@ -1207,5 +1208,88 @@ describe("collapsed axis (D47)", () => {
     );
     expect(next.docked.left!.columns[0].railed).toBe(true);
     expect(next.floating).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// Independent axes (spec 8): a size/collapse-only bundle must NOT regather
+// panes the user tore out of the panel -- only a POSITION command
+// re-assembles the panel (D52). Regression: ensurePanelGroup regathered
+// unconditionally, so P.set_width() / P.minimize() on a two-tab panel whose
+// second tab the user tore into its own window silently destroyed that
+// window and merged the tab back.
+// ===========================================================================
+const OPTS = {
+  canvasBounds: { width: 1200, height: 800, leftInset: 0, rightInset: 0 },
+  floatIfUnplaced: false,
+};
+
+function tornLayout() {
+  const gA = makeGroup(["A"]);
+  const gB = makeGroup(["B"]);
+  const l = emptyLayout();
+  l.groups = { [gA.id]: gA, [gB.id]: gB };
+  l.floating = [
+    {
+      id: "wA",
+      x: 10,
+      y: 10,
+      width: 300,
+      height: { mode: "auto" as const },
+      stack: [gA.id],
+    },
+    {
+      id: "wB",
+      x: 400,
+      y: 10,
+      width: 300,
+      height: { mode: "auto" as const },
+      stack: [gB.id],
+    },
+  ];
+  return { l, gA, gB };
+}
+
+describe("size/collapse bundles never regather torn-out panes", () => {
+  it("width-only leaves the torn window intact and resizes only the home", () => {
+    const { l } = tornLayout();
+    const next = applyPanelPlacement(
+      l,
+      ["A", "B"],
+      { position: null, width: 400, collapsed: null },
+      () => null,
+      OPTS,
+    );
+    expect(next.floating.map((w) => w.id).sort()).toEqual(["wA", "wB"]);
+    expect(next.floating.find((w) => w.id === "wA")!.width).toBe(400);
+    expect(next.floating.find((w) => w.id === "wB")!.width).toBe(300);
+  });
+  it("collapse-only leaves the torn window intact", () => {
+    const { l } = tornLayout();
+    const next = applyPanelPlacement(
+      l,
+      ["A", "B"],
+      { position: null, collapsed: true },
+      () => null,
+      OPTS,
+    );
+    expect(next.floating.map((w) => w.id).sort()).toEqual(["wA", "wB"]);
+    expect(next.floating.find((w) => w.id === "wA")!.collapsed).toBe(true);
+    expect(next.floating.find((w) => w.id === "wB")!.collapsed).not.toBe(true);
+  });
+  it("a POSITION command still regathers (D52)", () => {
+    const { l } = tornLayout();
+    const next = applyPanelPlacement(
+      l,
+      ["A", "B"],
+      { position: { kind: "edge", edge: "right" }, collapsed: null },
+      () => null,
+      OPTS,
+    );
+    const gid = Object.keys(next.groups).find((g) =>
+      next.groups[g].paneIds.includes("A"),
+    )!;
+    expect(next.groups[gid].paneIds.sort()).toEqual(["A", "B"]);
+    expect(next.floating.length).toBe(0);
   });
 });

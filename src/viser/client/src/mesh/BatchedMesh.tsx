@@ -77,7 +77,13 @@ export const BatchedMesh = React.forwardRef<
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     return geometry;
-  }, [message.props.vertices.buffer, message.props.faces.buffer]);
+    // Keyed on the VIEWS, not their .buffer (BasicMesh's pattern): in a
+    // playback recording every array is a view on ONE shared ArrayBuffer,
+    // so .buffer identity never changes and a geometry update would
+    // silently keep the old mesh. Pose-stream props (batched_positions
+    // etc.) keep their identity across unrelated updates, so this does not
+    // rebuild per frame.
+  }, [message.props.vertices, message.props.faces]);
 
   // Clean up geometry when it changes.
   React.useEffect(() => {

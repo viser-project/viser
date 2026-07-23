@@ -243,3 +243,51 @@ def test_server_updates_text_value(
 
     handle.value = "updated"
     expect(text_input).to_have_value("updated", timeout=5_000)
+
+
+def test_order_update_reorders_live(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Setting `handle.order` after creation reorders the container live.
+
+    The client sorts containers by an order map written at add time; the
+    GuiUpdateMessage a server-side `handle.order = ...` sends must update that
+    map too, not just the per-component config -- previously the new order only
+    took effect after a reconnect."""
+    first = viser_server.gui.add_button("OrderFirst")
+    viser_server.gui.add_button("OrderSecond")
+
+    b1 = viser_page.get_by_role("button", name="OrderFirst")
+    b2 = viser_page.get_by_role("button", name="OrderSecond")
+    expect(b1).to_be_visible(timeout=5_000)
+    expect(b2).to_be_visible(timeout=5_000)
+
+    # Poll for the EXPECTED order: measuring right after the visibility waits
+    # can catch the panel mid-hydration (fractional, still-settling y's), so
+    # breaking on the first "distinct rows" measurement is itself racy.
+    def _ordered() -> bool:
+        r1 = b1.bounding_box()
+        r2 = b2.bounding_box()
+        return r1 is not None and r2 is not None and r1["y"] < r2["y"] - 1
+
+    for _ in range(30):
+        if _ordered():
+            break
+        viser_page.wait_for_timeout(100)
+    assert _ordered(), "creation order should render first above second"
+
+    # Move the first button below the second.
+    first.order = first.order + 10.0
+
+    def _flipped() -> bool:
+        r1 = b1.bounding_box()
+        r2 = b2.bounding_box()
+        return r1 is not None and r2 is not None and r1["y"] > r2["y"]
+
+    viser_page.wait_for_timeout(200)
+    for _ in range(20):
+        if _flipped():
+            break
+        viser_page.wait_for_timeout(100)
+    assert _flipped(), "order update should reorder the container without reconnect"

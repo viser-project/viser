@@ -164,6 +164,31 @@ describe("tabInsertion", () => {
     expect(ins.lineLeft).toBe(3);
   });
 
+  it("uses each tab's MODEL index, not its array position", () => {
+    // The collector omits tabs with nothing visible (clipped by the container
+    // edge or scrolled out of their column), so array positions no longer
+    // track the group's pane order. Here tabs 0 and 1 of a 4-tab strip were
+    // omitted; a drop after the first SURVIVING tab must insert at model
+    // index 3, not 1 -- otherwise the pane lands two slots too early.
+    const tabs = [
+      { rect: rect(200, 0, 100, 30), index: 2 },
+      { rect: rect(300, 0, 100, 30), index: 3 },
+    ];
+    expect(tabInsertion(tabs, 280, 15)!.index).toBe(3); // after model tab 2
+    expect(tabInsertion(tabs, 220, 15)!.index).toBe(2); // before model tab 2
+    expect(tabInsertion(tabs, 380, 15)!.index).toBe(4); // append past the end
+  });
+
+  it("falls back to array position when no index is given", () => {
+    // The in-strip reorder path passes a filtered "other tabs" array whose
+    // positions ARE the insertion positions it wants.
+    const tabs = [
+      { rect: rect(0, 0, 100, 30) },
+      { rect: rect(100, 0, 100, 30) },
+    ];
+    expect(tabInsertion(tabs, 180, 15)!.index).toBe(2);
+  });
+
   it("before a NON-leftmost tab keeps the line on the shared edge", () => {
     const tabs = [
       { rect: rect(0, 0, 100, 30) },
@@ -2060,6 +2085,121 @@ describe("unmergeable header acts as the dock-above / snap-above zone", () => {
     const l = layoutDockedRight();
     const targets: DropTargets = {
       groups: [unmergeableDockTarget(rect(680, 0, 320, 800))],
+    };
+    expect(hitTest(l, REGION_W, CONTAINER, targets, 840, 400)).toBeNull();
+  });
+
+  // D58: the dead center comes alive when the unmergeable panel HOSTS a
+  // nested area -- the drop routes into the area (its group appends a tab),
+  // and the hint draws over the area's own rect, not the pointer's zone.
+  function hostedArea(id: string, r: DOMRect, host = "ctrl"): GroupTarget {
+    return {
+      groupId: id,
+      rect: r,
+      stripRect: null,
+      tabs: [],
+      ctx: { kind: "area", areaId: `${id}-area` },
+      hostGroupId: host,
+    };
+  }
+  function layoutWithArea(areaIds: string[]) {
+    const l = layoutDockedRight();
+    for (const id of areaIds) {
+      l.groups[id] = { id, paneIds: [`${id}.0`], activeId: `${id}.0` };
+      l.areas = { ...l.areas, [`${id}-area`]: { group: id } };
+    }
+    return l;
+  }
+
+  it("D58: unmergeable center routes a mergeable drop into its hosted area", () => {
+    const l = layoutWithArea(["ta"]);
+    const areaRect = rect(690, 60, 300, 90);
+    const targets: DropTargets = {
+      groups: [
+        unmergeableDockTarget(rect(680, 0, 320, 800)),
+        hostedArea("ta", areaRect),
+      ],
+    };
+    const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 400)!;
+    expect(hit.result).toEqual({ kind: "merge", targetGroupId: "ta" });
+    // The hint fills the HOST cell like any other merge hint (the highlight
+    // marks the accepting surface; the tab lands in the hosted area).
+    expect(hit.hint.variant).toBe("merge");
+    const hostRect = rect(680, 0, 320, 800);
+    expect(hit.hint.top).toBeCloseTo(hostRect.top - CONTAINER.top);
+    expect(hit.hint.height).toBeCloseTo(hostRect.height);
+  });
+
+  it("D58: an unmergeable DRAG still nulls over the hosted-area center", () => {
+    const l = layoutWithArea(["ta"]);
+    const targets: DropTargets = {
+      groups: [
+        unmergeableDockTarget(rect(680, 0, 320, 800)),
+        hostedArea("ta", rect(690, 60, 300, 90)),
+      ],
+    };
+    expect(
+      hitTest(l, REGION_W, CONTAINER, targets, 840, 400, {
+        draggingUnmergeable: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("D58: with two hosted areas the nearest to the pointer wins", () => {
+    const l = layoutWithArea(["ta", "tb"]);
+    const targets: DropTargets = {
+      groups: [
+        unmergeableDockTarget(rect(680, 0, 320, 800)),
+        hostedArea("ta", rect(690, 60, 300, 90)),
+        hostedArea("tb", rect(690, 600, 300, 90)),
+      ],
+    };
+    const nearTop = hitTest(l, REGION_W, CONTAINER, targets, 840, 300)!;
+    expect(nearTop.result).toEqual({ kind: "merge", targetGroupId: "ta" });
+    const nearBottom = hitTest(l, REGION_W, CONTAINER, targets, 840, 520)!;
+    expect(nearBottom.result).toEqual({ kind: "merge", targetGroupId: "tb" });
+  });
+
+  it("D58: hovering the area's body inside an unmergeable host fills the host", () => {
+    // One drop surface, one look: the area-body hover must not show a
+    // second, smaller zone for the same destination.
+    const l = layoutWithArea(["ta"]);
+    const hostRect = rect(680, 0, 320, 800);
+    const areaRect = rect(690, 60, 300, 90);
+    const targets: DropTargets = {
+      groups: [unmergeableDockTarget(hostRect), hostedArea("ta", areaRect)],
+    };
+    // Pointer inside the area's body (below its strip-less top).
+    const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 120)!;
+    expect(hit.result).toEqual({ kind: "merge", targetGroupId: "ta" });
+    expect(hit.hint.top).toBeCloseTo(hostRect.top - CONTAINER.top);
+    expect(hit.hint.height).toBeCloseTo(hostRect.height);
+  });
+
+  it("D58: inside a MERGEABLE host the area keeps its area-sized hint", () => {
+    // There the host's own merge is a different destination, so the two
+    // zones legitimately look different.
+    const l = layoutWithArea(["ta"]);
+    const areaRect = rect(690, 60, 300, 90);
+    const host = unmergeableDockTarget(rect(680, 0, 320, 800));
+    host.unmergeable = false;
+    const targets: DropTargets = {
+      groups: [host, hostedArea("ta", areaRect)],
+    };
+    const hit = hitTest(l, REGION_W, CONTAINER, targets, 840, 120)!;
+    expect(hit.result).toEqual({ kind: "merge", targetGroupId: "ta" });
+    expect(hit.hint.top).toBeCloseTo(areaRect.top - CONTAINER.top);
+    expect(hit.hint.height).toBeCloseTo(areaRect.height);
+  });
+
+  it("D58: an area hosted by a DIFFERENT panel never claims the center", () => {
+    const l = layoutWithArea(["ta"]);
+    const targets: DropTargets = {
+      groups: [
+        unmergeableDockTarget(rect(680, 0, 320, 800)),
+        // Same geometry, but hosted elsewhere: no cross-panel routing.
+        hostedArea("ta", rect(690, 60, 300, 90), "other"),
+      ],
     };
     expect(hitTest(l, REGION_W, CONTAINER, targets, 840, 400)).toBeNull();
   });

@@ -264,20 +264,77 @@ export function TabGroupFrame({
 
   const stripRef = React.useRef<HTMLDivElement>(null);
 
-  // The panel body, by context:
+  // The panel bodies, by context:
   // - Floating (non-fill, content-sized): hidden (not unmounted) when
   //   collapsed, so the window auto-resizes to just its chrome and pane state
   //   survives minimize.
   // - Docked (fill): the leaf fills its region via flex; when collapsed the
   //   group shrinks to its handle + strip and the body is hidden.
-  const body = (
-    <PanelBody
-      panel={activePane}
-      fill={fill}
-      maxContentHeight={maxContentHeight}
-      persistentScrollbar={persistentScrollbar}
-    />
-  );
+  //
+  // Every VISITED pane stays mounted; a tab switch only flips which one
+  // displays. Unmounting the inactive pane would tear down its whole GUI
+  // tree (plot instances, scroll position, uncommitted input) on each
+  // switch -- the same hide-not-unmount rule the collapse path below
+  // applies, and the behavior of the inline (non-dock) tab groups. Lazy on
+  // first visit: a never-activated tab renders nothing, so a tab-heavy
+  // panel doesn't initialize every plot at connect. A hidden pane costs
+  // its subscriptions but contributes no layout (display:none), so
+  // auto-height windows still size to the active pane alone. The empty
+  // case (an area's bare backing group, activeId === null) renders the
+  // single placeholder body that gives the area's drop surface its chrome.
+  // Recorded in an effect, not during render: an interrupted (concurrent)
+  // render must not mark its pane visited, or an abandoned tab switch would
+  // mount a never-shown pane's body. The ACTIVE pane renders unconditionally
+  // below, so the effect's one-commit lag is invisible.
+  const visitedPanes = React.useRef<Set<string>>(new Set());
+  React.useEffect(() => {
+    if (group.activeId !== null) visitedPanes.current.add(group.activeId);
+  }, [group.activeId]);
+  const body =
+    group.paneIds.length === 0 ? (
+      <PanelBody
+        panel={activePane}
+        fill={fill}
+        maxContentHeight={maxContentHeight}
+        persistentScrollbar={persistentScrollbar}
+      />
+    ) : (
+      <>
+        {group.paneIds.map((paneId) => {
+          const active = paneId === group.activeId;
+          if (!active && !visitedPanes.current.has(paneId)) return null;
+          return (
+            <Box
+              key={paneId}
+              style={
+                fill
+                  ? {
+                      // The active fill pane passes the fill flex chain
+                      // through this wrapper, so the ScrollArea inside keeps
+                      // the definite height it needs to scroll.
+                      display: active ? "flex" : "none",
+                      flexDirection: "column",
+                      flexGrow: 1,
+                      flexBasis: 0,
+                      minHeight: 0,
+                      minWidth: 0,
+                      width: "100%",
+                      overflow: "hidden",
+                    }
+                  : { display: active ? undefined : "none" }
+              }
+            >
+              <PanelBody
+                panel={panes[paneId]}
+                fill={fill}
+                maxContentHeight={maxContentHeight}
+                persistentScrollbar={persistentScrollbar}
+              />
+            </Box>
+          );
+        })}
+      </>
+    );
   const contents = fill ? (
     // Docked: the body stays mounted and fills the group's flexible area
     // (flex-grow 1, flex-basis 0, overflow hidden). The COLLAPSE animation lives

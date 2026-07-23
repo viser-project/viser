@@ -29,6 +29,18 @@ export interface DockApi {
   /** Add a not-yet-placed pane to an area's tabs (creates the area if
    * needed). No-op if the pane is already placed anywhere. */
   addPaneToArea: (areaId: AreaId, paneId: PaneId, index?: number) => void;
+  /** The newest USER-gesture stamp over the given panes' CONTAINER
+   * signatures -- each pane is stamped when a user commit changes its
+   * container's collapse flag or which container holds it (see
+   * layoutOps.paneContainerSignatures). Monotonic, ref-backed (never
+   * re-renders anyone). A sync layer that must DEFER an application samples
+   * this for the target panel's panes when it queues and re-checks before it
+   * applies: an advanced stamp means the user touched THAT panel's
+   * container, and P6 says the user's arrangement stands until the server
+   * re-asserts by SENDING. Scoped per pane so an unrelated panel's gesture
+   * never invalidates a queued command, and blind to geometry/tab-activation
+   * gestures, which cannot contend with a collapse axis. */
+  getPaneArrangementStamp: (paneIds: readonly PaneId[]) => number;
 }
 
 export interface DockContextValue {
@@ -100,6 +112,12 @@ export interface DockContextValue {
   /** Toggle the collapse flag of the group's container (D38) -- driven only
    * from a single-group floating window's chrome (D32). */
   toggleCollapsed: (groupId: GroupId) => void;
+  /** Collapse/expand a whole floating stack -- the window header's toggle
+   * (D38's one flag, both directions). A USER commit like railColumn and
+   * collapseRegion: routing it through `api.apply` would mark the gesture
+   * PROGRAMMATIC, so ownership arbitration would never learn the user
+   * collapsed the window and a stale server command could re-flip it (P6). */
+  setStackCollapsed: (stack: GroupId[], collapsed: boolean) => void;
   /** Rail every column of a docked edge (the region chevron; the packed
    * reading is derived, D44/D46). Collapse-only: expansion is granular via
    * each strip's own header. A user commit (not runProgrammatic), so

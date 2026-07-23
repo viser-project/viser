@@ -147,6 +147,28 @@ def _drop_on_seam(dock_context, vite_server: int, which: str) -> list[str] | Non
         page.close()
 
 
+def test_right_of_A_and_left_of_B_are_the_same_seam_insert(
+    dock_context, vite_server: int
+) -> None:
+    """Restored from pre-#711 (the helper above had been orphaned): both side
+    bands resolve to the ONE canonical columnInsert at the A|B seam (D55)."""
+    order_right = _drop_on_seam(dock_context, vite_server, "right")
+    order_left = _drop_on_seam(dock_context, vite_server, "left")
+    if order_right is None or order_left is None:
+        pytest.skip("did not form the expected 3-column region this run")
+
+    # Both drops insert the new panel (c) as a column on the A|B seam, i.e.
+    # BETWEEN the two original columns -> identical left-to-right order.
+    assert order_right == order_left, (
+        f"right-of-A and left-of-B gave different results: "
+        f"{order_right} vs {order_left}"
+    )
+    # And the inserted column is in the middle (between the two originals).
+    assert order_right[1] != order_right[0] and order_right[1] != order_right[2]
+    # Sanity: all three panels present.
+    assert sorted(order_right) == sorted(set(order_right)) and len(order_right) == 3
+
+
 # ===========================================================================
 # Drop-hint visual consistency: split / span previews are all thin LINES, not a
 # mix of lines and filled rectangles.
@@ -402,6 +424,306 @@ def test_seam_leaf_insert_has_real_height(dock_context, vite_server: int) -> Non
         box = _leaf_box(page, "t-console")
         assert box is not None and box["h"] > 60, (
             f"seam-inserted leaf should have a real height, got {box}"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# Drop zones over a floating window whose content is taller than the container
+# use the VISUAL (clipped) height, not the content height. An auto-height
+# window may legally overflow the container bottom (the corner clamp keeps
+# only its top-left reachable); the overflow is invisible (dock root clips
+# paint), so the merge zone must end at the container edge and the snap-below
+# band/hint must sit on-screen -- not at the off-screen content bottom.
+# ===========================================================================
+def test_tall_window_drop_zones_use_visual_height(
+    dock_context, vite_server: int
+) -> None:
+    page = _open(dock_context, vite_server, 1280, 420)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                floating=[
+                    # console renders 20 text lines: taller than the 420px
+                    # viewport as an auto-height window.
+                    _window("console", x=990, y=10, width=280),
+                    _window("controls", x=60, y=40, width=240),
+                ],
+            ),
+        )
+        geo = page.evaluate(
+            """() => {
+            const win = document.querySelector(
+                '[data-floating-window="t-w-console"]');
+            const r = win.getBoundingClientRect();
+            return { bottom: r.bottom, top: r.top, x: r.x, w: r.width,
+                     vh: window.innerHeight };
+        }"""
+        )
+        if geo["bottom"] <= geo["vh"] + 4:
+            pytest.skip("window did not overflow the container this run")
+
+        # Drag `controls` by its grip and probe two pointer positions over the
+        # tall window, reading the live drop hint each time.
+        start = page.eval_on_selector(
+            '[data-floating-window="t-w-controls"] [data-dock-griphandle]',
+            "e => { const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+        )
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+        cx = geo["x"] + geo["w"] / 2
+
+        def hint_at(y: float) -> dict | None:
+            page.mouse.move(cx, y)
+            page.wait_for_timeout(50)
+            return page.evaluate(
+                """() => {
+                const el = document.querySelector('[data-dock-hint]');
+                if (el === null) return null;
+                return { variant: el.getAttribute('data-dock-hint'),
+                         top: parseFloat(el.style.top),
+                         height: parseFloat(el.style.height) };
+            }"""
+            )
+
+        try:
+            # Mid-panel: merge highlight covers the VISIBLE part only.
+            mid = hint_at((geo["top"] + geo["vh"]) / 2)
+            assert mid is not None and mid["variant"] == "merge", (
+                f"expected a merge hint mid-panel, got {mid}"
+            )
+            assert mid["top"] + mid["height"] <= geo["vh"] + 4, (
+                f"merge hint extends past the container bottom: {mid} "
+                f"(container height {geo['vh']})"
+            )
+            # Near the container bottom: the snap-below band must be
+            # reachable, with its line painted on-screen.
+            low = hint_at(geo["vh"] - 6)
+            assert low is not None and low["variant"] == "line", (
+                f"expected the snap-below line near the container bottom, got {low}"
+            )
+            assert low["top"] <= geo["vh"], f"snap-below hint off-screen: {low}"
+        finally:
+            page.keyboard.press("Escape")
+            page.mouse.up()
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# The split-above hint LINE lands at the honest seam -- below the column's own
+# parent handle (D27), where the new cell actually goes -- not at the top of
+# that handle. The hit ZONE still covers the handle band (P5: no no-drop
+# hole), but the line is honest (P1). Regression: a multi-column region draws
+# a per-column handle, and the first cell's hit-zone extension over it was
+# also moving the line, so "drop above the innermost column" pointed at the
+# handle's own top edge instead of the landing seam -- unlike the visually
+# identical single-column case.
+# ===========================================================================
+def test_split_above_line_sits_below_the_column_handle(
+    dock_context, vite_server: int
+) -> None:
+    from .dock_helpers import columns as _columns
+
+    page = _open(dock_context, vite_server, 1400, 700)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_columns("console", "inspector"),
+                floating=[_window("history", x=80, y=300, width=220)],
+            ),
+        )
+        geo = page.evaluate(
+            """() => [...document.querySelectorAll('[data-dock-column]')]
+                .map((c) => {
+                    const h = c.querySelector('[data-dock-column-handle]');
+                    const leaf = c.querySelector('[data-dock-leaf]');
+                    const cr = c.getBoundingClientRect();
+                    const hr = h.getBoundingClientRect();
+                    const lr = leaf.getBoundingClientRect();
+                    return { x: cr.x, cx: cr.x + cr.width / 2,
+                             handleTop: hr.top, handleMid: hr.y + hr.height / 2,
+                             leafTop: lr.top };
+                }).sort((a, b) => a.x - b.x)"""
+        )
+        assert len(geo) == 2, f"expected a 2-column region, got {geo}"
+
+        start = page.eval_on_selector(
+            '[data-floating-window="t-w-history"] [data-dock-griphandle]',
+            "e => { const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+        )
+        for i, col in enumerate(geo):
+            page.mouse.move(*start)
+            page.mouse.down()
+            page.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+            page.mouse.move(col["cx"], col["handleMid"], steps=4)
+            page.wait_for_timeout(90)
+            hint = page.evaluate(
+                """() => {
+                const el = document.querySelector('[data-dock-hint]');
+                if (el === null) return null;
+                return { variant: el.getAttribute('data-dock-hint'),
+                         top: parseFloat(el.style.top) };
+            }"""
+            )
+            page.keyboard.press("Escape")
+            page.mouse.up()
+            page.wait_for_timeout(120)
+            assert hint is not None and hint["variant"] == "line", (
+                f"column {i}: the handle band must stay droppable, got {hint}"
+            )
+            # The line sits at the leaf's top (the landing seam), NOT at the
+            # column handle's top. The hint element is container-relative and
+            # a couple of px tall, so allow a small tolerance.
+            assert abs(hint["top"] - col["leafTop"]) <= 4, (
+                f"column {i}: split-above line at {hint['top']}, expected the "
+                f"landing seam ~{col['leafTop']} (handle top is "
+                f"{col['handleTop']} -- drawing there claims the column "
+                f"handle's own pixels)"
+            )
+
+        # And the drop itself lands ABOVE the first cell of the targeted
+        # column (never-skipped landing check; subsumes the old separate
+        # column-handle-band test).
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+        page.mouse.move(geo[0]["cx"], geo[0]["handleMid"], steps=4)
+        page.wait_for_timeout(90)
+        page.mouse.up()
+        page.wait_for_timeout(200)
+        lay = _layout(page)
+        cols = lay["docked"]["right"]["columns"]
+        target_col = next(
+            c
+            for c in cols
+            if any(
+                lay["groups"][leaf["group"]]["paneIds"] == ["history"]
+                for leaf in c["leaves"]
+            )
+        )
+        pane_order = [
+            lay["groups"][leaf["group"]]["paneIds"][0] for leaf in target_col["leaves"]
+        ]
+        assert pane_order[0] == "history" and len(pane_order) == 2, (
+            f"expected the drop stacked above the column's first cell, got {pane_order}"
+        )
+    finally:
+        page.close()
+
+
+# ===========================================================================
+# D57: content side bands outrank the top/bottom split bands -- hovering a
+# docked cell's left/right edge means "dock beside" at ANY height, corners
+# included, and merge-suppressed (unmergeable) targets behave exactly like
+# ordinary ones. Regression: the vertical bands were checked first, so the
+# corners resolved to above/below -- worst on the unmergeable control panel,
+# whose extra top band pushed the side band's start a full band lower than
+# on other panels (user report: "docking left of it only works near the
+# vertical middle").
+# ===========================================================================
+def test_side_band_wins_corners_for_unmergeable_and_mergeable(
+    dock_context, vite_server: int
+) -> None:
+    from .dock_helpers import columns as _columns
+
+    for pane in ("monitor", "console"):
+        page = _open(dock_context, vite_server, 1400, 700)
+        try:
+            _set_layout(
+                page,
+                _dock_layout(
+                    docked_right=_columns(pane),
+                    floating=[_window("history", x=80, y=300, width=220)],
+                ),
+            )
+            box = page.eval_on_selector(
+                f'[data-dock-group="t-{pane}"]',
+                "e => { const r = e.getBoundingClientRect();"
+                " return { x: r.x, y: r.y, h: r.height }; }",
+            )
+            strip_bottom = page.eval_on_selector(
+                f'[data-dock-group="t-{pane}"]',
+                """e => { const s = e.querySelector('[data-dock-strip]');
+                    const hdr = e.querySelector('[data-dock-header]');
+                    const el = s ?? hdr ?? e;
+                    return el.getBoundingClientRect().bottom; }""",
+            )
+            start = page.eval_on_selector(
+                '[data-floating-window="t-w-history"] [data-dock-griphandle]',
+                "e => { const r = e.getBoundingClientRect();"
+                " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+            )
+            page.mouse.move(*start)
+            page.mouse.down()
+            page.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+            x = box["x"] + 10  # well inside the left side band
+            bottom = box["y"] + box["h"]
+            # Sample the side band just below the chrome, at mid-height, and
+            # deep in the bottom corner: every one must be the region-tall
+            # column-insert line (height >> panel width), never a horizontal
+            # split line.
+            for y in (strip_bottom + 30, (strip_bottom + bottom) / 2, bottom - 12):
+                page.mouse.move(x, y, steps=2)
+                page.wait_for_timeout(60)
+                hint = page.evaluate(
+                    """() => {
+                    const el = document.querySelector('[data-dock-hint]');
+                    if (el === null) return null;
+                    return { v: el.getAttribute('data-dock-hint'),
+                             w: parseFloat(el.style.width),
+                             h: parseFloat(el.style.height) }; }"""
+                )
+                assert hint is not None and hint["v"] == "line", (
+                    f"{pane}: no line hint in the side band at y={y}: {hint}"
+                )
+                assert hint["h"] > hint["w"], (
+                    f"{pane}: expected the region-tall column-insert line in "
+                    f"the side band at y={y}, got a horizontal split "
+                    f"line {hint}"
+                )
+            page.keyboard.press("Escape")
+            page.mouse.up()
+        finally:
+            page.close()
+
+
+# ===========================================================================
+# D57: the outer edge gutter reaches the screen edge -- a drop slammed flush
+# against the screen (x = viewport-1) docks a new outermost column instead of
+# finding no target (user report: "if I move my mouse too far to the right,
+# the dropzone doesn't work").
+# ===========================================================================
+def test_flush_screen_edge_docks_outermost_column(
+    dock_context, vite_server: int
+) -> None:
+    from .dock_helpers import columns as _columns
+
+    page = _open(dock_context, vite_server, 1400, 700)
+    try:
+        _set_layout(
+            page,
+            _dock_layout(
+                docked_right=_columns("console"),
+                floating=[_window("history", x=80, y=300, width=220)],
+            ),
+        )
+        # Drag flush against the right screen edge at mid-height and DROP.
+        _drag_group(page, "t-history", (1399, 350))
+        lay = _layout(page)
+        cols = lay["docked"]["right"]["columns"]
+        pane_order = [
+            lay["groups"][c["leaves"][0]["group"]]["paneIds"][0] for c in cols
+        ]
+        assert pane_order == ["console", "history"], (
+            f"expected the flush-edge drop to dock history as the NEW "
+            f"OUTERMOST column, got {pane_order}"
         )
     finally:
         page.close()

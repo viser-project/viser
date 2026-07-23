@@ -13,9 +13,12 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 import warnings
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, cast
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -23,6 +26,8 @@ import pytest
 import viser
 from viser import _messages
 from viser.infra import ClientId
+
+from .thread_isolation import run_isolated
 
 
 @contextmanager
@@ -170,7 +175,7 @@ def test_transform_controls_drag_end_after_mid_drag_removal() -> None:
                 cid, _messages.TransformControlsDragEndMessage(name="/parent/gizmo")
             )
 
-        asyncio.run(drive())
+        run_isolated(lambda: asyncio.run(drive()))
 
         assert phases == ["start", "end"], phases
         # The active-drag entry is released on end (no leak).
@@ -216,7 +221,7 @@ def test_transform_controls_late_update_leaves_no_stale_pose() -> None:
                 cid, _messages.TransformControlsDragEndMessage(name="/parent/gizmo")
             )
 
-        asyncio.run(drive())
+        run_isolated(lambda: asyncio.run(drive()))
 
         # The update + end callbacks still fire for the user.
         assert phases == ["start", "update", "end"], phases
@@ -523,3 +528,865 @@ def test_zero_byte_upload_completes() -> None:
             and getattr(m, "transfer_uuid", None) == "t0"
             for m in buf.values()
         )
+
+
+def test_gui_update_callback_writeback_wins_in_broadcast_buffer() -> None:
+    """An ``on_update`` callback that writes back (e.g. clamps the value) must
+    win in the broadcast buffer. The client-update echo (``sync_cb``) used to
+    be queued AFTER the awaited callbacks, so the callback's own broadcast was
+    clobbered by the stale pre-clamp echo: every other client and every late
+    joiner kept the un-clamped value while the server held the clamped one."""
+    with _server() as server:
+        slider = server.gui.add_slider(
+            "s", min=0.0, max=10.0, step=0.1, initial_value=1.0
+        )
+
+        @slider.on_update
+        async def _(event: viser.GuiEvent) -> None:
+            # Clamp: anything above 5 snaps back to 5.
+            slider.value = min(slider.value, 5.0)
+
+        # Simulate a connected client editing the slider to 7.0.
+        cid = ClientId(0)
+        server._connected_clients[0] = cast(viser.ClientHandle, object())
+        try:
+            run_isolated(
+                lambda: asyncio.run(
+                    server.gui._handle_gui_updates(
+                        cid,
+                        _messages.GuiUpdateMessage(
+                            uuid=slider._impl.uuid, updates={"value": 7.0}
+                        ),
+                    )
+                )
+            )
+        finally:
+            server._connected_clients.pop(0, None)
+
+        assert slider.value == 5.0  # The clamp applied on the server.
+        # The buffer's surviving update for this element carries the CLAMPED
+        # value: it is what a late joiner replays.
+        buffered = [
+            m
+            for m in server._websock_server._broadcast_buffer.message_from_id.values()
+            if isinstance(m, _messages.GuiUpdateMessage)
+            and m.uuid == slider._impl.uuid
+            and "value" in m.updates
+        ]
+        assert buffered, "expected a buffered value update for the slider"
+        assert buffered[-1].updates["value"] == 5.0, (
+            f"late joiners would replay {buffered[-1].updates['value']}, but the "
+            "server value is 5.0"
+        )
+
+
+def test_disconnect_drag_drain_survives_throwing_callback() -> None:
+    """A throwing async drag-end callback must not strand the client's OTHER
+    in-flight drag entries (each pins a handle and blocks a future remove()
+    from clearing its callbacks) or abort the disconnect teardown."""
+    cid = ClientId(0)
+    with _server() as server:
+        scene = server.scene
+        scene.add_frame("/parent")
+        tc_a = scene.add_transform_controls("/parent/giz_a")
+        tc_b = scene.add_transform_controls("/parent/giz_b")
+        fired: list[str] = []
+
+        @tc_a.on_update
+        async def _(event: viser.TransformControlsEvent) -> None:
+            if event.phase == "end":
+                fired.append("a")
+                raise RuntimeError("boom")
+
+        @tc_b.on_update
+        async def _(event: viser.TransformControlsEvent) -> None:
+            if event.phase == "end":
+                fired.append("b")
+
+        scene._get_client_handle = lambda *_a: None  # type: ignore[assignment, return-value]
+
+        async def drive() -> None:
+            await scene._handle_transform_controls_drag_start(
+                cid, _messages.TransformControlsDragStartMessage(name="/parent/giz_a")
+            )
+            await scene._handle_transform_controls_drag_start(
+                cid, _messages.TransformControlsDragStartMessage(name="/parent/giz_b")
+            )
+            await scene._drop_active_drags_for_client(cid)
+
+        run_isolated(lambda: asyncio.run(drive()))
+
+        assert fired == ["a", "b"], fired  # b fired despite a's exception.
+        assert scene._active_transform_drag_handles == {}  # no strands.
+
+
+def test_skinned_mesh_typed_handle_registered_and_bone_guard() -> None:
+    """The registry must hold the typed MeshSkinnedHandle (click/drag events
+    resolve their target through it, and it carries ``.bones``), and bone
+    writes on a removed mesh must raise instead of queuing SetBone ghosts
+    for the dead name."""
+    with _server() as server:
+        v = 5
+        mesh = server.scene.add_mesh_skinned(
+            "/skinned",
+            np.random.rand(v, 3).astype(np.float32),
+            np.array([[0, 1, 2]], np.uint32),
+            bone_wxyzs=np.tile([1.0, 0.0, 0.0, 0.0], (2, 1)),
+            bone_positions=np.zeros((2, 3)),
+            skin_weights=np.random.rand(v, 2).astype(np.float32),
+        )
+        registered = server.scene._handle_from_node_name["/skinned"]
+        assert registered is mesh, (
+            "registry must hold the typed skinned handle, not the plain "
+            "MeshHandle -- event dispatch resolves targets through it"
+        )
+        # A BARE name (no leading slash) must behave identically: _make
+        # normalizes internally, so without upfront normalization the typed
+        # swap keyed on the raw name silently missed and bone messages went
+        # out addressed to a name no client node has.
+        bare = server.scene.add_mesh_skinned(
+            "bare_skinned",
+            np.random.rand(v, 3).astype(np.float32),
+            np.array([[0, 1, 2]], np.uint32),
+            bone_wxyzs=np.tile([1.0, 0.0, 0.0, 0.0], (2, 1)),
+            bone_positions=np.zeros((2, 3)),
+            skin_weights=np.random.rand(v, 2).astype(np.float32),
+        )
+        assert server.scene._handle_from_node_name["/bare_skinned"] is bare
+        bare.bones[1].position = (0.0, 0.0, 3.0)
+        bone_msgs = [
+            m
+            for m in server._websock_server._broadcast_buffer.message_from_id.values()
+            if isinstance(m, _messages.SetBonePositionMessage)
+        ]
+        assert bone_msgs and all(m.name == "/bare_skinned" for m in bone_msgs), (
+            f"bone messages must use the normalized node name: "
+            f"{[m.name for m in bone_msgs]}"
+        )
+        bare.remove()
+        mesh.bones[0].position = (0.0, 0.0, 1.0)  # Fine while live.
+        mesh.remove()
+        with pytest.raises(RuntimeError, match="removed"):
+            mesh.bones[0].position = (0.0, 0.0, 2.0)
+        with pytest.raises(RuntimeError, match="removed"):
+            mesh.bones[1].wxyz = (1.0, 0.0, 0.0, 0.0)
+        # No SetBone message for the dead name lingers in the buffer.
+        stale = [
+            m
+            for m in server._websock_server._broadcast_buffer.message_from_id.values()
+            if isinstance(
+                m,
+                (_messages.SetBonePositionMessage, _messages.SetBoneOrientationMessage),
+            )
+        ]
+        assert stale == [], stale
+
+
+def test_gui_input_validation_rejects_degenerate_inputs() -> None:
+    """Wrong-arity vectors, out-of-range initial values, inverted bounds, and
+    unsorted multi-slider values raise ValueError instead of silently
+    desyncing from the client's fixed-arity inputs / clamped controls."""
+    with _server() as server:
+        g = server.gui
+        with pytest.raises(ValueError):
+            g.add_vector3("v", (1.0, 2.0))  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            g.add_vector2("v2", (1.0, 2.0, 3.0))  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            g.add_vector3("v3", (1, 2, 3), min=(0, 0, 0, 0))  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            g.add_vector2("v4", (1, 1), min=(2, 2), max=(0, 0))
+        with pytest.raises(ValueError):
+            g.add_number("n", 100, min=0, max=10)
+        with pytest.raises(ValueError):
+            g.add_number("n2", 5, min=10, max=0)
+        with pytest.raises(ValueError):
+            g.add_slider("s", min=0, max=10, step=1, initial_value=20)
+        with pytest.raises(ValueError):
+            g.add_slider("s2", min=10, max=0, step=1, initial_value=5)
+        with pytest.raises(ValueError):
+            g.add_multi_slider("m", min=0, max=10, step=1, initial_value=(8, 2, 5))
+        # A degenerate min == max slider stays legal, with a nonzero step.
+        inert = g.add_slider("s3", min=5, max=5, step=1, initial_value=5)
+        assert inert.value == 5
+        assert inert.step > 0
+        # NaN initial value (add_number) -- was accepted (bare < is False for
+        # NaN); now rejected like add_slider.
+        with pytest.raises(ValueError):
+            g.add_number("nan", float("nan"), min=0, max=10)
+        # step <= 0 on all three.
+        with pytest.raises(ValueError):
+            g.add_number("z1", 5, step=0)
+        with pytest.raises(ValueError):
+            g.add_slider("z2", min=0, max=10, step=0, initial_value=5)
+        with pytest.raises(ValueError):
+            g.add_multi_slider("z3", min=0, max=10, step=-1, initial_value=(2, 5))
+        # multi_slider min_range exceeding the range.
+        with pytest.raises(ValueError):
+            g.add_multi_slider(
+                "mr", min=0, max=10, step=1, min_range=999, initial_value=(2, 5)
+            )
+        # Vector component VALUES checked against bounds (not just min<=max).
+        with pytest.raises(ValueError):
+            g.add_vector3("vv", (100, 100, 100), min=(0, 0, 0), max=(1, 1, 1))
+        # Valid forms still work.
+        g.add_vector3("okv", (1.0, 2.0, 3.0), min=(0, 0, 0), max=(5, 5, 5))
+        g.add_number("okn", 5, min=0, max=10)
+        g.add_multi_slider(
+            "okm", min=0, max=10, step=1, min_range=2, initial_value=(2, 5, 8)
+        )
+
+
+def test_camera_setter_rolls_back_on_invalid() -> None:
+    """A degenerate/non-finite camera assignment must raise WITHOUT leaving the
+    handle half-updated (state mutated, orientation stale, client desynced):
+    the setter validates and rolls back before queuing its message."""
+
+    class _Conn:
+        def queue_message(self, m: object) -> None:
+            raise AssertionError("no message must be queued on a failed set")
+
+    class _Client:
+        _websock_connection = _Conn()
+
+    from viser._viser import CameraHandle, _CameraHandleState
+
+    ch = CameraHandle.__new__(CameraHandle)
+    ch._state = _CameraHandleState(
+        client=_Client(),  # type: ignore[arg-type]
+        wxyz=np.array([1.0, 0.0, 0.0, 0.0]),
+        position=np.array([0.0, 0.0, 0.0]),
+        fov=1.0,
+        image_height=1,
+        image_width=1,
+        near=0.01,
+        far=1000.0,
+        min_orbit_distance=0.01,
+        max_orbit_distance=1e4,
+        look_at=np.array([0.0, 0.0, 5.0]),
+        up_direction=np.array([0.0, 1.0, 0.0]),
+        update_timestamp=1.0,
+        camera_cb=[],
+    )
+    before = ch._state.look_at.copy()
+    with pytest.raises(ValueError):
+        ch.look_at = np.array([np.nan, 0.0, 0.0])
+    assert np.array_equal(ch._state.look_at, before)  # rolled back, nothing queued
+
+
+def test_color_tuple_is_clamped() -> None:
+    """Tuple/scalar colors are clamped to [0, 255] like array colors. Out-of-
+    range channels used to pass through verbatim (bleeding into adjacent bytes
+    on the client via rgbToInt shifts), and an extreme float overflowed
+    msgpack's int range at buffer-flush time -- a crash far from the call."""
+    from viser._scene_api import _encode_rgb
+
+    assert _encode_rgb((300, 0, 0)) == (255, 0, 0)
+    assert _encode_rgb((-5, 0, 0)) == (0, 0, 0)
+    assert _encode_rgb((2.0, 0, 0)) == (255, 0, 0)  # float > 1.0
+    assert _encode_rgb((1e30, 0, 0)) == (255, 0, 0)  # no OverflowError at flush
+    assert _encode_rgb((0.5, 0.5, 0.5)) == (127, 127, 127)  # int() truncation
+    assert _encode_rgb((255, 128, 0)) == (255, 128, 0)
+    # Non-finite channels match the array path (colors_to_uint8) instead of
+    # crashing at int(): NaN -> 0, +Inf -> 255, -Inf -> 0.
+    assert _encode_rgb((float("nan"), 0, 0)) == (0, 0, 0)
+    assert _encode_rgb((float("inf"), 0, 0)) == (255, 0, 0)
+    assert _encode_rgb((float("-inf"), 0, 0)) == (0, 0, 0)
+    # A mesh with an out-of-range color no longer crashes at flush.
+    with _server() as server:
+        import numpy as np
+
+        server.scene.add_mesh_simple(
+            "/m",
+            np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], np.float32),
+            np.array([[0, 1, 2]], np.uint32),
+            color=(300, 0, 0),
+        )
+        server.flush()
+
+
+def test_folder_and_tab_not_reentrant_into_self() -> None:
+    """Nesting a folder/tab context inside ITSELF raises clearly instead of
+    corrupting the container pointer (a single restore slot can't nest), which
+    used to silently misplace every subsequently-added element into the
+    folder. Sequential re-entry stays valid."""
+    with _server() as server:
+        g = server.gui
+        f = g.add_folder("F")
+        with pytest.raises(RuntimeError, match="already active"):
+            with f:
+                with f:
+                    pass
+        # Sequential re-entry works, and the container pointer is restored to
+        # root afterwards (no leaked nesting).
+        with f:
+            g.add_button("in1")
+        with f:
+            g.add_button("in2")
+        assert g.add_button("stray")._impl.parent_container_id == "root"
+
+        t = g.add_tab_group().add_tab("T")
+        with pytest.raises(RuntimeError, match="already active"):
+            with t:
+                with t:
+                    pass
+
+
+def test_numpy_bool_serializes() -> None:
+    """np.bool_ (from mask.any(), arr > 0, etc.) must serialize: it is neither
+    np.floating nor np.integer, so it passed through unconverted and crashed
+    the broadcast producer at encode -- tearing down every client, and
+    re-crashing on reconnect (the message is persistent)."""
+    import msgspec.msgpack
+
+    from viser import _messages
+
+    for val in (np.bool_(True), np.array([1, 0]).any(), np.False_):
+        d = _messages.SetSceneNodeVisibilityMessage("/x", val).as_serializable_dict([])
+        msgspec.msgpack.encode(d)  # must not raise
+        assert isinstance(d["visible"], bool)
+    d = _messages.GuiUpdateMessage("u", {"value": np.bool_(True)}).as_serializable_dict(
+        []
+    )
+    msgspec.msgpack.encode(d)
+    # Same crash class: np.str_ / np.bytes_ (from a numpy string array -- names,
+    # labels) also can't be msgpack-encoded and bricked the producer.
+    for val in (np.array(["frame_a"])[0], np.array([b"x"])[0]):
+        d = _messages.SetSceneNodeVisibilityMessage(val, True).as_serializable_dict([])
+        msgspec.msgpack.encode(d)  # must not raise
+        assert type(d["name"]) in (str, bytes)
+    with _server() as server:
+        # End-to-end: setting visibility from a numpy bool does not crash flush,
+        # and a numpy-string node name round-trips.
+        f = server.scene.add_frame("/f")
+        f.visible = np.array([True, False]).any()
+        server.scene.add_frame(str(np.array(["/np_name"])[0]))
+        server.flush()
+
+
+def test_camera_update_rejects_degenerate_basis() -> None:
+    """A degenerate camera basis (zero look distance, or up parallel to the
+    view direction) raises instead of storing a NaN quaternion that every
+    later camera read and on_update callback would silently see."""
+    from viser._viser import CameraHandle, _CameraHandleState
+
+    ch = CameraHandle.__new__(CameraHandle)
+    ch._state = _CameraHandleState(
+        client=None,  # type: ignore[arg-type]
+        wxyz=np.zeros(4),
+        position=np.array([1.0, 0.0, 0.0]),
+        fov=1.0,
+        image_height=1,
+        image_width=1,
+        near=0.01,
+        far=1000.0,
+        min_orbit_distance=0.01,
+        max_orbit_distance=1e4,
+        look_at=np.array([1.0, 0.0, 0.0]),  # == position
+        up_direction=np.array([0.0, 0.0, 1.0]),
+        update_timestamp=1.0,
+        camera_cb=[],
+    )
+    with pytest.raises(ValueError, match="look_at cannot equal position"):
+        ch._update_wxyz()
+    ch._state.look_at = np.array([2.0, 0.0, 0.0])
+    ch._state.up_direction = np.array([1.0, 0.0, 0.0])  # parallel to view
+    with pytest.raises(ValueError, match="up_direction must be nonzero"):
+        ch._update_wxyz()
+    ch._state.up_direction = np.array([0.0, 0.0, 1.0])
+    ch._update_wxyz()
+    assert np.all(np.isfinite(ch._state.wxyz))
+    # Non-finite inputs must ALSO raise (a NaN/Inf norm is nonzero, so it
+    # slipped past the degeneracy checks and stored a NaN quaternion).
+    ch._state.position = np.array([np.nan, 0.0, 0.0])
+    with pytest.raises(ValueError, match="must be finite"):
+        ch._update_wxyz()
+    ch._state.position = np.array([np.inf, 0.0, 0.0])
+    with pytest.raises(ValueError, match="must be finite"):
+        ch._update_wxyz()
+
+
+def test_request_share_url_creates_single_tunnel_under_concurrency() -> None:
+    """Concurrent request_share_url() calls must build exactly ONE tunnel. The
+    share handlers run on pool threads (not serialized on the event loop), so
+    two requests could both observe `_share_tunnel is None` and each construct
+    a tunnel, orphaning (leaking) the first. The slot is now claimed under a
+    lock; every caller returns the same URL."""
+    from viser import _viser
+
+    created: list[object] = []
+    created_lock = threading.Lock()
+
+    class FakeTunnel:
+        def __init__(self, host: str, port: int) -> None:
+            with created_lock:
+                created.append(self)
+            # Widen the check-then-act window so an unlocked slot claim
+            # reliably double-creates here rather than only under a rare
+            # interleaving.
+            time.sleep(0.05)
+
+        def on_connect(self, fn):
+            # ViserTunnel invokes this once the control connection is up; call
+            # it inline so the creator's connect_event is set and it returns.
+            fn(1)
+            return fn
+
+        def on_disconnect(self, fn):
+            return fn
+
+        def get_url(self) -> str:
+            return "https://fake.share/url"
+
+        def get_status(self) -> str:
+            # Non-creator waiters loop while "ready"/"connecting"; "connected"
+            # is the established terminal state that lets them return.
+            return "connected"
+
+        def close(self) -> None:
+            pass
+
+    with _server() as server:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(_viser, "ViserTunnel", FakeTunnel)
+            barrier = threading.Barrier(4)
+            results: list[object] = []
+            results_lock = threading.Lock()
+
+            def worker() -> None:
+                barrier.wait()
+                url = server.request_share_url(verbose=False)
+                with results_lock:
+                    results.append(url)
+
+            threads = [threading.Thread(target=worker) for _ in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10.0)
+            assert all(not t.is_alive() for t in threads), "request_share_url hung"
+
+    assert len(created) == 1, f"expected exactly one tunnel, got {len(created)}"
+    assert results == ["https://fake.share/url"] * 4
+
+
+def test_request_share_url_returns_none_on_failed_tunnel() -> None:
+    """A tunnel that FAILS to connect must make request_share_url() return
+    None (as documented), not block the creator forever: on_connect only
+    fires on success, and status="failed" never set connect_event."""
+    from viser import _viser
+
+    class FailingTunnel:
+        def __init__(self, host: str, port: int) -> None:
+            pass
+
+        def on_connect(self, fn):
+            return fn  # Never invoked: connection failed.
+
+        def on_disconnect(self, fn):
+            return fn
+
+        def get_url(self) -> None:
+            return None
+
+        def get_status(self) -> str:
+            return "failed"
+
+        def close(self) -> None:
+            pass
+
+    with _server() as server:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(_viser, "ViserTunnel", FailingTunnel)
+            box: dict[str, object] = {}
+
+            def worker() -> None:
+                box["url"] = server.request_share_url(verbose=False)
+
+            t = threading.Thread(target=worker, daemon=True)
+            t.start()
+            t.join(timeout=5.0)
+            assert not t.is_alive(), "request_share_url hung on a failed tunnel"
+            assert box["url"] is None
+
+
+def test_get_render_times_out_on_silent_client() -> None:
+    """get_render(timeout=...) must raise TimeoutError when a still-connected
+    client never returns a frame (frozen/backgrounded tab, wedged capture),
+    instead of blocking the caller -- and, from a sync callback, its pool
+    worker -- forever. The disconnect path is covered in
+    tests/e2e/test_get_render.py; this pins the timeout bound without a
+    browser. Camera args are passed explicitly so the fabricated client's
+    zero-timestamp camera getters are never read."""
+    from viser._viser import ClientHandle
+
+    with _server() as server:
+        client = ClientHandle.__new__(ClientHandle)
+        client.client_id = 918273
+        client._websock_connection = MagicMock()
+        client._viser_server = server
+        server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
+
+        start = time.time()
+        with pytest.raises(TimeoutError, match="did not return a frame"):
+            client.get_render(
+                height=32,
+                width=32,
+                wxyz=(1.0, 0.0, 0.0, 0.0),
+                position=(0.0, 0.0, 0.0),
+                fov=1.0,
+                timeout=0.3,
+            )
+        elapsed = time.time() - start
+        assert 0.3 <= elapsed < 3.0, f"timeout not honored, took {elapsed}s"
+
+
+def _make_real_conn(stall_after_unregister: float = 0.0):
+    """A ClientHandle connection with a REAL handler registry (register/
+    unregister actually mutate state -- a MagicMock's no-ops can't surface
+    double-unregister bugs). Optionally stalls after each unregister to widen
+    the got_render_cb unregister -> event.set() window deterministically."""
+    from viser.infra._infra import WebsockMessageHandler
+
+    class _Conn(WebsockMessageHandler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sent: list[object] = []
+            self._stalled = False
+
+        def get_message_buffer(self):  # pragma: no cover - unused
+            raise NotImplementedError()
+
+        def queue_message(self, message) -> None:
+            self.sent.append(message)
+
+        def unregister_handler(self, message_cls, callback=None):
+            super().unregister_handler(message_cls, callback)
+            if stall_after_unregister and not self._stalled:
+                self._stalled = True
+                time.sleep(stall_after_unregister)
+
+    return _Conn()
+
+
+def test_get_render_timeout_exits_do_not_double_unregister() -> None:
+    """The three get_render() exits (frame arrival, disconnect, timeout) race
+    to unregister the response handler, and infra's unregister_handler raises
+    ValueError on a second remove. Regression from the timeout feature: unlike
+    disconnect (a dead client never delivers late), a timed-out client is
+    still connected and CAN deliver -- so the exits must share a once-guard.
+
+    Case A: a frame delivered after TimeoutError already unregistered (the
+    dispatch loop can snapshot the handler list before removal) must be
+    dropped silently, not raise ValueError inside the dispatch.
+    Case B: a frame that beats the deadline into got_render_cb's
+    unregister -> set() window must be RETURNED, not clobbered by the caller
+    double-unregistering (ValueError) or raising TimeoutError."""
+    from viser import _messages
+    from viser._viser import ClientHandle
+
+    def render_kwargs(timeout: float) -> dict:
+        return dict(
+            height=8,
+            width=8,
+            wxyz=(1.0, 0.0, 0.0, 0.0),
+            position=(0.0, 0.0, 0.0),
+            fov=1.0,
+            timeout=timeout,
+        )
+
+    def wait_for_request(conn):
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            handlers = conn._incoming_handlers.get(
+                _messages.GetRenderResponseMessage, []
+            )
+            reqs = [
+                m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
+            ]
+            if handlers and reqs:
+                return handlers[0], reqs[0].render_uuid
+            time.sleep(0.002)
+        raise AssertionError("get_render never registered/queued its request")
+
+    with _server() as server:
+
+        def make_client(conn) -> ClientHandle:
+            client = ClientHandle.__new__(ClientHandle)
+            client.client_id = len(server._connected_clients) + 700_000
+            client._websock_connection = conn
+            client._viser_server = server
+            server._connected_clients[client.client_id] = cast(
+                viser.ClientHandle, client
+            )
+            return client
+
+        # Case A: late frame after timeout.
+        conn_a = _make_real_conn()
+        client_a = make_client(conn_a)
+        box_a: dict[str, BaseException] = {}
+
+        def run_a() -> None:
+            try:
+                client_a.get_render(**render_kwargs(timeout=0.2))
+            except BaseException as e:  # noqa: BLE001
+                box_a["err"] = e
+
+        t = threading.Thread(target=run_a)
+        t.start()
+        cb, uuid = wait_for_request(conn_a)
+        t.join(timeout=5.0)
+        assert not t.is_alive()
+        assert isinstance(box_a.get("err"), TimeoutError)
+        # Deliver the frame late, as the dispatch loop would from its
+        # pre-removal snapshot. Pre-fix: ValueError (list.remove).
+        cb(client_a.client_id, _messages.GetRenderResponseMessage(b"", uuid))
+
+        # Case B: frame beats the deadline into the unregister/set window.
+        # Precompute the payload (first-use imageio import is slow, and a
+        # late delivery would make TimeoutError the CORRECT outcome, turning
+        # the test flaky), then deliver immediately: got_render_cb claims the
+        # unregister right away, and the connection's 0.5s post-unregister
+        # stall holds the unregister->set window open across the caller's
+        # 0.2s deadline deterministically.
+        import io as _io
+
+        import imageio.v3 as iio
+
+        buf = _io.BytesIO()
+        iio.imwrite(buf, np.zeros((8, 8, 3), dtype=np.uint8), extension=".jpeg")
+        payload = buf.getvalue()
+
+        conn_b = _make_real_conn(stall_after_unregister=0.5)
+        client_b = make_client(conn_b)
+        result_b: dict[str, object] = {}
+
+        def run_b() -> None:
+            try:
+                result_b["out"] = client_b.get_render(**render_kwargs(timeout=0.2))
+            except BaseException as e:  # noqa: BLE001
+                result_b["err"] = e
+
+        t = threading.Thread(target=run_b)
+        t.start()
+        cb, uuid = wait_for_request(conn_b)
+        # Deliver on this thread: cb claims the unregister, stalls 0.5s, then
+        # sets the event -- meanwhile the caller's deadline fires mid-stall,
+        # loses the unregister race, and must take the frame.
+        cb(
+            client_b.client_id,
+            _messages.GetRenderResponseMessage(payload, uuid),
+        )
+        t.join(timeout=5.0)
+        assert not t.is_alive()
+        assert "err" not in result_b, f"caller raised: {result_b.get('err')!r}"
+        assert cast(np.ndarray, result_b["out"]).shape == (8, 8, 3)
+
+
+def _start_upload(
+    server,
+    uuid: str,
+    transfer_uuid: str,
+    part_count: int,
+    size_bytes: int,
+    client_id: int = 0,
+) -> None:
+    server.gui._handle_file_transfer_start(
+        ClientId(client_id),
+        _messages.FileTransferStartUpload(
+            source_component_uuid=uuid,
+            transfer_uuid=transfer_uuid,
+            filename="f.bin",
+            mime_type="application/octet-stream",
+            part_count=part_count,
+            size_bytes=size_bytes,
+        ),
+    )
+
+
+def _send_part(
+    server,
+    uuid: str,
+    transfer_uuid: str,
+    index: int,
+    content: bytes,
+    client_id: int = 0,
+) -> None:
+    server.gui._handle_file_transfer_part(
+        ClientId(client_id),
+        _messages.FileTransferPart(
+            source_component_uuid=uuid,
+            transfer_uuid=transfer_uuid,
+            part_index=index,
+            content=content,
+        ),
+    )
+
+
+def test_upload_malformed_parts_do_not_crash_or_corrupt() -> None:
+    """Duplicate or out-of-range part indices must be ignored, not corrupt the
+    transfer: a repeated part_index used to inflate the byte-count completion
+    gate, so assembly ran with missing part slots (KeyError in
+    _finish_file_upload) or overshot the declared size (AssertionError) --
+    crashing the handler task and leaking the transfer state."""
+    with _server() as server:
+        btn = server.gui.add_upload_button("up")
+        uuid = btn._impl.uuid
+        received: list[bytes] = []
+
+        @btn.on_upload
+        def _(event: viser.GuiEvent) -> None:
+            received.append(btn.value.content)
+
+        # Duplicate part 0 (previously: KeyError once bytes hit the total),
+        # then an out-of-range index (previously counted toward completion).
+        _start_upload(server, uuid, "dup", part_count=2, size_bytes=8)
+        _send_part(server, uuid, "dup", 0, b"1234")
+        _send_part(server, uuid, "dup", 0, b"1234")  # dup: ignored
+        _send_part(server, uuid, "dup", 5, b"zzzz")  # out of range: ignored
+        assert "dup" in server.gui._current_file_upload_states  # still pending
+        _send_part(server, uuid, "dup", 1, b"5678")  # completes
+        assert "dup" not in server.gui._current_file_upload_states
+        assert btn.value.content == b"12345678"
+
+        # All part slots filled but bytes don't match the declared size:
+        # previously an AssertionError that leaked the state; now warned and
+        # dropped with no callback.
+        _start_upload(server, uuid, "mismatch", part_count=2, size_bytes=4)
+        _send_part(server, uuid, "mismatch", 0, b"123")
+        with pytest.warns(UserWarning, match="Dropping upload"):
+            _send_part(server, uuid, "mismatch", 1, b"456")
+        assert "mismatch" not in server.gui._current_file_upload_states
+        assert btn.value.content == b"12345678"  # unchanged
+
+
+def test_upload_state_purged_on_client_disconnect() -> None:
+    """In-flight upload buffers must be purged when their client disconnects:
+    entries were only ever removed on completion, so a tab closed mid-upload
+    leaked its accumulated parts forever (and a hostile client could grow the
+    leak without bound)."""
+    with _server() as server:
+        btn = server.gui.add_upload_button("up")
+        uuid = btn._impl.uuid
+
+        _start_upload(server, uuid, "c7", part_count=2, size_bytes=8, client_id=7)
+        _send_part(server, uuid, "c7", 0, b"1234", client_id=7)
+        _start_upload(server, uuid, "c9", part_count=2, size_bytes=8, client_id=9)
+        assert set(server.gui._current_file_upload_states) == {"c7", "c9"}
+
+        # Client 7 disconnects: only ITS transfer is dropped.
+        server.gui._drop_uploads_from_client(ClientId(7))
+        assert set(server.gui._current_file_upload_states) == {"c9"}
+        # A straggler part for the purged transfer is ignored cleanly.
+        _send_part(server, uuid, "c7", 1, b"5678", client_id=7)
+        assert set(server.gui._current_file_upload_states) == {"c9"}
+
+
+def test_scene_serializer_concurrent_write_recorded_exactly_once() -> None:
+    """A scene message queued concurrently with get_scene_serializer() must
+    be recorded exactly once. The serializer used to be REGISTERED before the
+    buffer snapshot was taken, without excluding writers -- so a message
+    queued in that window was recorded twice (live + snapshot), bloating
+    .viser files and duplicating binary buffers."""
+    with _server() as server:
+        server.scene.add_frame("/pre")
+
+        handler = server._websock_server
+        orig_get_serializer = handler.get_message_serializer
+        registered = threading.Event()
+        racy_done = threading.Event()
+
+        def patched(filter):
+            serializer = orig_get_serializer(filter=filter)
+            registered.set()
+            # Hold the registration->snapshot window open. Post-fix the
+            # writer blocks on _record_lock and this times out; pre-fix the
+            # writer lands inside the window (and is recorded twice).
+            racy_done.wait(timeout=0.5)
+            return serializer
+
+        def writer() -> None:
+            assert registered.wait(timeout=5.0)
+            server.scene.add_frame("/racy")
+            racy_done.set()
+
+        t = threading.Thread(target=writer)
+        t.start()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(handler, "get_message_serializer", patched)
+            serializer = server.get_scene_serializer()
+        t.join(timeout=5.0)
+        assert not t.is_alive()
+
+        counts: dict[str, int] = {}
+        for _t, mdict in serializer._messages:
+            if mdict.get("type") == "FrameMessage":
+                name = cast(str, mdict.get("name"))
+                counts[name] = counts.get(name, 0) + 1
+        assert counts.get("/pre") == 1
+        # Exactly once: pre-fix this was 2 (live + snapshot).
+        assert counts.get("/racy") == 1, counts
+
+
+def test_get_port_reports_bound_port_for_port_zero() -> None:
+    """With port=0 the OS assigns an ephemeral port; get_port() must report
+    the port actually bound, not echo the requested 0 back (which made the
+    printed URLs and any get_port()-based client connection useless)."""
+    with _server() as server:
+        assert server.get_port() != 0
+
+
+def test_gc_purges_post_remove_update_despite_backpressured_floor() -> None:
+    """An update that sorts AFTER its entity's remove in the persistent
+    buffer must be purged by the GC even when a backpressured client pins
+    the purge floor below it. Floor-gating that delete let every late-joiner
+    replay "remove /x" (a no-op for them) followed by "update /x" -- applying
+    state to a node they never created, permanently diverging them from other
+    clients. The tombstone itself stays floor-retained (laggards still need
+    it), so the laggard's final state is unchanged: it skips a dead update
+    and still removes the node. (Reachable without any race via the public
+    infra layer, which has no removed-guard; the handle layer's guard is a
+    narrow TOCTOU.)"""
+    with _server() as server:
+        buffer = server._websock_server._broadcast_buffer
+        server.scene.add_frame("/x")
+        server.scene.remove_by_name("/x")
+        # Update ordered after the remove (infra layer: no guard).
+        server._websock_server.queue_message(
+            _messages.SetPositionMessage(name="/x", position=(9.0, 0.0, 0.0))
+        )
+        # A backpressured client whose cursor predates everything pins the
+        # purge floor.
+        buffer.generator_cursors[0] = 0
+        server._run_garbage_collector()
+
+        kinds = {
+            type(msg).__name__
+            for msg in buffer.message_from_id.values()
+            if getattr(msg, "name", None) == "/x"
+        }
+        # The dead update is gone; the tombstone is floor-retained for the
+        # lagging client.
+        assert "SetPositionMessage" not in kinds, kinds
+        assert "RemoveSceneNodeMessage" in kinds, kinds
+
+
+def test_writes_after_stop_do_not_raise() -> None:
+    """Scene writes landing after stop() must not raise "Event loop is
+    closed": background threads commonly outlive stop() during teardown, and
+    the buffered message has no consumer to wake anyway. set_done() already
+    tolerated the closed loop; push()/atomic_end()/flush() did not."""
+    server = viser.ViserServer(port=0, verbose=False)
+    f = server.scene.add_frame("/f")
+    server.stop()
+    # Give the background loop a beat to actually close.
+    deadline = time.time() + 5.0
+    loop = server._websock_server._broadcast_buffer.event_loop
+    while not loop.is_closed() and time.time() < deadline:
+        time.sleep(0.05)
+    assert loop.is_closed(), "background loop never closed after stop()"
+
+    f.position = (1.0, 2.0, 3.0)  # push() wake-up path
+    with server.atomic():  # atomic_end() wake-up path
+        f.position = (4.0, 5.0, 6.0)
+    server.flush()  # flush() wake-up path

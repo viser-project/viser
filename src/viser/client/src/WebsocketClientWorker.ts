@@ -90,6 +90,14 @@ function decodeHybridMessage(
 {
   let server: string | null = null;
   let ws: WebSocket | null = null;
+  // Connection generation: bumped on every (re)connect attempt. Event
+  // handlers capture their generation and post NOTHING when superseded --
+  // an old socket's close event otherwise marks the NEW connection
+  // disconnected (whose retry loop then closes the good socket), and a
+  // decoded or pacing-delayed batch from an old socket otherwise lands
+  // AFTER the new connection's `connected` reset wiped the state it was
+  // decoded against.
+  let generation = 0;
   const orderLock = new AwaitLock();
 
   const postOutgoing = (
@@ -101,21 +109,39 @@ function decodeHybridMessage(
   };
 
   const tryConnect = () => {
+    generation += 1;
+    const myGeneration = generation;
     if (ws !== null) ws.close();
 
     // Use a single protocol that includes both client identification and version.
     const protocol = `viser-v${VISER_VERSION}`;
     console.log(`Connecting to: ${server!} with protocol: ${protocol}`);
-    ws = new WebSocket(server!, [protocol]);
-    ws.binaryType = "arraybuffer";
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(server!, [protocol]);
+    } catch (e) {
+      // An invalid URL throws synchronously, before any handlers exist --
+      // and the superseded socket's close is suppressed by the generation
+      // gate, so without this the interface never learns the attempt died
+      // and never arms its retry loop.
+      console.error(`Failed to open WebSocket to ${server}:`, e);
+      postOutgoing({
+        type: "closed",
+        closeReason: "WebSocket construction failed",
+      });
+      return;
+    }
+    ws = socket;
+    socket.binaryType = "arraybuffer";
 
     // Timeout is necessary when we're connecting to an SSH/tunneled port.
     const retryTimeout = setTimeout(() => {
-      ws?.close();
+      socket.close();
     }, 5000);
 
-    ws.onopen = () => {
+    socket.onopen = () => {
       clearTimeout(retryTimeout);
+      if (myGeneration !== generation) return; // Superseded while opening.
       console.log(`Connected! ${server}`);
 
       // Just indicate that we're connected.
@@ -124,7 +150,15 @@ function decodeHybridMessage(
       });
     };
 
-    ws.onclose = (event) => {
+    socket.onclose = (event) => {
+      clearTimeout(retryTimeout);
+      console.log(
+        `Disconnected! ${server} code=${event.code}, reason: ${event.reason}`,
+      );
+      // A superseded socket's close must not be reported: the main thread
+      // would mark the NEW connection disconnected.
+      if (myGeneration !== generation) return;
+
       // Check for explicit close (code 1002 = protocol error, which we use for version mismatch).
       const versionMismatch = event.code === 1002;
 
@@ -136,17 +170,11 @@ function decodeHybridMessage(
         closeReason: event.reason || "Connection closed",
       });
 
-      console.log(
-        `Disconnected! ${server} code=${event.code}, reason: ${event.reason}`,
-      );
-
       if (versionMismatch) {
         console.warn(
           `Connection rejected due to version mismatch. Client version: ${VISER_VERSION}`,
         );
       }
-
-      clearTimeout(retryTimeout);
     };
 
     // State for tracking message timing.
@@ -155,7 +183,7 @@ function decodeHybridMessage(
       lastIdealJsMs?: number;
       jsTimeMinusPythonTime: number;
     } = { jsTimeMinusPythonTime: Infinity };
-    ws.onmessage = async (event) => {
+    socket.onmessage = async (event) => {
       const dataPromise = (async () => {
         // binaryType="arraybuffer" ensures event.data is an ArrayBuffer directly
         // (skips the default Blob->ArrayBuffer async conversion).
@@ -196,9 +224,14 @@ function decodeHybridMessage(
         // Transfer just that buffer instead of walking the entire message tree.
         const sendFn = () => {
           try {
-            postOutgoing({ type: "message_batch", messages: messages }, [
-              data.buffer,
-            ]);
+            // A stale batch (decoded, or delayed by the pacing timer) from
+            // a superseded socket must not land on the new connection's
+            // fresh state. The order lock is still released below.
+            if (myGeneration === generation) {
+              postOutgoing({ type: "message_batch", messages: messages }, [
+                data.buffer,
+              ]);
+            }
           } catch (e) {
             // `sendFn` can run later from setTimeout, outside the catch below.
             // Log and still release the lock so one bad post cannot wedge all

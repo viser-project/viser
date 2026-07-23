@@ -32,6 +32,7 @@ import * as ops from "../dock/layoutOps";
 import type { CanvasBounds } from "../dock/layoutOps";
 import { DockLayout } from "../dock/types";
 import { CONTROL_PANEL_ID } from "./controlPanelId";
+import { orderCollapseDrain, type QueuedCollapse } from "./collapseDrain";
 import { gatePlacement } from "./placementGate";
 import type { PanelPlacementState } from "./GuiState";
 
@@ -85,6 +86,19 @@ export function usePlacementCoordinator(
 
   const bookkeeping = React.useRef(new Map<string, PanelBookkeeping>());
   const lastResetNonce = React.useRef(layoutResetNonce);
+  // Fresh collapse applications, held PERSISTENTLY until every panel's
+  // position has converged (D50). A per-pass queue is not enough: a
+  // split-anchored panel's position defers to a later pass than its
+  // neighbors' (the anchor's dock commit is invisible to the same pass's
+  // stale layout snapshot), so its collapse axis would drain in a later
+  // batch than an already-applied lower-counter axis -- and on a shared
+  // column the LAST batch wins regardless of counter, diverging late
+  // joiners from live clients (the exact "B.expand() then A.minimize()"
+  // case D50 exists to fix). Keyed by panel uuid: the store holds one
+  // collapsed axis per panel, and a newer command re-queues via the
+  // freshness gate.
+  const pendingCollapse = React.useRef(new Map<string, QueuedCollapse>());
+  const collapseSeq = React.useRef(0);
 
   React.useEffect(() => {
     // A layout reset re-applies every panel's server placement from scratch.
@@ -92,6 +106,10 @@ export function usePlacementCoordinator(
       lastResetNonce.current = layoutResetNonce;
       for (const state of bookkeeping.current.values())
         state.appliedPlacement = REAPPLY;
+      // Undrained collapses die with the reset: REAPPLY re-queues every
+      // panel's full bundle from scratch, and a pre-reset entry surviving
+      // into that fresh drain would apply against the wrong baseline.
+      pendingCollapse.current.clear();
     }
     // Drop bookkeeping for panels that no longer exist (uuid-keyed, so a
     // removed panel's entry is dead; the layout-tracking store prunes its own
@@ -99,6 +117,9 @@ export function usePlacementCoordinator(
     for (const uuid of bookkeeping.current.keys())
       if (uuid !== CONTROL_PANEL_ID && panels[uuid] === undefined)
         bookkeeping.current.delete(uuid);
+    for (const uuid of pendingCollapse.current.keys())
+      if (uuid !== CONTROL_PANEL_ID && panels[uuid] === undefined)
+        pendingCollapse.current.delete(uuid);
 
     const layout = dock.layout;
     const resolveAnchor = (anchorUuid: string): string | null => {
@@ -161,6 +182,15 @@ export function usePlacementCoordinator(
       return true;
     };
 
+    // True when some panel could not settle its POSITION this pass (deferred
+    // split, or panes not yet registered). While set, the collapse drain
+    // below is held: a later pass will queue the stragglers' collapse axes,
+    // and only a drain over the COMPLETE conflict set can honor counter
+    // order (D50). Both hold conditions are transient by construction (the
+    // fixpoint re-runs on the anchor's commit / the registry's change), so
+    // the drain is only ever delayed, never lost.
+    let positionDeferred = false;
+
     const processPanel = (uuid: string): void => {
       const isMain = uuid === CONTROL_PANEL_ID;
       const panel = isMain ? null : panels[uuid];
@@ -210,7 +240,18 @@ export function usePlacementCoordinator(
       // earlier races the registry reconciliation). Not an error: the pass
       // re-runs when dock.panes changes.
       const ready = tabIds.every((cid) => dock.panes[cid] !== undefined);
-      if (!ready) return;
+      if (!ready) {
+        // Hold the collapse drain only when this panel actually has a
+        // placement bundle that could still queue a conflicting collapse.
+        // Readiness is render-driven and resolves within a frame; but a
+        // panel with NO placement entry can never contribute a collapse
+        // axis, so letting it hold the drain would only add starvation
+        // risk (e.g. a malformed panel whose tab ids never register) with
+        // zero correctness benefit. If an entry arrives later, the store
+        // change re-runs the pass and re-evaluates.
+        if (entry !== undefined) positionDeferred = true;
+        return;
+      }
 
       // 4. Placement: gate -> (defer?) -> apply -> record.
       const placed = ops.findPaneGroup(layout, tabIds[0]) !== null;
@@ -230,7 +271,10 @@ export function usePlacementCoordinator(
         ) {
           // The anchor's own dock is on its way (possibly later in THIS
           // pass); leave the applied entry unset so the next pass -- triggered
-          // by the anchor's commit -- retries. No timer, no pending state.
+          // by the anchor's commit -- retries. No timer, no pending
+          // per-panel state -- but the pass-level flag holds the collapse
+          // drain, since this panel's own collapse axis is not queued yet.
+          positionDeferred = true;
           return;
         }
         state.appliedPlacement = entry;
@@ -248,11 +292,13 @@ export function usePlacementCoordinator(
           gated.placement.collapsed !== null &&
           entry?.collapsed !== undefined
         )
-          collapseQueue.push({
+          pendingCollapse.current.set(uuid, {
             tabIds,
             collapsed: gated.placement.collapsed,
             counter: entry.collapsed.counter,
             runId: entry.collapsed.runId,
+            seq: ++collapseSeq.current,
+            paneStamp: dock.api.getPaneArrangementStamp(tabIds),
           });
         dock.api.apply((l: DockLayout) =>
           ops.applyPanelPlacement(
@@ -290,50 +336,41 @@ export function usePlacementCoordinator(
       }
     };
 
-    // Fresh collapse applications collected across the whole pass, applied
-    // AFTER every panel's position (D47's after-position rule, generalized)
-    // in COMMAND order (D50): within a run, the server's global counter
-    // orders commands across panels -- a late joiner replaying "B.expand()
-    // then A.minimize()" onto a shared column must end collapsed, exactly
-    // like a live client. Across runs counters aren't comparable; runs apply
-    // in first-appearance order (arrival order, as before).
-    const collapseQueue: {
-      tabIds: string[];
-      collapsed: boolean;
-      counter: number;
-      runId: string;
-    }[] = [];
-
     // Main panel first: it is everyone's potential split anchor.
     processPanel(CONTROL_PANEL_ID);
     for (const uuid of Object.keys(panels)) processPanel(uuid);
 
-    if (collapseQueue.length > 0) {
-      const byRun = new Map<string, typeof collapseQueue>();
-      for (const c of collapseQueue) {
-        const bucket = byRun.get(c.runId);
-        if (bucket === undefined) byRun.set(c.runId, [c]);
-        else bucket.push(c);
-      }
-      for (const bucket of byRun.values()) {
-        bucket.sort((a, b) => a.counter - b.counter);
-        for (const c of bucket) {
-          dock.api.apply((l: DockLayout) =>
-            ops.applyPanelPlacement(
-              l,
-              c.tabIds,
-              {
-                position: null,
-                collapsed: c.collapsed,
-              },
-              (anchorUuid) => resolveAnchor(anchorUuid),
-              {
-                canvasBounds: canvasBoundsFromMetrics(metrics),
-                floatIfUnplaced: false,
-              },
-            ),
-          );
-        }
+    // Fresh collapse applications drain AFTER every panel's position has
+    // CONVERGED (D47's after-position rule, generalized) in COMMAND order
+    // (D50): within a run, the server's global counter orders commands
+    // across panels -- a late joiner replaying "B.expand() then
+    // A.minimize()" onto a shared column must end collapsed, exactly like a
+    // live client. Across runs counters aren't comparable; runs apply in
+    // first-appearance order (arrival order, as before). The drain is held
+    // while any position deferred this pass (see positionDeferred): a
+    // deferred panel's collapse axis joins the queue on a later pass, and
+    // draining early would let a lower-counter axis apply LAST and win.
+    if (!positionDeferred && pendingCollapse.current.size > 0) {
+      const queued = [...pendingCollapse.current.values()];
+      pendingCollapse.current.clear();
+      for (const c of orderCollapseDrain(queued, (tabIds) =>
+        dock.api.getPaneArrangementStamp(tabIds),
+      )) {
+        dock.api.apply((l: DockLayout) =>
+          ops.applyPanelPlacement(
+            l,
+            c.tabIds,
+            {
+              position: null,
+              collapsed: c.collapsed,
+            },
+            (anchorUuid) => resolveAnchor(anchorUuid),
+            {
+              canvasBounds: canvasBoundsFromMetrics(metrics),
+              floatIfUnplaced: false,
+            },
+          ),
+        );
       }
     }
     // `dock.layout` is a dependency ON PURPOSE: it is what turns deferral into

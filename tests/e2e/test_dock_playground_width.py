@@ -346,10 +346,13 @@ def test_reserved_divider_resizes_with_railed_column(page: Page) -> None:
 
 
 # ===========================================================================
-# CHARACTERIZATION: a sole panel docked to an empty edge adopts the region width
-# (its prior float width is NOT preserved). Documented as acceptable.
+# A sole panel docked to an empty edge keeps its float width (D3: the
+# newcomer's width IS the dragged window's width -- empty edge included).
+# Supersedes the old characterization ("adopts the region default,
+# documented as acceptable"): the never-docked edge's synthesized 300px
+# default used to shadow the window-width path in width reconciliation.
 # ===========================================================================
-def test_sole_dock_adopts_region_width_not_float_width(page: Page) -> None:
+def test_sole_dock_keeps_float_width(page: Page) -> None:
     # Arrange: a single floating panel; the widen + dock gestures follow.
     f = "t-controls"
     set_layout(page, dock_layout(floating=[window("controls", x=400, y=150)]))
@@ -369,10 +372,9 @@ def test_sole_dock_adopts_region_width_not_float_width(page: Page) -> None:
         pytest.skip("dock did not take this run")
     docked_w = _width(page, f)
 
-    # ACCEPTABLE: a sole docked column fills the region (~default), so the wide
-    # float width is intentionally NOT carried into the dock.
-    assert docked_w < float_w - 40, (
-        f"expected sole-dock to adopt the (narrower) region width; "
+    # The widened float width carries into the sole docked column (D3).
+    assert abs(docked_w - float_w) <= 12, (
+        f"expected the sole dock to keep the float's width; "
         f"float={float_w} docked={docked_w}"
     )
 
@@ -649,3 +651,99 @@ def test_region_resizer_works_with_railed_columns(page: Page) -> None:
         f"dragging the resizer must widen the region via regionWidth: "
         f"{before} -> {after}"
     )
+
+
+# ===========================================================================
+# A multi-column region's per-column parent handle is never a no-drop hole
+# (P5) -- including when the column is SQUEEZED and SCROLLED past its first
+# cell, so that cell has nothing visible left inside the scroll box. The
+# handle band sits above the scroll box and never scrolls, and only the first
+# cell can claim it; dropping the target there would re-open the hole.
+# ===========================================================================
+def test_column_handle_band_survives_scrolled_out_first_cell(
+    dock_context, vite_server: int
+) -> None:
+    # Short viewport + enough stacked cells that their MIN_CELL_HEIGHT_PX
+    # floors overflow the column, so it scrolls -- and by enough that
+    # scrolling to the bottom pushes the whole first cell out of view
+    # (max scrollTop = 6*50 - ~220 available > the 50px first cell).
+    pg = open_playground(dock_context, vite_server, 1400, 240)
+    try:
+        set_layout(
+            pg,
+            dock_layout(
+                docked_right=columns(
+                    stack(
+                        "controls",
+                        "inspector",
+                        "console",
+                        "scene",
+                        "layers",
+                        "props",
+                    ),
+                    # A second column is what makes the region render
+                    # per-column parent handles (D27).
+                    "monitor",
+                ),
+                floating=[window("history", x=80, y=40, width=200)],
+            ),
+        )
+        scrolled = pg.evaluate(
+            """() => {
+            const sc = document.querySelector('[data-dock-scroll]');
+            if (sc === null) return null;
+            sc.scrollTop = sc.scrollHeight;  // past the first cell
+            const first = sc.querySelector('[data-dock-leaf]');
+            const fr = first.getBoundingClientRect();
+            const sr = sc.getBoundingClientRect();
+            const handle = document.querySelector('[data-dock-column-handle]');
+            const hr = handle === null ? null : handle.getBoundingClientRect();
+            return { visible: Math.min(fr.bottom, sr.bottom)
+                            - Math.max(fr.top, sr.top),
+                     handle: hr === null ? null
+                        : { cx: hr.x + hr.width / 2, cy: hr.y + hr.height / 2 } };
+        }"""
+        )
+        if scrolled is None or scrolled["handle"] is None:
+            pytest.skip("no scrolling column / column handle this run")
+        if scrolled["visible"] >= 8:
+            pytest.skip("first cell did not scroll fully out this run")
+
+        start = pg.eval_on_selector(
+            '[data-floating-window="t-w-history"] [data-dock-griphandle]',
+            "e => { const r = e.getBoundingClientRect();"
+            " return [r.x + r.width / 2, r.y + r.height / 2]; }",
+        )
+        pg.mouse.move(*start)
+        pg.mouse.down()
+        pg.mouse.move(start[0] + 8, start[1] + 8, steps=2)
+        pg.mouse.move(scrolled["handle"]["cx"], scrolled["handle"]["cy"], steps=4)
+        pg.wait_for_timeout(100)
+        hint = pg.evaluate(
+            """() => {
+            const el = document.querySelector('[data-dock-hint]');
+            return el === null ? null : el.getAttribute('data-dock-hint');
+        }"""
+        )
+        pg.mouse.up()
+        pg.wait_for_timeout(250)
+        assert hint == "line", (
+            "the column handle band must resolve to a SPLIT-ABOVE line when "
+            "the first cell is scrolled out (P5: no no-drop holes; a merge "
+            "hint would mean the band silently became 'add a tab here'), "
+            f"got {hint!r}"
+        )
+        # ...and the drop actually lands ABOVE the column's first cell.
+        order = pg.evaluate(
+            """() => {
+            const l = window.__dockLayout;
+            const col = l.docked.right.columns[0];
+            return col.leaves.map(
+                (lf) => l.groups[lf.group].paneIds[0]);
+        }"""
+        )
+        assert order[0] == "history", (
+            f"expected the dropped panel above the column's first cell, got {order}"
+        )
+    finally:
+        pg.close()

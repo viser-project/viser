@@ -193,6 +193,11 @@ export function DockManager({
   // at 0, so `commit` can tell a user rearrangement from a programmatic one --
   // which drives the "user touched this panel" flag for layout persistence.
   const programmaticDepth = React.useRef(0);
+  // Per-pane user-arrangement stamps + the signature baseline they diff
+  // against. Read through api.getPaneArrangementStamp; see DockContext.
+  const paneStamps = React.useRef(new Map<PaneId, number>());
+  const paneStampCounter = React.useRef(0);
+  const lastPaneSigs = React.useRef(new Map<PaneId, string>());
   // Production keeps a RATE-LIMITED invariant tripwire (dev checks EVERY
   // commit, including per-frame gesture commits): layouts are partly
   // SERVER-driven, so a malformed op sequence from server state can ship a
@@ -229,7 +234,40 @@ export function DockManager({
     const prev = layoutRef.current;
     layoutRef.current = next;
     setLayout(next);
-    onCommitRef.current?.(prev, next, programmaticDepth.current > 0);
+    const programmatic = programmaticDepth.current > 0;
+    // Per-PANE arrangement stamps (api.getPaneArrangementStamp): a USER
+    // commit that changes a pane's container signature -- its container's
+    // collapse flag, or which container holds it -- stamps that pane with a
+    // fresh monotonic value. Scoped per pane, so a sync layer holding a
+    // deferred command for panel A drops it only when the user touched A's
+    // OWN container (a global signal discarded legitimate commands on any
+    // unrelated gesture); refreshed against EVERY commit, so programmatic
+    // changes are the new baseline rather than a phantom diff, and blind to
+    // geometry/tab-activation, which cannot contend with a collapse axis.
+    const sigs = ops.paneContainerSignatures(next);
+    if (!programmatic) {
+      for (const [paneId, sig] of sigs) {
+        if (lastPaneSigs.current.get(paneId) !== sig)
+          paneStamps.current.set(paneId, ++paneStampCounter.current);
+      }
+      for (const paneId of lastPaneSigs.current.keys()) {
+        // A pane REMOVED from every container by a user gesture also counts
+        // as touched (e.g. its window was merged away).
+        if (!sigs.has(paneId))
+          paneStamps.current.set(paneId, ++paneStampCounter.current);
+      }
+    }
+    lastPaneSigs.current = sigs;
+    // Deliberately NO pruning of paneStamps: a held collapse command's
+    // overtake check requires its target panes' stamps to PERSIST until the
+    // drain observes them, and any fixed-size or fixed-horizon prune can
+    // delete a just-stamped removal before that happens (a pruned pane reads
+    // stamp 0, silently REVIVING the overtaken command -- P6 violation). The
+    // map is bounded by panes-ever-seen per mount -- server-authored tab
+    // uuids, dozens in practice at ~tens of bytes each -- so
+    // unbounded-in-theory is fine in reality; correct pruning would need
+    // drain-awareness that does not belong in this layer.
+    onCommitRef.current?.(prev, next, programmatic);
   }, []);
 
   const applyOp = React.useCallback(
@@ -310,6 +348,12 @@ export function DockManager({
         runProgrammatic(() =>
           applyOp(ops.addPaneToArea(layoutRef.current, areaId, paneId, index)),
         ),
+      getPaneArrangementStamp: (paneIds: readonly PaneId[]) => {
+        let max = 0;
+        for (const p of paneIds)
+          max = Math.max(max, paneStamps.current.get(p) ?? 0);
+        return max;
+      },
     }),
     [applyOp, runProgrammatic],
   );
@@ -376,6 +420,20 @@ export function DockManager({
       // the user railed/expanded the column, or a stale server placement
       // could silently re-flip it (P6).
       applyOp(ops.setColumnRailed(layoutRef.current, edge, columnId, on));
+    },
+    [applyOp],
+  );
+  const setStackCollapsed = React.useCallback(
+    (stack: GroupId[], collapsed: boolean) => {
+      // A USER op (like railColumn / collapseRegion): the window header's
+      // collapse toggle. Commits through applyOp, NOT api.apply -- api.apply
+      // raises the programmatic flag, hiding the gesture from ownership
+      // arbitration (P6).
+      applyOp(
+        collapsed
+          ? ops.minimizeStack(layoutRef.current, stack)
+          : ops.expandStack(layoutRef.current, stack),
+      );
     },
     [applyOp],
   );
@@ -512,6 +570,7 @@ export function DockManager({
       expandToTab,
       expandStackOf,
       toggleCollapsed,
+      setStackCollapsed,
       collapseRegion,
       railColumn,
       draggingGroupId,

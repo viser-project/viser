@@ -162,6 +162,14 @@ function SplatRendererImpl() {
     groupIndices: Uint32Array;
   } | null>(null);
   const isFirstRenderRef = React.useRef(true);
+  // Raw (pre-mask) transform baseline for per-frame change detection.
+  // Declared HERE, above the buffer-update block, so a size-changing update
+  // can invalidate it directly (length 0 never matches, forcing the next
+  // frame to re-write, re-mask hidden groups to 1e10, and re-upload -- the
+  // fresh transform texture starts unmasked).
+  const prevRowMajorT_camera_groupsRef = React.useRef<Float32Array>(
+    new Float32Array(0),
+  );
   const initializedBufferTextureRef = React.useRef(false);
 
   // Force component to re-render when mesh props change.
@@ -256,10 +264,21 @@ function SplatRendererImpl() {
       oldProps.material.dispose();
       oldProps.textureT_camera_groups.dispose();
 
-      // Update worker with new buffer.
+      // The fresh transform texture starts UNMASKED: invalidate the raw
+      // change-detection baseline so the next frame re-writes, re-masks
+      // (hidden groups to 1e10), and re-uploads. With an unchanged group
+      // count and a stationary camera, a stale baseline matched the raw
+      // transforms exactly -- nothing fired, and hidden splat groups became
+      // visible after the buffer update.
+      prevRowMajorT_camera_groupsRef.current = new Float32Array(0);
+
+      // Update worker with new buffer. numGroups lets the worker detect a
+      // group-count change and drop a now-wrong-sized transform array
+      // before it sorts against it (OOB).
       postToWorker({
         updateBuffer: merged.gaussianBuffer,
         updateGroupIndices: merged.groupIndices,
+        updateNumGroups: merged.numGroups,
       });
 
       // Skip fade-in animation on updates, set numGaussians immediately.
@@ -278,10 +297,13 @@ function SplatRendererImpl() {
       textureData.set(merged.gaussianBuffer);
       meshPropsRef.current.textureBuffer.needsUpdate = true;
 
-      // Update worker with new buffer.
+      // Update worker with new buffer. numGroups lets the worker detect a
+      // group-count change and drop a now-wrong-sized transform array
+      // before it sorts against it (OOB).
       postToWorker({
         updateBuffer: merged.gaussianBuffer,
         updateGroupIndices: merged.groupIndices,
+        updateNumGroups: merged.numGroups,
       });
 
       // Skip fade-in animation on updates.
@@ -323,9 +345,6 @@ function SplatRendererImpl() {
   const tmpT_camera_group = React.useMemo(() => new THREE.Matrix4(), []);
   const Tz_camera_groupsRef = React.useRef<Float32Array>(
     new Float32Array(merged.numGroups * 4),
-  );
-  const prevRowMajorT_camera_groupsRef = React.useRef<Float32Array>(
-    new Float32Array(0),
   );
   const prevVisiblesRef = React.useRef<boolean[]>([]);
 
@@ -483,6 +502,14 @@ function SplatRendererImpl() {
       const groupsMovedWrtCam = !meshProps.rowMajorT_camera_groups.every(
         (v, i) => v === prevRowMajorT_camera_groups[i],
       );
+      // Snapshot the RAW transforms as the change-detection baseline BEFORE
+      // the visibility mask below overwrites hidden groups with 1e10:
+      // saving the MASKED array made the freshly-written real transform
+      // differ from prev on every frame while any group was hidden -- a
+      // full O(N) re-sort plus a GPU texture upload at refresh rate with a
+      // stationary camera.
+      if (groupsMovedWrtCam)
+        prevRowMajorT_camera_groups.set(meshProps.rowMajorT_camera_groups);
 
       if (groupsMovedWrtCam) {
         // Gaussians need to be re-sorted.
@@ -507,7 +534,6 @@ function SplatRendererImpl() {
             meshProps.rowMajorT_camera_groups[i * 12 + 11] = 1e10;
           }
         }
-        prevRowMajorT_camera_groups.set(meshProps.rowMajorT_camera_groups);
         meshProps.textureT_camera_groups.needsUpdate = true;
       }
 

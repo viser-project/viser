@@ -77,6 +77,13 @@ export type ViewerMutable = {
   skinnedMeshState: {
     [name: string]: {
       initialized: boolean;
+      // True once a mounted SkinnedMesh instance has claimed this entry.
+      // Entries can be recreated without a remount (FilePlayback's loop and
+      // its same-batch remove + re-add replay same message refs into a
+      // kept-mounted tree), so the surviving instance must be able to adopt
+      // an UNCLAIMED fresh entry -- while never touching one already
+      // claimed by a different live instance (same-name re-add race).
+      claimed: boolean;
       dirty: boolean; // Flag to track if bones need updating.
       poses: {
         wxyz: [number, number, number, number];

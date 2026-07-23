@@ -41,7 +41,13 @@ export default function ButtonComponent({
       if (holdIntervalsRef.current.length > 0) return;
 
       // Capture pointer to receive pointerup even if released outside element.
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      // try/catch like every other capture site: browsers may throw when the
+      // pointer is gone by the time this runs.
+      try {
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // Harmless: worst case the hold ends on pointer leave.
+      }
       for (const freq of holdCallbackFreqs) {
         messageSender({ type: "GuiButtonHoldMessage", uuid, frequency: freq });
         holdIntervalsRef.current.push(

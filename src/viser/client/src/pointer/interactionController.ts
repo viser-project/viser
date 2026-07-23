@@ -52,6 +52,7 @@ export class InteractionController {
       getGesture: () => this.scenePointer.getGesture(),
       cameraLockReasons: () => this.cameraLocks.reasonsForTest(),
       setHeldModifier: (modifier) => this.hover.setHeldModifier(modifier),
+      hasSceneClickFilter: () => this.hover.hasSceneClickFilter(),
       reset: () => this.resetForTest(),
     };
   }
@@ -61,6 +62,8 @@ export type ViserPointerTestApi = {
   getGesture: () => CanvasGesture;
   cameraLockReasons: () => string[];
   setHeldModifier: (modifier: KeyModifier | null) => void;
+  /** True once a scene-level click filter has arrived from the server. */
+  hasSceneClickFilter: () => boolean;
   reset: () => void;
 };
 

@@ -77,6 +77,12 @@ class StateSerializer:
         """Insert a sleep into the recorded file. This can be useful for
         dynamic 3D data."""
         assert self in self._handler._record_handles, "serialize() was already called!"
+        # A negative sleep would rewind the recording clock, making later
+        # messages carry smaller timestamps -- the player assumes ascending
+        # order and would apply them late or never (and durationSeconds could
+        # fall below a recorded message's time).
+        if duration < 0.0:
+            raise ValueError(f"insert_sleep duration must be >= 0, got {duration}.")
         self._time += duration
 
     def serialize(self) -> bytes:
@@ -101,7 +107,8 @@ class StateSerializer:
             }
         )
         assert isinstance(msgpack_payload, bytes)
-        self._handler._record_handles.remove(self)
+        with self._handler._record_lock:
+            self._handler._record_handles.remove(self)
 
         # Build uncompressed inner payload:
         #   [8 bytes] msgpack length (little-endian uint64)
@@ -209,8 +216,15 @@ class WebsockMessageHandler:
         self._queued_messages: queue.Queue = queue.Queue()
         self._locked_thread_id = -1
 
-        # List of active serializers recording messages.
+        # List of active serializers recording messages. _record_lock makes
+        # "register a serializer + snapshot existing state" atomic against
+        # queue_message's "feed serializers + push to buffer": without it, a
+        # message queued between registration and the snapshot is recorded
+        # TWICE (once live, once from the snapshot). Reentrant so callers can
+        # hold it across get_message_serializer(). Ordering: _record_lock is
+        # always taken BEFORE the buffer's buffer_lock, never after.
         self._record_handles: list[StateSerializer] = []
+        self._record_lock = threading.RLock()
 
     def get_message_serializer(
         self, filter: Callable[[Message], bool]
@@ -218,7 +232,8 @@ class WebsockMessageHandler:
         """Start recording messages that are sent. Sent messages will be
         serialized and can be used for playback."""
         serializer = StateSerializer(self, filter)
-        self._record_handles.append(serializer)
+        with self._record_lock:
+            self._record_handles.append(serializer)
         return serializer
 
     def register_handler(
@@ -264,10 +279,14 @@ class WebsockMessageHandler:
 
     def queue_message(self, message: Message) -> None:
         """Wrapped method for sending messages."""
-        for handle in self._record_handles:
-            handle._insert_message(message)
+        # Feed + push under _record_lock so a concurrently-registering
+        # serializer either sees this message in its buffer snapshot OR
+        # records it live -- never both (duplicate) and never neither (loss).
+        with self._record_lock:
+            for handle in self._record_handles:
+                handle._insert_message(message)
 
-        self.get_message_buffer().push(message)
+            self.get_message_buffer().push(message)
 
     @contextlib.contextmanager
     def atomic(self) -> Generator[None, None, None]:
@@ -551,10 +570,17 @@ class WebsockServer(WebsockMessageHandler):
                     " messages"
                 )
 
-            try:
-                # For each client: infinite loop over producers (which send messages)
-                # and consumers (which receive messages).
-                await asyncio.gather(
+            # For each client: infinite loop over producers (which send
+            # messages) and consumers (which receive messages). Explicit
+            # tasks, because gather() does NOT cancel siblings when one
+            # raises: the consumer's ConnectionClosed left the broadcast
+            # producer parked on message_event.wait() as a zombie -- its
+            # window generator's finally (which releases the GC cursor) then
+            # ran only when the NEXT broadcast woke it, and on a quiet server
+            # the stale cursor pinned the GC deletion floor indefinitely.
+            producer_consumer_tasks = [
+                asyncio.create_task(coro)
+                for coro in (
                     _message_producer(
                         connection,
                         client_state.message_buffer,
@@ -570,6 +596,9 @@ class WebsockServer(WebsockMessageHandler):
                     ),
                     _message_consumer(connection, handle_incoming, message_class),
                 )
+            ]
+            try:
+                await asyncio.gather(*producer_consumer_tasks)
             except (
                 websockets.exceptions.ConnectionClosedOK,
                 websockets.exceptions.ConnectionClosedError,
@@ -580,6 +609,13 @@ class WebsockServer(WebsockMessageHandler):
                 # and disconnect callbacks always fire.
                 pass
             finally:
+                # Tear down the surviving siblings NOW (cancellation runs the
+                # broadcast window generator's finally, releasing its GC
+                # cursor deterministically); await them so no task outlives
+                # its connection.
+                for task in producer_consumer_tasks:
+                    task.cancel()
+                await asyncio.gather(*producer_consumer_tasks, return_exceptions=True)
                 # We use a sentinel value to signal that the client producer thread
                 # should exit.
                 #
@@ -594,6 +630,12 @@ class WebsockServer(WebsockMessageHandler):
                 # leak the client. `pop(..., None)` keeps this idempotent.
                 self._client_state_from_id.pop(client_id, None)
                 self._live_connections.pop(client_id, None)
+                # Drop this connection's broadcast GC cursor HERE, not only in
+                # the generator's own finally: the idle broadcast producer can
+                # stay parked (same zombie hazard as the explicit-tasks note
+                # above), so its finally may not have run. pop() is idempotent
+                # with the generator's own cleanup, whichever runs first.
+                self._broadcast_buffer.generator_cursors.pop(client_id, None)
                 total_connections -= 1
 
                 # Disconnection callbacks.
@@ -759,7 +801,16 @@ class WebsockServer(WebsockMessageHandler):
                         ),
                     ) as serve_future:
                         assert serve_future.server is not None
-                        self._port = port_attempt
+                        # Report the port actually BOUND, not the one
+                        # requested: with port=0 the OS assigns an ephemeral
+                        # port, and echoing the 0 back made get_port() (and
+                        # the printed URLs) useless.
+                        bound_sockets = serve_future.server.sockets
+                        self._port = (
+                            bound_sockets[0].getsockname()[1]
+                            if bound_sockets
+                            else port_attempt
+                        )
                         ready_sem.release()
                         assert self._stop_event is not None
                         await self._stop_event.wait()
@@ -826,32 +877,41 @@ async def _message_producer(
         client_id, backlog_done_message=backlog_done_message
     )
     zstd = zstandard.ZstdCompressor(level=1)
-    while not buffer.done:
-        try:
-            outgoing = await window_generator.__anext__()
-        except StopAsyncIteration:
-            break
+    try:
+        while not buffer.done:
+            try:
+                outgoing = await window_generator.__anext__()
+            except StopAsyncIteration:
+                break
 
-        binary_buffers: list[memoryview] = []
-        serialized_messages = tuple(
-            message.as_serializable_dict(binary_buffers) for message in outgoing
-        )
-        inner = msgspec.msgpack.encode(
-            {
-                "messages": serialized_messages,
-                "timestampSec": time.perf_counter(),
-                "binaryBufferLengths": tuple(b.nbytes for b in binary_buffers),
-            }
-        )
-        compressed = zstd.compress(inner)
+            binary_buffers: list[memoryview] = []
+            serialized_messages = tuple(
+                message.as_serializable_dict(binary_buffers) for message in outgoing
+            )
+            inner = msgspec.msgpack.encode(
+                {
+                    "messages": serialized_messages,
+                    "timestampSec": time.perf_counter(),
+                    "binaryBufferLengths": tuple(b.nbytes for b in binary_buffers),
+                }
+            )
+            compressed = zstd.compress(inner)
 
-        parts: list[bytes | memoryview] = [
-            len(inner).to_bytes(8, "little"),
-            len(compressed).to_bytes(8, "little"),
-            compressed,
-        ]
-        _append_aligned_buffers(parts, binary_buffers, 16 + len(compressed))
-        await websocket.send(b"".join(parts))
+            parts: list[bytes | memoryview] = [
+                len(inner).to_bytes(8, "little"),
+                len(compressed).to_bytes(8, "little"),
+                compressed,
+            ]
+            _append_aligned_buffers(parts, binary_buffers, 16 + len(compressed))
+            await websocket.send(b"".join(parts))
+    finally:
+        # Close the generator DETERMINISTICALLY. A cancellation delivered at
+        # `websocket.send` leaves the generator suspended at its yield --
+        # exiting the async-for does NOT close it, so its finallys (the GC
+        # cursor pop, the flush-waiter cancel) would otherwise run only at a
+        # later garbage-collection pass. aclose() raises GeneratorExit at the
+        # yield and runs them now, before this producer task completes.
+        await window_generator.aclose()
 
 
 async def _message_consumer(

@@ -244,6 +244,25 @@ describe("reconcileRegionWidths with railed columns (D38/D40: rail moves width b
     expect(recon(redocked, expanded).right).toBe(480);
   });
 
+  it("docking a resized float onto an empty edge takes the window's width (D3)", () => {
+    // regression: a never-docked edge carries a synthesized 300px default
+    // (regionWidthsOf materializes it into regionWidth on every commit),
+    // indistinguishable from a real remembered width -- and the
+    // preserved-width branch shadowed the D3 window-width path, so a float
+    // resized to 500px docked onto the empty edge at 300 instead of 500.
+    const floating = emptyLayout();
+    floating.groups = { a: group("a") };
+    floating.floating = [floatingWindow({ id: "w", stack: ["a"], width: 500 })];
+    // The materialized default a prior commit would have written.
+    floating.regionWidth = {
+      left: DEFAULT_REGION_PX,
+      right: DEFAULT_REGION_PX,
+    };
+    const docked = dockToRegionEdge(floating, ["a"], "right", "right");
+    expect(recon(floating, docked).right).toBe(500);
+    expect(docked.docked.right!.columns[0].weight).toBe(500);
+  });
+
   it("restoring a snapshot onto an empty edge keeps the preserved width", () => {
     // regression: Escape after an undock restores the layout snapshot; the
     // re-appearing single column must come back at the edge's preserved

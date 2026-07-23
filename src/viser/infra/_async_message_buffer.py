@@ -32,6 +32,15 @@ class AsyncMessageBuffer:
     done: bool = False
     atomic_counter: int = 0
 
+    generator_cursors: Dict[int, int] = dataclasses.field(default_factory=dict)
+    """Per-active-connection consumption cursors (client id -> last message id
+    that connection's window generator has drained). Written by each generator
+    as it advances (int dict writes are atomic under the GIL); read under
+    ``buffer_lock`` by the garbage collector, which may only delete messages
+    that EVERY active generator has consumed -- a shared "any messages
+    pending?" event is not a consumption watermark, since a backpressured
+    client's cursor can sit arbitrarily far behind it."""
+
     def remove_from_buffer(self, match_fn: Callable[[Message], bool]) -> None:
         """Remove messages that match some condition."""
 
@@ -111,7 +120,13 @@ class AsyncMessageBuffer:
                 #
                 # If we're in an atomic block, this will happen when
                 # atomic_end() is called.
-                self.event_loop.call_soon_threadsafe(self.message_event.set)
+                try:
+                    self.event_loop.call_soon_threadsafe(self.message_event.set)
+                except RuntimeError:
+                    # Event loop already closed (write after stop()); the
+                    # message is buffered above, and a closed loop has no
+                    # consumer to wake -- same tolerance as set_done().
+                    pass
 
     def atomic_start(self) -> None:
         """Start an atomic block. No new messages/windows should be sent."""
@@ -127,11 +142,19 @@ class AsyncMessageBuffer:
             self.atomic_counter -= 1
             should_flush = self.atomic_counter == 0
         if should_flush:
-            self.event_loop.call_soon_threadsafe(self.message_event.set)
+            try:
+                self.event_loop.call_soon_threadsafe(self.message_event.set)
+            except RuntimeError:
+                # Event loop already closed (teardown); nothing to wake.
+                pass
 
     def flush(self) -> None:
         """Flush the message buffer; signals to yield a message window immediately."""
-        self.event_loop.call_soon_threadsafe(self.flush_event.set)
+        try:
+            self.event_loop.call_soon_threadsafe(self.flush_event.set)
+        except RuntimeError:
+            # Event loop already closed (teardown); nothing to wake.
+            pass
 
     def set_done(self) -> None:
         """Set the done flag. Kills the generator."""
@@ -147,7 +170,7 @@ class AsyncMessageBuffer:
             # Event loop may already be closed during teardown.
             pass
 
-    async def window_generator(
+    def window_generator(
         self, client_id: int, backlog_done_message: Message | None = None
     ) -> AsyncGenerator[Sequence[Message], None]:
         """Async iterator over messages. Loops infinitely, and waits when no messages
@@ -155,67 +178,125 @@ class AsyncMessageBuffer:
 
         When `backlog_done_message` is given, it is injected into the stream
         exactly once, immediately after the last message that was already
-        buffered when this generator started -- an explicit end-of-replay
-        marker for a (re)connecting client. It is never stored in the buffer
-        (each connection gets its own), so it has no redundancy/coalescing
-        semantics."""
-
-        last_sent_id = -1
+        buffered when this generator was CREATED -- an explicit end-of-replay
+        marker for a (re)connecting client. The boundary is captured eagerly
+        here (an async generator's body does not run until first iteration,
+        which would fold live messages pushed in between into the backlog and
+        let them precede the marker). The marker is never stored in the
+        buffer (each connection gets its own), so it has no redundancy/
+        coalescing semantics."""
         # The replay boundary: everything at or below this id is backlog the
         # client must consume before the marker; everything above is live.
+        # (Captured HERE eagerly; the cursor registration is inside the
+        # generator body instead -- a generator that is never iterated, e.g.
+        # a producer that observes buffer.done before its first __anext__,
+        # never runs its body OR its finally, so an eager registration here
+        # would leak. An unstarted generator has consumed nothing and needs
+        # no cursor: purging under a not-yet-registered new client is this
+        # GC's intended behavior.)
         backlog_last_id = self.message_counter - 1
+        return self._window_loop(client_id, backlog_last_id, backlog_done_message)
+
+    async def _window_loop(
+        self,
+        client_id: int,
+        backlog_last_id: int,
+        backlog_done_message: Message | None,
+    ) -> AsyncGenerator[Sequence[Message], None]:
+        last_sent_id = -1
         backlog_done_pending = backlog_done_message is not None
         flush_wait = self.event_loop.create_task(self.flush_event.wait())
-        while not self.done:
-            window: List[Message] = []
-            most_recent_message_id = self.message_counter - 1
-            while (
-                last_sent_id < most_recent_message_id
-                and len(window) < self.max_window_size
-                # We should only be polling for new messages if we aren't in an atomic block.
-                and self.atomic_counter == 0
-            ):
-                last_sent_id += 1
-                if self.persistent_messages:
-                    message = self.message_from_id.get(last_sent_id, None)
+        # Register this connection's consumption cursor (see
+        # generator_cursors) for the garbage collector's deletion floor;
+        # inside the try so the finally that drops it is guaranteed to pair.
+        self.generator_cursors[client_id] = last_sent_id
+        try:
+            while not self.done:
+                window: List[Message] = []
+                most_recent_message_id = self.message_counter - 1
+                # D51: the end-of-replay marker goes IMMEDIATELY after the
+                # connection's captured backlog. Cap the pre-marker windows at
+                # the boundary so a live message pushed since connect cannot
+                # slip in front of the marker; the live tail drains in the
+                # next window.
+                if backlog_done_pending:
+                    most_recent_message_id = min(
+                        most_recent_message_id, backlog_last_id
+                    )
+                while (
+                    last_sent_id < most_recent_message_id
+                    and len(window) < self.max_window_size
+                    # We should only be polling for new messages if we aren't
+                    # in an atomic block.
+                    and self.atomic_counter == 0
+                ):
+                    last_sent_id += 1
+                    if self.persistent_messages:
+                        message = self.message_from_id.get(last_sent_id, None)
+                    else:
+                        # If we're not persisting messages, remove them from
+                        # the buffer.
+                        with self.buffer_lock:
+                            message = self.message_from_id.pop(last_sent_id, None)
+                            if message is not None:
+                                redundancy_key = message.redundancy_key()
+                                self.id_from_redundancy_key.pop(redundancy_key, None)
+
+                    if (
+                        message is not None
+                        and message.excluded_self_client != client_id
+                    ):
+                        window.append(message)
+
+                # Advance this connection's consumption cursor: everything at
+                # or below last_sent_id is either in `window` (about to be
+                # sent) or skipped, so the GC may delete it without this
+                # client losing it.
+                self.generator_cursors[client_id] = last_sent_id
+
+                if (
+                    backlog_done_pending
+                    and last_sent_id >= backlog_last_id
+                    and self.atomic_counter == 0
+                ):
+                    # Backlog fully drained (or empty at connect): mark the
+                    # end of the replay in-stream, ordered before any live
+                    # message that lands after this window.
+                    backlog_done_pending = False
+                    assert backlog_done_message is not None
+                    window.append(backlog_done_message)
+
+                if len(window) > 0:
+                    # Yield a window!
+                    yield window
                 else:
-                    # If we're not persisting messages, remove them from the buffer.
-                    with self.buffer_lock:
-                        message = self.message_from_id.pop(last_sent_id, None)
-                        if message is not None:
-                            redundancy_key = message.redundancy_key()
-                            self.id_from_redundancy_key.pop(redundancy_key, None)
+                    # Wait for a new message to come in.
+                    await self.message_event.wait()
+                    self.message_event.clear()
 
-                if message is not None and message.excluded_self_client != client_id:
-                    window.append(message)
-
-            if (
-                backlog_done_pending
-                and last_sent_id >= backlog_last_id
-                and self.atomic_counter == 0
-            ):
-                # Backlog fully drained (or empty at connect): mark the end of
-                # the replay in-stream, ordered before any live message that
-                # lands after this window.
-                backlog_done_pending = False
-                assert backlog_done_message is not None
-                window.append(backlog_done_message)
-
-            if len(window) > 0:
-                # Yield a window!
-                yield window
-            else:
-                # Wait for a new message to come in.
-                await self.message_event.wait()
-                self.message_event.clear()
-
-            # Add a delay if either (a) we failed to yield or (b) there's currently no messages to send.
-            most_recent_message_id = self.message_counter - 1
-            if len(window) == 0 or most_recent_message_id == last_sent_id:
-                done, pending = await asyncio.wait(
-                    [flush_wait], timeout=self.window_duration_sec
-                )
-                del pending
-                if flush_wait in done and not self.done:
-                    self.flush_event.clear()
-                    flush_wait = self.event_loop.create_task(self.flush_event.wait())
+                # Add a delay if either (a) we failed to yield or (b) there's
+                # currently no messages to send.
+                most_recent_message_id = self.message_counter - 1
+                if len(window) == 0 or most_recent_message_id == last_sent_id:
+                    done, pending = await asyncio.wait(
+                        [flush_wait], timeout=self.window_duration_sec
+                    )
+                    del pending
+                    if flush_wait in done and not self.done:
+                        self.flush_event.clear()
+                        flush_wait = self.event_loop.create_task(
+                            self.flush_event.wait()
+                        )
+        finally:
+            # Drop this connection's GC cursor: a departed client must not
+            # hold the deletion floor down forever.
+            self.generator_cursors.pop(client_id, None)
+            # And reap the CURRENT flush waiter (a plain local, so the latest
+            # re-armed task is the one cancelled): an un-awaited Event.wait()
+            # task otherwise lingers until a future flush, accumulating one
+            # per quiet disconnect.
+            flush_wait.cancel()
+            try:
+                await flush_wait
+            except asyncio.CancelledError:
+                pass

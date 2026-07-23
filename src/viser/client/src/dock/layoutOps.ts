@@ -216,6 +216,40 @@ export function nodeAllMinimized(layout: DockLayout, nodeId: NodeId): boolean {
   return false;
 }
 
+/** Per-PANE container signature: which container (window / column) holds the
+ * pane's group, and that container's collapse flag (D38). A deferred server
+ * collapse for a panel conflicts with a user gesture exactly when one of the
+ * panel's OWN panes' signatures changed -- its container collapsed/expanded,
+ * or the pane moved to another container. Scoped per pane so an unrelated
+ * panel's gesture can never invalidate a queued command (a global key did,
+ * silently discarding legitimate commands), and deliberately blind to
+ * geometry -- widths, heights, window positions, z-order -- and to tab
+ * activation, which cannot contend with a collapse axis. */
+export function paneContainerSignatures(
+  layout: DockLayout,
+): Map<PaneId, string> {
+  const sigs = new Map<PaneId, string>();
+  const groupSig = new Map<GroupId, string>();
+  for (const win of layout.floating) {
+    const sig = `w:${win.id}:${win.collapsed === true ? 1 : 0}`;
+    for (const g of win.stack) groupSig.set(g, sig);
+  }
+  for (const edge of ["left", "right"] as DockEdge[]) {
+    const region = layout.docked[edge];
+    if (region === null) continue;
+    for (const column of region.columns) {
+      const sig = `c:${edge}:${column.id}:${column.railed === true ? 1 : 0}`;
+      for (const leaf of column.leaves) groupSig.set(leaf.group, sig);
+    }
+  }
+  for (const [gid, group] of Object.entries(layout.groups)) {
+    const sig = groupSig.get(gid);
+    if (sig === undefined) continue;
+    for (const paneId of group.paneIds) sigs.set(paneId, sig);
+  }
+  return sigs;
+}
+
 /** True when a floating window is minimized: its one container flag (D38).
  * (Name kept from the per-group era so call sites read unchanged; "all
  * minimized" and "minimized" are the same thing now.) */
@@ -284,23 +318,23 @@ export function isMultiLeafColumn(column: DockColumn): boolean {
 
 /** Distribute a region's total width across its side-by-side columns for a
  * region-edge resize. Every column scales proportionally from its drag-start
- * width; columns that would cross a min/max limit are clamped there, and the
- * difference is redistributed among the still-unclamped columns (iterated,
- * since redistribution can push more columns to a limit). The region can
- * therefore keep resizing while any column has room, instead of locking up as
- * soon as one column hits a limit. `targetTotal` is clamped to
- * [sum(mins), sum(maxs)]; the result sums to the clamped target. */
+ * width; columns that would fall below their min are clamped there, and the
+ * difference is taken from the still-unclamped columns (iterated, since
+ * redistribution can push more columns to their min). The region can
+ * therefore keep shrinking while any column has room, instead of locking up
+ * as soon as one column hits its min. `targetTotal` is floored at sum(mins);
+ * the result sums to the floored target. There is deliberately no per-column
+ * MAX: nothing in the system bounds a column from above -- region drags are
+ * limited by grab-mins and the render-time canvas guard only. */
 export function resizeRegionColumns(
   initialWidths: number[],
   minWidths: number[],
-  maxWidths: number[],
   targetTotal: number,
 ): number[] {
   const n = initialWidths.length;
   if (n === 0) return [];
   const sumMin = minWidths.reduce((a, b) => a + b, 0);
-  const sumMax = maxWidths.reduce((a, b) => a + b, 0);
-  const target = clamp(targetTotal, sumMin, sumMax);
+  const target = Math.max(targetTotal, sumMin);
   // Share weights for proportional scaling/redistribution; a zero-width
   // column still gets an equal-ish share so it can't divide by zero.
   const share = initialWidths.map((w) => (w > 0 ? w : 1));
@@ -308,19 +342,18 @@ export function resizeRegionColumns(
   const widths = share.map((s) => (s / shareTotal) * target);
   const frozen: boolean[] = new Array(n).fill(false);
   for (let pass = 0; pass < n; pass++) {
-    let correction = 0; // width still to hand out (+) or take back (-).
+    let correction = 0; // width still to take back from unfrozen columns.
     for (let i = 0; i < n; i++) {
       if (frozen[i]) continue;
-      const clamped = clamp(widths[i], minWidths[i], maxWidths[i]);
-      if (clamped !== widths[i]) {
-        correction += widths[i] - clamped;
-        widths[i] = clamped;
+      if (widths[i] < minWidths[i]) {
+        correction += widths[i] - minWidths[i];
+        widths[i] = minWidths[i];
         frozen[i] = true;
       }
     }
     if (correction === 0) break;
     const freeShare = share.reduce((s, w, i) => s + (frozen[i] ? 0 : w), 0);
-    if (freeShare === 0) break; // all clamped; target within bounds => done.
+    if (freeShare === 0) break; // target == sumMin: every column at its min.
     for (let i = 0; i < n; i++) {
       if (!frozen[i]) widths[i] += (correction * share[i]) / freeShare;
     }
@@ -1525,14 +1558,14 @@ export function railRegion(layout: DockLayout, edge: DockEdge): DockLayout {
 }
 
 /** The one entry point for legacy persisted layouts (both injection/restore
- * chokepoints call this): detects pre-D46 band shapes, the pre-D44
- * regionCollapsed flag, and the pre-always-px lone-column weight form, and
- * -- only when something is legacy -- clones and runs the migrations in
- * their required order (rows first: the flag applies to the migrated
- * columns; the lone-width adoption last: the earlier migrations can
- * produce the single-column shape it reads). Returns the input untouched
- * when the layout is current-format, so modern layouts pay cheap property
- * checks. */
+ * chokepoints call this): detects pre-D46 band shapes and the pre-D44
+ * regionCollapsed flag, and -- only when something is legacy -- clones and
+ * runs the migrations in their required order (rows first: the flag
+ * applies to the migrated columns). The pre-always-px lone-column weight
+ * form needs no migration leg: reconciliation's new-column carry adopts a
+ * carried regionWidth into the weight on the first commit. Returns the
+ * input untouched when the layout is current-format, so modern layouts pay
+ * cheap property checks. */
 export function migrateLegacyLayout(layout: DockLayout): DockLayout {
   const legacy =
     layout.regionCollapsed !== undefined ||
@@ -1876,7 +1909,6 @@ export function setRegionWidth(
         const widths = resizeRegionColumns(
           expanded.map((c) => c.weight),
           expanded.map(() => minRegionWidth()),
-          expanded.map(() => Infinity),
           px - railedPx,
         );
         expanded.forEach((c, i) => {
@@ -1894,7 +1926,6 @@ export function setRegionWidth(
       const widths = resizeRegionColumns(
         cols.map((c) => c.weight),
         cols.map(() => minRegionWidth()),
-        cols.map(() => Infinity),
         px,
       );
       cols.forEach((c, i) => {
@@ -2079,10 +2110,16 @@ function reconcileMembershipInPlace(
 
 /** Ensure this panel's panes live together in a single group, returning that
  * group's id. Creates the group (expanded) if the panes aren't placed yet; if
- * they're already grouped, reuses it and reconciles membership. */
+ * they're already grouped, reuses it -- and re-gathers scattered panes into it
+ * only when `regather` is set. Regathering is POSITION-command behavior ("put
+ * the panel THERE" re-assembles it, D52); a size/collapse-only bundle must
+ * not relocate panes the user tore out (spec 8: the axes are independent --
+ * a set_width can never disturb the position axis, and un-tearing a tab IS a
+ * position disturbance). */
 function ensurePanelGroup(
   draft: DockLayout,
   paneIds: PaneId[],
+  regather: boolean,
 ): GroupId | null {
   const nePaneIds = asNonEmpty(paneIds);
   if (nePaneIds === null) return null;
@@ -2091,7 +2128,7 @@ function ensurePanelGroup(
     const group = makeGroup(nePaneIds);
     draft.groups[group.id] = group;
     groupId = group.id;
-  } else {
+  } else if (regather) {
     applyMembership(draft, groupId, paneIds);
   }
   return groupId;
@@ -2200,7 +2237,14 @@ export function applyPanelPlacement(
   // guard at the end: a group we created must not outlive the op unattached).
   const groupExistedBefore = panelGroupOf(layout, paneIds) !== null;
   let draft = clone(layout);
-  const groupId = ensurePanelGroup(draft, paneIds);
+  const groupId = ensurePanelGroup(
+    draft,
+    paneIds,
+    // Only a POSITION command re-assembles the panel's panes (D52); a
+    // size/collapse-only bundle resolves the existing group as-is, leaving
+    // panes the user tore into other groups/windows where they are.
+    placement.position !== null,
+  );
   if (groupId === null) return layout;
 
   // Float a group at the given requested coords: record them on the window (so

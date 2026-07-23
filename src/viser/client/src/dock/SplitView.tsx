@@ -134,6 +134,12 @@ function RegionColumns({
     if (
       REDUCED_MOTION_MQL?.matches === true ||
       root.closest("[data-dock-resizing]") !== null ||
+      // A LEAF divider drag marks the ColumnView container -- a DESCENDANT
+      // of this root, which closest() (ancestors only) never sees. Columns
+      // don't move on a vertical resize, so a glide can never arm; without
+      // this check the effect still paid a full rect + per-column offset
+      // walk (forced reflow) on every per-frame weight commit of the drag.
+      root.querySelector("[data-dock-resizing]") !== null ||
       // Squeeze regime (spec D34): drawn widths track containerWidth per
       // resize event, so column positions shift every event -- arming a
       // fresh glide each time would rubber-band the resize (railed strips

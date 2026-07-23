@@ -401,6 +401,18 @@ function createObjectFactory(
                   wxyz: wxyzArray,
                   position: positionArray,
                 });
+                // Also mirror the pose into nodePoseData, which is what a
+                // remount applies (PivotControls unmounts when invisible).
+                // The server can't do this for us: its pose re-broadcasts
+                // exclude the dragging client, so without this write a
+                // visibility toggle after a drag restored the pre-drag pose.
+                // poseUpdateState is left alone -- the pivot's object already
+                // shows this pose; only a remount needs to re-apply it.
+                const pose = viewer.mutable.current.nodePoseData[message.name];
+                if (pose !== undefined) {
+                  pose.wxyz = wxyzArray;
+                  pose.position = positionArray;
+                }
                 sendDragMessage({
                   type: "TransformControlsUpdateMessage",
                   name: message.name,

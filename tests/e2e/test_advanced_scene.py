@@ -525,3 +525,89 @@ def test_batched_axes_in_scene(
     )
 
     wait_for_scene_node(viser_page, "/test_batched_axes")
+
+
+JS_GIZMO_WORLD_POSITION = """
+() => {
+    const m = window.__viserMutable;
+    m.scene.updateWorldMatrix(true, true);
+    // The pivot's root is the matrix-driven Group (matrixAutoUpdate false);
+    // pick the one with the most gizmo meshes under it, as in the handle
+    // finder above.
+    let best = null;
+    let bestCount = -1;
+    m.scene.traverse((root) => {
+        if (root.type !== "Group" || root.matrixAutoUpdate !== false) return;
+        let count = 0;
+        root.traverse((o) => {
+            if (o.isMesh) count++;
+        });
+        if (count > bestCount) {
+            bestCount = count;
+            best = root;
+        }
+    });
+    if (best === null) return null;
+    const v = best.position.constructor;
+    const world = new v();
+    best.getWorldPosition(world);
+    return [world.x, world.y, world.z];
+}
+"""
+
+
+def test_transform_controls_keep_dragged_pose_across_visibility_toggle(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """A dragged gizmo must reappear at its DRAGGED pose after its ancestor is
+    hidden and re-shown.
+
+    PivotControls unmounts while invisible, and a remount re-applies the pose
+    from the client's nodePoseData -- which the server cannot refresh for the
+    dragging client (its pose re-broadcasts exclude it). The drag handler must
+    mirror the dragged pose into nodePoseData itself; without that, the gizmo
+    snapped back to its pre-drag pose on every visibility round-trip."""
+    parent = viser_server.scene.add_frame("/vis_parent", show_axes=False)
+    handle = viser_server.scene.add_transform_controls(
+        "/vis_parent/gizmo",
+        fixed=True,
+        scale=20.0,
+        disable_sliders=True,
+        disable_rotations=True,
+    )
+    wait_for_scene_node(viser_page, "/vis_parent/gizmo")
+
+    screen_handle = viser_page.evaluate(JS_FIND_TRANSFORM_HANDLE)
+    assert screen_handle is not None, "transform control handle not found"
+    cx, cy = screen_handle["center"]
+    hx, hy = screen_handle["handle"]
+    dx, dy = hx - cx, hy - cy
+    length = math.hypot(dx, dy) or 1.0
+
+    viser_page.mouse.move(hx, hy)
+    viser_page.mouse.down()
+    viser_page.mouse.move(hx + dx / length * 120, hy + dy / length * 120, steps=15)
+    viser_page.mouse.up()
+    viser_page.wait_for_timeout(500)
+
+    dragged = math.sqrt(sum(float(x) ** 2 for x in handle.position))
+    assert dragged > 0.1, "drag did not move the gizmo; cannot test the round-trip"
+    pos_after_drag = viser_page.evaluate(JS_GIZMO_WORLD_POSITION)
+    assert pos_after_drag is not None
+
+    # Hide and re-show the ancestor: the gizmo unmounts and remounts.
+    parent.visible = False
+    viser_page.wait_for_timeout(400)
+    parent.visible = True
+    viser_page.wait_for_timeout(600)
+
+    pos_after_toggle = viser_page.evaluate(JS_GIZMO_WORLD_POSITION)
+    assert pos_after_toggle is not None, "gizmo did not remount after re-show"
+    drift = math.sqrt(
+        sum((a - b) ** 2 for a, b in zip(pos_after_drag, pos_after_toggle))
+    )
+    assert drift < 1e-3, (
+        f"gizmo reappeared {drift:.3f} units away from its dragged pose "
+        f"({pos_after_drag} -> {pos_after_toggle})"
+    )

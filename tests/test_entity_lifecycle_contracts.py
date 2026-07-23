@@ -369,3 +369,163 @@ def test_update_simple_messages_have_distinct_redundancy_slots() -> None:
     b0 = SetBoneOrientationMessage(name="/n", bone_index=0, wxyz=(1.0, 0.0, 0.0, 0.0))
     b1 = SetBoneOrientationMessage(name="/n", bone_index=1, wxyz=(1.0, 0.0, 0.0, 0.0))
     assert b0.redundancy_key() != b1.redundancy_key()
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_gc_never_deletes_messages_a_slow_client_has_not_consumed() -> None:
+    """The GC's deletion floor is the minimum consumption cursor over ACTIVE
+    window generators -- never the shared message_event. Regression: a
+    backpressured client whose cursor sat behind a remove tombstone lost the
+    removal forever when a new client's connect-GC deleted it (the client's
+    cursor then skipped the hole and it retained the entity indefinitely,
+    permanently diverging from other clients)."""
+    server = viser.ViserServer()
+    broadcast = server._websock_server._broadcast_buffer
+    buffer = broadcast.message_from_id
+    baseline = len(buffer)
+
+    frame = server.scene.add_frame("/gc_slow_client")
+    add_id = max(buffer.keys())
+    frame.remove()
+    assert len(buffer) > baseline  # the tombstone is queued
+
+    # A slow client: its generator's cursor is still BEFORE the add/remove.
+    broadcast.generator_cursors[999] = add_id - 1
+    try:
+        # The event may be clear (another generator drained); GC must still
+        # not delete past the slow client's cursor.
+        broadcast.message_event.clear()
+        server._run_garbage_collector()
+        assert any(m.lifecycle_phase == "remove" for m in buffer.values()), (
+            "GC deleted a tombstone a slow client had not consumed"
+        )
+
+        # Once the slow client catches up, the tombstone becomes purgeable.
+        broadcast.generator_cursors[999] = max(buffer.keys())
+        server._run_garbage_collector()
+        assert not any(m.lifecycle_phase == "remove" for m in buffer.values())
+    finally:
+        broadcast.generator_cursors.pop(999, None)
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_same_name_replacement_supersedes_old_handle() -> None:
+    """Re-adding a node under an existing name (explicitly supported) must
+    SUPERSEDE the old handle: (1) the old node's pose updates must not replay
+    onto the new node (a late joiner would put the replacement at the old
+    pose), and (2) the old handle's remove() must not delete the replacement
+    (removal resolves by name)."""
+    import warnings as _warnings
+
+    server = viser.ViserServer()
+    buffer = server._websock_server._broadcast_buffer.message_from_id
+
+    old = server.scene.add_frame("/replace_me", position=(1.0, 2.0, 3.0))
+    new = server.scene.add_box("/replace_me", dimensions=(1, 1, 1), color=(255, 0, 0))
+
+    # (1) No stale pose in the replay buffer: the surviving SetPosition for
+    # the name is the REPLACEMENT's (origin), not the old node's.
+    poses = [
+        m
+        for m in buffer.values()
+        if type(m).__name__ == "SetPositionMessage" and m.name == "/replace_me"
+    ]
+    assert [tuple(m.position) for m in poses] == [(0.0, 0.0, 0.0)], poses
+
+    # (2) The old handle is inert: removing it warns and leaves the
+    # replacement alive and usable.
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        old.remove()
+    assert any("already removed" in str(w.message) for w in caught)
+    assert not new._impl.removed
+    assert server.scene._handle_from_node_name["/replace_me"] is new
+    new.position = (5.0, 0.0, 0.0)  # still writable
+
+    # And the replacement's own remove still works.
+    new.remove()
+    assert "/replace_me" not in server.scene._handle_from_node_name
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_remove_retry_after_emit_failure_still_clears_drag_bindings() -> None:
+    """If a binding-clear emit raises mid-remove(), the handle must keep its
+    callback state so a RETRY re-emits everything. Regression: the shared
+    emit helper's call site cleared drag_cb BEFORE the emits, so a retry saw
+    had_drag=False and left the old non-empty drag binding persistent."""
+    server = viser.ViserServer()
+    box = server.scene.add_box("/retry_test", dimensions=(1, 1, 1), color=(255, 0, 0))
+
+    @box.on_click
+    def _(_event) -> None:
+        pass
+
+    @box.on_drag
+    def _(_event) -> None:
+        pass
+
+    iface = server.scene._websock_interface
+    real_queue = iface.queue_message
+    calls = {"n": 0}
+
+    def failing_queue(message):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient emit failure")
+        return real_queue(message)
+
+    with patch.object(iface, "queue_message", side_effect=failing_queue):
+        try:
+            box.remove()
+        except RuntimeError:
+            pass
+        else:  # pragma: no cover
+            raise AssertionError("expected the first emit to raise")
+        # Retry: must re-emit BOTH empty bindings (callbacks still intact).
+        box.remove()
+
+    buffer = server._websock_server._broadcast_buffer.message_from_id
+    drag_bindings = [
+        m
+        for m in buffer.values()
+        if type(m).__name__ == "SetSceneNodeDragBindingsMessage"
+        and m.name == "/retry_test"
+    ]
+    assert drag_bindings and all(len(m.bindings) == 0 for m in drag_bindings), (
+        f"retry left stale drag bindings: {drag_bindings}"
+    )
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_post_remove_interaction_callback_registration_raises() -> None:
+    """Interaction-callback (de)registration on a removed node raises, like
+    property writes: it publishes name-keyed binding messages that would
+    otherwise linger as ghosts and replay to late joiners once the node's
+    remove tombstone is garbage-collected."""
+    server = viser.ViserServer()
+    handle = server.scene.add_icosphere("/clickable", radius=0.1)
+    handle.remove()
+    with pytest.raises(RuntimeError, match="removed"):
+        handle.on_click(lambda _: None)
+    with pytest.raises(RuntimeError, match="removed"):
+        handle.on_drag(lambda _: None)
+    with pytest.raises(RuntimeError, match="removed"):
+        handle.remove_click_callback()
+    with pytest.raises(RuntimeError, match="removed"):
+        handle.remove_drag_callback()
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_post_remove_deferred_decorator_raises() -> None:
+    """A decorator factory created BEFORE remove() must still refuse to
+    register after it: the factory-time check alone left the returned
+    decorator as a bypass that queued ghost binding messages."""
+    server = viser.ViserServer()
+    handle = server.scene.add_icosphere("/clickable2", radius=0.1)
+    register_click = handle.on_click(modifier="shift")
+    register_drag = handle.on_drag("left")
+    handle.remove()
+    with pytest.raises(RuntimeError, match="removed"):
+        register_click(lambda _: None)
+    with pytest.raises(RuntimeError, match="removed"):
+        register_drag(lambda _: None)
