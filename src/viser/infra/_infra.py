@@ -431,8 +431,20 @@ class WebsockServer(WebsockMessageHandler):
         # Broadcast buffer should be populated by the background worker.
         assert isinstance(self._broadcast_buffer, AsyncMessageBuffer)
 
-    def stop(self) -> None:
-        """Stop the server."""
+    def stop(self, join_timeout: float = 1.0) -> None:
+        """Stop the server.
+
+        Args:
+            join_timeout: Maximum time in seconds to wait for the background
+                server thread to exit. The thread is daemonic, so an expired
+                timeout never blocks interpreter exit -- but a thread that's
+                still winding down at interpreter shutdown keeps server state
+                and user callbacks referenced from its frozen frames, which
+                surfaces as spurious leak reports from binding frameworks
+                like nanobind. Increase this on hosts where teardown is slow,
+                for example under heavy GIL contention at exit.
+                https://github.com/viser-project/viser/issues/744
+        """
         assert self._background_event_loop is not None
         assert self._stop_event is not None
         assert self._server_thread is not None
@@ -454,7 +466,7 @@ class WebsockServer(WebsockMessageHandler):
             client.message_buffer.set_done()
 
         # Wait for the server thread to finish.
-        self._server_thread.join(timeout=0.1)
+        self._server_thread.join(timeout=join_timeout)
 
     def on_client_connect(
         self, cb: Callable[[WebsockClientConnection], None | Coroutine]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import dataclasses
 import io
 import mimetypes
@@ -1058,6 +1059,16 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         # Start the server.
         server.start()
+        # server.start() registered the infra-level WebsockServer.stop with
+        # atexit; also register the full ViserServer.stop, which runs first
+        # (LIFO) and supersedes it (WebsockServer.stop unregisters itself).
+        # This matters for scripts that exit without calling stop(): the
+        # ViserServer-level stop waits longer for the loop thread to wind
+        # down, and a loop thread that outlives interpreter shutdown pins
+        # user callbacks from its frozen frames (seen as nanobind leak
+        # warnings in https://github.com/viser-project/viser/issues/518 and
+        # https://github.com/viser-project/viser/issues/744).
+        atexit.register(self.stop)
         self._event_loop = server._broadcast_buffer.event_loop
 
         self.scene: SceneApi = SceneApi(
@@ -1361,22 +1372,34 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 "[bold](viser)[/bold] Tried to disconnect from share URL, but already disconnected"
             )
 
-    def stop(self) -> None:
-        """Stop the Viser server and associated threads and tunnels."""
-        self._websock_server.stop()
+    def stop(self, join_timeout: float = 5.0) -> None:
+        """Stop the Viser server and associated threads and tunnels.
+
+        Args:
+            join_timeout: Maximum time in seconds to wait for the background
+                server thread to wind down. If the (daemonic) thread is still
+                alive when the interpreter shuts down, its frozen frames keep
+                user callbacks -- and anything they capture -- referenced,
+                which surfaces as spurious leak reports from binding
+                frameworks like nanobind. The join returns as soon as the
+                thread exits, so a generous bound costs nothing in the common
+                case; it only caps how long a wedged event loop can delay
+                stop(). https://github.com/viser-project/viser/issues/744
+        """
+        # stop() is also registered via atexit; unregister so a manual stop
+        # isn't followed by a redundant second one at interpreter exit.
+        atexit.unregister(self.stop)
+        # This joins the background loop thread, bounded by join_timeout. The
+        # join must finish before the pool shutdown below: connection teardown
+        # submits disconnect/camera callbacks to the pool, and shutting the
+        # pool while teardown is still running would make those late submits
+        # raise "cannot schedule new futures after shutdown" and drop the
+        # user's callbacks silently. Bounded so a hung callback can't block
+        # stop() forever (in that pathological case the pool still shuts and
+        # the straggler is dropped).
+        self._websock_server.stop(join_timeout=join_timeout)
         if self._share_tunnel is not None:
             self._share_tunnel.close()
-        # Let the background event loop finish its connection teardown before
-        # shutting the pool: that teardown submits disconnect/camera callbacks
-        # to the pool, and websock_server.stop() only join()s the loop thread
-        # for 0.1s -- so shutting the pool right after would make those late
-        # submits raise "cannot schedule new futures after shutdown" and drop
-        # the user's callbacks silently. Bounded so a hung callback can't
-        # block stop() forever (in that pathological case the pool still
-        # shuts and the straggler is dropped, as before this join).
-        loop_thread = self._websock_server._server_thread
-        if loop_thread is not None:
-            loop_thread.join(timeout=5.0)
         # Release the callback/get_render worker pool: stop() otherwise left
         # its (up to 32) threads alive until the server object was GC'd out of
         # its callback ref-cycles, contradicting "stops associated threads".
