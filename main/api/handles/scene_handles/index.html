@@ -2280,6 +2280,28 @@ origin sphere.</p>
 </dd></dl>
 
 <dl class="py property">
+<dt class="sig sig-object py" id="viser.GaussianSplatHandle.opacities">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">opacities</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">NDArray</span><span class="p"><span class="pre">[</span></span><span class="pre">uint8</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.GaussianSplatHandle.opacities" title="Link to this definition">¶</a></dt>
+<dd><p>(N, 1). Values in [0, 1]. Synchronized automatically when assigned.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Opacities of the Gaussians. Shape</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="viser.GaussianSplatHandle.covariances">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">covariances</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">NDArray</span><span class="p"><span class="pre">[</span></span><span class="pre">float32</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.GaussianSplatHandle.covariances" title="Link to this definition">¶</a></dt>
+<dd><p>(N, 3, 3). Synchronized automatically when assigned.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Covariances of the Gaussians. Shape</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
 <dt class="sig sig-object py" id="viser.GaussianSplatHandle.name">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></em><a class="headerlink" href="#viser.GaussianSplatHandle.name" title="Link to this definition">¶</a></dt>
 <dd><p>Read-only name of the scene node.</p>
@@ -2377,17 +2399,6 @@ inside them.</p>
 </dd></dl>
 
 <dl class="py property">
-<dt class="sig sig-object py" id="viser.GaussianSplatHandle.opacities">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">opacities</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">NDArray</span><span class="p"><span class="pre">[</span></span><span class="pre">uint8</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.GaussianSplatHandle.opacities" title="Link to this definition">¶</a></dt>
-<dd><p>(N, 1). Values in [0, 1]. Synchronized automatically when assigned.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Opacities of the Gaussians. Shape</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py property">
 <dt class="sig sig-object py" id="viser.GaussianSplatHandle.position">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">position</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">NDArray</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.GaussianSplatHandle.position" title="Link to this definition">¶</a></dt>
 <dd><p>Position of the scene node. This is equivalent to the t in
@@ -2468,17 +2479,6 @@ in <cite>p_parent = [R | t] p_local</cite>. Synchronized to clients automaticall
 - cov5 (f16), cov6 (f16)
 - rgba (int32)</p>
 <p>Where cov1-6 are the upper-triangular terms of covariance matrices.</p>
-</dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="viser.GaussianSplatHandle.covariances">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">covariances</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">NDArray</span><span class="p"><span class="pre">[</span></span><span class="pre">float32</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.GaussianSplatHandle.covariances" title="Link to this definition">¶</a></dt>
-<dd><p>(N, 3, 3). Synchronized automatically when assigned.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Covariances of the Gaussians. Shape</p>
-</dd>
-</dl>
 </dd></dl>
 
 </dd></dl>
@@ -5087,10 +5087,11 @@ deprecated <a class="reference internal" href="#viser.TransformControlsHandle.on
 <li><a class="reference internal" href="#viser.GaussianSplatHandle"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle</span></code></a><ul>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.centers"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.centers</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.rgbs"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.rgbs</span></code></a></li>
+<li><a class="reference internal" href="#viser.GaussianSplatHandle.opacities"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.opacities</span></code></a></li>
+<li><a class="reference internal" href="#viser.GaussianSplatHandle.covariances"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.covariances</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.name"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.name</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.on_click"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.on_click()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.on_drag"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.on_drag()</span></code></a></li>
-<li><a class="reference internal" href="#viser.GaussianSplatHandle.opacities"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.opacities</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.position"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.position</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.remove"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.remove()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.remove_click_callback"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.remove_click_callback()</span></code></a></li>
@@ -5099,7 +5100,6 @@ deprecated <a class="reference internal" href="#viser.TransformControlsHandle.on
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.visible"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.visible</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.wxyz"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.wxyz</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.buffer"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.buffer</span></code></a></li>
-<li><a class="reference internal" href="#viser.GaussianSplatHandle.covariances"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.covariances</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GlbHandle"><code class="docutils literal notranslate"><span class="pre">GlbHandle</span></code></a><ul>

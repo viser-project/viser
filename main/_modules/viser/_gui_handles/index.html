@@ -1226,22 +1226,28 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">add_tab</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">icon</span><span class="p">:</span> <span class="n">IconName</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiTabHandle</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a tab. Returns a handle we can use to add GUI elements to it.&quot;&quot;&quot;</span>
-        <span class="c1"># Guard before mutating: otherwise we&#39;d half-register a tab (appended to</span>
-        <span class="c1"># _tab_handles + the container map via GuiTabHandle.__post_init__) before</span>
-        <span class="c1"># the first props write below hits the removed-guard and raises, leaving</span>
-        <span class="c1"># inconsistent state + a leaked container entry. Applies to both mixers</span>
-        <span class="c1"># (tab group and standalone panel).</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cannot add a tab to a removed </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="c1"># The removed CHECK, the tab&#39;s registration (GuiTabHandle.__post_init__</span>
+        <span class="c1"># writes the container map), the append, and the props rebuild run as</span>
+        <span class="c1"># ONE atomic step under the panel lifecycle lock. Two hazards:</span>
+        <span class="c1"># - Half-registration: guarding after mutating would leak a container</span>
+        <span class="c1">#   entry when the props write hit the removed-guard and raised.</span>
+        <span class="c1"># - A CONCURRENT remove() interleaving after a bare check: the remover</span>
+        <span class="c1">#   tombstones + snapshots an empty tab list, then this append lands</span>
+        <span class="c1">#   -- registering a live container entry for a panel that no longer</span>
+        <span class="c1">#   exists, which silently accepts children forever. remove() takes</span>
+        <span class="c1">#   the same lock for its tombstone, so the pair serializes.</span>
+        <span class="c1"># Applies to both mixers (tab group and standalone panel).</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_panel_lifecycle_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Cannot add a tab to a removed </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span>
+                <span class="p">)</span>
 
-        <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
-
-        <span class="c1"># We may want to make this thread-safe in the future.</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="n">GuiTabHandle</span><span class="p">(</span><span class="n">_parent</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">_id</span><span class="o">=</span><span class="n">uuid</span><span class="p">,</span> <span class="n">_label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span> <span class="n">_icon</span><span class="o">=</span><span class="n">icon</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_tab_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_rebuild_tab_props</span><span class="p">()</span>
-        <span class="k">return</span> <span class="n">out</span>
+            <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">GuiTabHandle</span><span class="p">(</span><span class="n">_parent</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">_id</span><span class="o">=</span><span class="n">uuid</span><span class="p">,</span> <span class="n">_label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span> <span class="n">_icon</span><span class="o">=</span><span class="n">icon</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tab_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rebuild_tab_props</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">out</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_rebuild_tab_props</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Recompute the three wire tuples from ``_tab_handles`` -- the single</span>
@@ -1339,6 +1345,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_rebuild_tab_props</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiTabHandle</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># See GuiFolderHandle.__enter__: a single restore slot can&#39;t nest</span>
+            <span class="c1"># the same tab inside itself.</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;This GuiTabHandle is already active as a context; it cannot &quot;</span>
+                <span class="s2">&quot;be re-entered inside itself.&quot;</span>
+            <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_get_container_uuid</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_set_container_uuid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_id</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span>
@@ -1849,7 +1862,18 @@
         <span class="p">]</span>
         <span class="n">parent</span><span class="o">.</span><span class="n">_children</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span>
 
+    <span class="n">_container_id_restore</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
     <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># A single restore slot can&#39;t nest the SAME handle inside itself;</span>
+            <span class="c1"># doing so would strand the container pointer inside this folder,</span>
+            <span class="c1"># silently misplacing every later element. (Sequential re-entry --</span>
+            <span class="c1"># `with f: ...` twice -- is fine; __exit__ clears the slot.)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;This GuiFolderHandle is already active as a context; it &quot;</span>
+                <span class="s2">&quot;cannot be re-entered inside itself.&quot;</span>
+            <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_get_container_uuid</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_set_container_uuid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span>

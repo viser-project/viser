@@ -430,6 +430,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Coroutine</span>
@@ -500,7 +502,11 @@
     <span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span>
     <span class="n">_TransformControlsState</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">._threadpool_exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">print_threadpool_errors</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._threadpool_exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">print_awaited_callback_error</span><span class="p">,</span>
+    <span class="n">print_task_error</span><span class="p">,</span>
+    <span class="n">print_threadpool_errors</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">trimesh</span>
@@ -560,10 +566,25 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_encode_rgb</span><span class="p">(</span><span class="n">rgb</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rgb</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
         <span class="k">assert</span> <span class="n">rgb</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="mi">3</span><span class="p">,)</span>
-    <span class="n">rgb_fixed</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
-        <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span> <span class="o">*</span> <span class="mi">255</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">rgb</span>
-    <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">channel</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="c1"># Match the array-color path (colors_to_uint8) exactly: integers are</span>
+        <span class="c1"># [0,255], floats are [0,1] scaled by 255, everything clamped to</span>
+        <span class="c1"># [0,255] with int() truncation (mirrors astype(uint8)). Clamp the</span>
+        <span class="c1"># SCALED float BEFORE int() so a non-finite channel can&#39;t reach int()</span>
+        <span class="c1"># (int(nan)/int(inf) raise): NaN -&gt; 0, +Inf -&gt; 255, -Inf -&gt; 0, the</span>
+        <span class="c1"># same values np.clip(...).astype(uint8) produces. Without the clamp,</span>
+        <span class="c1"># out-of-range channels bled into adjacent bytes on the client</span>
+        <span class="c1"># (rgbToInt shifts) and an extreme float overflowed msgpack&#39;s int</span>
+        <span class="c1"># range at flush -- a crash far from the offending call.</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)))</span>
+        <span class="n">scaled</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">*</span> <span class="mf">255.0</span>
+        <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">scaled</span><span class="p">):</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mf">255.0</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scaled</span><span class="p">)))</span>
+
+    <span class="n">rgb_fixed</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">channel</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">rgb</span><span class="p">)</span>
     <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">rgb_fixed</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span>
     <span class="k">return</span> <span class="n">rgb_fixed</span>  <span class="c1"># type: ignore</span>
 
@@ -593,9 +614,17 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">cast_vector</span><span class="p">(</span><span class="n">vector</span><span class="p">:</span> <span class="n">TVector</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">length</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TVector</span><span class="p">:</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">vector</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
-        <span class="k">assert</span> <span class="n">cast</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">vector</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">length</span><span class="p">,),</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Expected vector of shape </span><span class="si">{</span><span class="p">(</span><span class="n">length</span><span class="p">,)</span><span class="si">}</span><span class="s2">, but got </span><span class="si">{</span><span class="n">vector</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> instead&quot;</span>
+    <span class="c1"># Arity is checked for EVERY input form: tuples/lists used to pass</span>
+    <span class="c1"># through unchecked, so a 2-tuple handed to a 3-vector API silently</span>
+    <span class="c1"># desynced from the client&#39;s fixed component count.</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">vector</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">vector</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">length</span><span class="p">,):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Expected vector of shape </span><span class="si">{</span><span class="p">(</span><span class="n">length</span><span class="p">,)</span><span class="si">}</span><span class="s2">, but got </span><span class="si">{</span><span class="n">vector</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> instead&quot;</span>
+            <span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">vector</span><span class="p">)</span> <span class="o">!=</span> <span class="n">length</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Expected vector of length </span><span class="si">{</span><span class="n">length</span><span class="si">}</span><span class="s2">, but got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">vector</span><span class="p">)</span><span class="si">}</span><span class="s2"> instead&quot;</span>
         <span class="p">)</span>
     <span class="k">return</span> <span class="n">cast</span><span class="p">(</span><span class="n">TVector</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">vector</span><span class="p">)))</span>
 
@@ -676,6 +705,18 @@
             <span class="nb">str</span><span class="p">,</span> <span class="n">TransformControlsHandle</span>
         <span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">SceneNodeHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Serializes scene-node lifecycle transitions (remove, same-name</span>
+<span class="sd">        supersede) against interaction-callback (de)registration. All</span>
+<span class="sd">        critical sections are short and synchronous (no awaits inside).</span>
+<span class="sd">        Reentrant defensively: no current teardown path re-enters (a 3D GUI</span>
+<span class="sd">        container&#39;s _on_remove removes GUI children only), but subclass</span>
+<span class="sd">        _on_remove hooks run under the lock and must stay safe to extend.</span>
+<span class="sd">        Without this lock, a registration racing a remove/supersede from</span>
+<span class="sd">        another thread could publish a name-keyed binding into the</span>
+<span class="sd">        persistent buffer AFTER the teardown&#39;s empty-bindings emit -- a</span>
+<span class="sd">        ghost a same-name successor would inherit on late-joining</span>
+<span class="sd">        clients.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_children_from_node_name</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="c1"># Tracks handles with an in-flight drag gesture, plus the last</span>
         <span class="c1"># message we processed for that drag. Populated on</span>
@@ -747,10 +788,17 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether the named scene node currently has any in-flight drag</span>
 <span class="sd">        gesture (from any connected client). Used by ``remove()`` to</span>
 <span class="sd">        decide whether to clear ``drag_cb`` immediately or preserve it</span>
-<span class="sd">        until the in-flight drag&#39;s ``end`` message arrives.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="n">key</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">name</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_drag_handles</span><span class="p">)</span>
+<span class="sd">        until the in-flight drag&#39;s ``end`` message arrives.</span>
 
-    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_drop_active_drags_for_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="sd">        Iterates a snapshot: this runs on the caller&#39;s thread while the</span>
+<span class="sd">        event loop&#39;s message handlers mutate the dict, and a live dict view</span>
+<span class="sd">        raises &quot;dictionary changed size during iteration&quot;. (list(dict) is a</span>
+<span class="sd">        single C-level copy, atomic under the GIL.)&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="n">key</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">name</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_active_drag_handles</span><span class="p">))</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_drop_active_drags_for_client</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">event_client</span><span class="p">:</span> <span class="n">ClientHandle</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Drop any in-flight drag entries for a disconnecting client,</span>
 <span class="sd">        synthesizing a ``phase=&quot;end&quot;`` event so user state allocated in</span>
 <span class="sd">        ``on_drag_start`` can be released. Without this, a mid-drag</span>
@@ -759,6 +807,12 @@
 <span class="sd">        ``_is_drag_active_for`` will return spurious-true for the</span>
 <span class="sd">        leaked node name -- preventing a future ``remove()`` from</span>
 <span class="sd">        clearing its callbacks) and silently skips ``on_drag_end``.&quot;&quot;&quot;</span>
+        <span class="c1"># Per-entry exception isolation for the setup that runs OUTSIDE</span>
+        <span class="c1"># _dispatch_callback&#39;s per-callback isolation (client resolution,</span>
+        <span class="c1"># event construction, callback filtering): a throwing entry must not</span>
+        <span class="c1"># strand the REMAINING entries (each pins a handle and blocks a</span>
+        <span class="c1"># future remove() from clearing its callbacks) or abort the caller&#39;s</span>
+        <span class="c1"># disconnect teardown.</span>
         <span class="n">stale_keys</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_drag_handles</span> <span class="k">if</span> <span class="n">k</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">client_id</span><span class="p">]</span>
         <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">stale_keys</span><span class="p">:</span>
             <span class="n">entry</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_drag_handles</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -768,7 +822,12 @@
             <span class="c1"># Synthesize an end event using the most recently observed</span>
             <span class="c1"># client-reported positions.</span>
             <span class="n">synthetic</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">last_msg</span><span class="p">,</span> <span class="n">phase</span><span class="o">=</span><span class="s2">&quot;end&quot;</span><span class="p">)</span>
-            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_drag_callbacks</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="n">synthetic</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_drag_callbacks</span><span class="p">(</span>
+                    <span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="n">synthetic</span><span class="p">,</span> <span class="n">event_client</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">print_awaited_callback_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
 
         <span class="c1"># Same for in-flight transform-control gizmo drags.</span>
         <span class="n">stale_tc_keys</span> <span class="o">=</span> <span class="p">[</span>
@@ -778,7 +837,12 @@
             <span class="n">tc_handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_transform_drag_handles</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">tc_handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
-            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fire_transform_controls_callbacks</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">tc_handle</span><span class="p">,</span> <span class="s2">&quot;end&quot;</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fire_transform_controls_callbacks</span><span class="p">(</span>
+                    <span class="n">client_id</span><span class="p">,</span> <span class="n">tc_handle</span><span class="p">,</span> <span class="s2">&quot;end&quot;</span><span class="p">,</span> <span class="n">event_client</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">print_awaited_callback_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_ancestors_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Create intermediate frame nodes for any missing ancestors of `name`.&quot;&quot;&quot;</span>
@@ -2233,6 +2297,12 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">_warn_wireframe_conflicts</span><span class="p">(</span><span class="n">wireframe</span><span class="p">,</span> <span class="n">material</span><span class="p">,</span> <span class="n">flat_shading</span><span class="p">)</span>
 
+        <span class="c1"># Normalized UP FRONT (as add_transform_controls does): _make()</span>
+        <span class="c1"># normalizes internally, so a bare name would leave the typed-handle</span>
+        <span class="c1"># registry swap keyed differently from the registration -- and the</span>
+        <span class="c1"># bones&#39; SetBone messages addressed to a name no client node has.</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">_normalize_node_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_wxyzs</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_positions</span><span class="p">)</span>
         <span class="n">num_bones</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">bone_wxyzs</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">num_bones</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
@@ -2279,9 +2349,9 @@
                 <span class="n">receive_shadow</span><span class="o">=</span><span class="n">receive_shadow</span><span class="p">,</span>
             <span class="p">),</span>
         <span class="p">)</span>
-        <span class="n">handle</span> <span class="o">=</span> <span class="n">MeshHandle</span><span class="o">.</span><span class="n">_make</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span class="n">visible</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">MeshSkinnedHandle</span><span class="p">(</span>
-            <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="p">,</span>
+        <span class="n">node_handle</span> <span class="o">=</span> <span class="n">MeshHandle</span><span class="o">.</span><span class="n">_make</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span class="n">visible</span><span class="p">)</span>
+        <span class="n">handle</span> <span class="o">=</span> <span class="n">MeshSkinnedHandle</span><span class="p">(</span>
+            <span class="n">node_handle</span><span class="o">.</span><span class="n">_impl</span><span class="p">,</span>
             <span class="n">bones</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span>
                 <span class="n">MeshSkinnedBoneHandle</span><span class="p">(</span>
                     <span class="n">_impl</span><span class="o">=</span><span class="n">BoneState</span><span class="p">(</span>
@@ -2290,11 +2360,21 @@
                         <span class="n">bone_index</span><span class="o">=</span><span class="n">i</span><span class="p">,</span>
                         <span class="n">wxyz</span><span class="o">=</span><span class="n">bone_wxyzs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
                         <span class="n">position</span><span class="o">=</span><span class="n">bone_positions</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span>
+                        <span class="n">mesh_impl</span><span class="o">=</span><span class="n">node_handle</span><span class="o">.</span><span class="n">_impl</span><span class="p">,</span>
                     <span class="p">)</span>
                 <span class="p">)</span>
                 <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_bones</span><span class="p">)</span>
             <span class="p">),</span>
-        <span class="p">)</span></div>
+        <span class="p">)</span>
+        <span class="c1"># Register the typed handle (not the plain MeshHandle from `_make`)</span>
+        <span class="c1"># so click/drag dispatch resolves a target that carries `.bones`.</span>
+        <span class="c1"># Under the lifecycle lock, and only while the registry still points</span>
+        <span class="c1"># at the handle _make just registered (same rule as</span>
+        <span class="c1"># add_transform_controls).</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="n">node_handle</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
+        <span class="k">return</span> <span class="n">handle</span></div>
 
 
 <div class="viewcode-block" id="SceneApi.add_mesh_simple">
@@ -3194,11 +3274,17 @@
             <span class="n">sync_cb</span><span class="o">=</span><span class="n">sync_cb</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">handle</span> <span class="o">=</span> <span class="n">TransformControlsHandle</span><span class="p">(</span><span class="n">node_handle</span><span class="o">.</span><span class="n">_impl</span><span class="p">,</span> <span class="n">state_aux</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
         <span class="c1"># Store the typed handle (not the plain SceneNodeHandle from `_make`) in</span>
         <span class="c1"># the node map so removal via `reset()` / re-add dedup goes through the</span>
-        <span class="c1"># same path that cleans up the transform-controls registry.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
+        <span class="c1"># same path that cleans up the transform-controls registry. Under the</span>
+        <span class="c1"># lifecycle lock, and only while the registry still points at the</span>
+        <span class="c1"># handle _make just registered: a concurrent remove()/reset() or</span>
+        <span class="c1"># same-name re-add in the gap must not have its result overwritten</span>
+        <span class="c1"># with a dead handle.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="n">node_handle</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_transform_controls_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
         <span class="k">return</span> <span class="n">handle</span></div>
 
 
@@ -3231,10 +3317,10 @@
         <span class="c1"># maintains a registry of connected clients, or ClientHandle, which should</span>
         <span class="c1"># only ever be dealing with its own client_id.</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">):</span>
-            <span class="c1"># TODO: there&#39;s a potential race condition here when the client disconnects.</span>
-            <span class="c1"># This probably applies to multiple other parts of the code, we should</span>
-            <span class="c1"># revisit all of the cases where we index into connected_clients.</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_connected_clients</span><span class="p">[</span><span class="n">client_id</span><span class="p">]</span>
+            <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_connected_clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No connected client with id </span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">handle</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">assert</span> <span class="n">client_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">client_id</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span>
@@ -3289,20 +3375,18 @@
         <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span>
         <span class="n">handle</span><span class="p">:</span> <span class="n">TransformControlsHandle</span><span class="p">,</span>
         <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span>
+        <span class="n">event_client</span><span class="p">:</span> <span class="n">ClientHandle</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">event</span> <span class="o">=</span> <span class="n">TransformControlsEvent</span><span class="p">(</span>
-            <span class="n">client</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
+            <span class="n">client</span><span class="o">=</span><span class="n">event_client</span>
+            <span class="k">if</span> <span class="n">event_client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
             <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
             <span class="n">target</span><span class="o">=</span><span class="n">handle</span><span class="p">,</span>
             <span class="n">phase</span><span class="o">=</span><span class="n">phase</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl_aux</span><span class="o">.</span><span class="n">update_cb</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-                <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
-                    <span class="n">print_threadpool_errors</span>
-                <span class="p">)</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_callback</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_dispatch_callback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -3310,10 +3394,15 @@
         <span class="n">event</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Run a user callback either via ``await`` (async) or via the</span>
-<span class="sd">        thread pool (sync). The thread-pool branch routes exceptions</span>
-<span class="sd">        through ``print_threadpool_errors``.&quot;&quot;&quot;</span>
+<span class="sd">        thread pool (sync). Exceptions are reported and isolated in BOTH</span>
+<span class="sd">        branches (print_awaited_callback_error / print_threadpool_errors):</span>
+<span class="sd">        one throwing callback must not starve its sibling callbacks or</span>
+<span class="sd">        abort the caller (message dispatch, disconnect teardown).&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-            <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">print_awaited_callback_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">event</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
                 <span class="n">print_threadpool_errors</span>
@@ -3395,6 +3484,7 @@
         <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span>
         <span class="n">handle</span><span class="p">:</span> <span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span>
         <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">SceneNodeDragMessage</span><span class="p">,</span>
+        <span class="n">event_client</span><span class="p">:</span> <span class="n">ClientHandle</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Run all matching ``handle`` drag callbacks for ``message``.</span>
 
@@ -3406,7 +3496,9 @@
             <span class="k">return</span>
 
         <span class="n">event</span> <span class="o">=</span> <span class="n">SceneNodeDragEvent</span><span class="p">(</span>
-            <span class="n">client</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
+            <span class="n">client</span><span class="o">=</span><span class="n">event_client</span>
+            <span class="k">if</span> <span class="n">event_client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
             <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
             <span class="n">target</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span> <span class="n">handle</span><span class="p">),</span>
             <span class="n">phase</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">phase</span><span class="p">,</span>
@@ -3743,12 +3835,18 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_fire_scene_pointer_done_callbacks</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Snapshot -- each cleanup may unregister itself via the same</span>
-        <span class="c1"># handle without breaking iteration.</span>
+        <span class="c1"># handle without breaking iteration. Exceptions are reported and</span>
+        <span class="c1"># isolated like every other callback path: one throwing cleanup</span>
+        <span class="c1"># must not starve its siblings or leave the list uncleared.</span>
         <span class="k">for</span> <span class="n">cleanup</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cleanup</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cleanup</span><span class="p">())</span>
+                <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cleanup</span><span class="p">())</span>
+                <span class="n">task</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_task_error</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">cleanup</span><span class="p">()</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">cleanup</span><span class="p">()</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                    <span class="n">print_awaited_callback_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span> <span class="o">=</span> <span class="p">[]</span>
 
 <div class="viewcode-block" id="SceneApi.add_3d_gui_container">
@@ -3808,7 +3906,21 @@
         <span class="c1"># Store the typed handle (not the plain SceneNodeHandle from `_make`) in</span>
         <span class="c1"># the node map so removal via `reset()` / re-add dedup / cascading parent</span>
         <span class="c1"># removal cleans up the container&#39;s GUI children and registry entry.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
+        <span class="c1"># Under the lifecycle lock, and only while the registry still points</span>
+        <span class="c1"># at the handle _make just registered: a concurrent remove()/reset()</span>
+        <span class="c1"># or same-name re-add in the gap must not have its result overwritten</span>
+        <span class="c1"># with a dead handle.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="n">node_handle</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">handle</span>
+                <span class="n">registered</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">registered</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">registered</span><span class="p">:</span>
+            <span class="c1"># Superseded in the gap: the constructor registered the container</span>
+            <span class="c1"># UUID, and the superseder only saw the plain base handle -- so</span>
+            <span class="c1"># release the orphan registration here (no children exist yet).</span>
+            <span class="n">handle</span><span class="o">.</span><span class="n">_on_remove</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">handle</span></div>
 
 

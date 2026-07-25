@@ -645,6 +645,7 @@
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_FileUploadState</span><span class="p">(</span><span class="n">TypedDict</span><span class="p">):</span>
+    <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span>
     <span class="n">filename</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">mime_type</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">part_count</span><span class="p">:</span> <span class="nb">int</span>
@@ -807,6 +808,19 @@
 
         <span class="c1"># GUI element has been updated!</span>
         <span class="n">handle_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+        <span class="c1"># Broadcast to the other clients BEFORE awaiting update callbacks, so</span>
+        <span class="c1"># the mutation above and its broadcast are adjacent on the event loop:</span>
+        <span class="c1"># with the broadcast after the awaits, (a) two near-simultaneous</span>
+        <span class="c1"># updates could interleave at a callback&#39;s await point and leave the</span>
+        <span class="c1"># buffer coalesced to a different value than the server state, and</span>
+        <span class="c1"># (b) a callback that writes back (e.g. clamps handle.value) had its</span>
+        <span class="c1"># own broadcast clobbered by the stale echo of the pre-clamp value --</span>
+        <span class="c1"># every OTHER client (and every late joiner) kept the un-clamped</span>
+        <span class="c1"># value while the server and the acting client held the clamped one.</span>
+        <span class="k">if</span> <span class="n">handle_state</span><span class="o">.</span><span class="n">sync_cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">handle_state</span><span class="o">.</span><span class="n">sync_cb</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">updates_cast</span><span class="p">)</span>
+
         <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_client</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
@@ -817,9 +831,6 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
                     <span class="n">cb</span><span class="p">,</span> <span class="n">GuiEvent</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
                 <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_threadpool_errors</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="n">handle_state</span><span class="o">.</span><span class="n">sync_cb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">handle_state</span><span class="o">.</span><span class="n">sync_cb</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">updates_cast</span><span class="p">)</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_gui_button_hold</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GuiButtonHoldMessage</span>
@@ -893,6 +904,10 @@
         <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">source_component_uuid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_gui_input_handle_from_uuid</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_current_file_upload_states</span><span class="p">[</span><span class="n">message</span><span class="o">.</span><span class="n">transfer_uuid</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="c1"># Owner, so a disconnect can purge this client&#39;s in-flight</span>
+            <span class="c1"># transfers -- entries are otherwise only removed on completion,</span>
+            <span class="c1"># and a tab closed mid-upload leaked its buffered parts forever.</span>
+            <span class="s2">&quot;client_id&quot;</span><span class="p">:</span> <span class="n">client_id</span><span class="p">,</span>
             <span class="s2">&quot;filename&quot;</span><span class="p">:</span> <span class="n">message</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span>
             <span class="s2">&quot;mime_type&quot;</span><span class="p">:</span> <span class="n">message</span><span class="o">.</span><span class="n">mime_type</span><span class="p">,</span>
             <span class="s2">&quot;part_count&quot;</span><span class="p">:</span> <span class="n">message</span><span class="o">.</span><span class="n">part_count</span><span class="p">,</span>
@@ -918,6 +933,18 @@
                 <span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">transfer_uuid</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">source_component_uuid</span>
             <span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_drop_uploads_from_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Purge in-flight upload buffers owned by a disconnected client.</span>
+<span class="sd">        Entries are otherwise only removed on completion, so a tab closed</span>
+<span class="sd">        mid-upload would leak its accumulated parts forever (and a hostile</span>
+<span class="sd">        client could grow that leak without bound).&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">transfer_uuid</span> <span class="ow">in</span> <span class="p">[</span>
+            <span class="n">tid</span>
+            <span class="k">for</span> <span class="n">tid</span><span class="p">,</span> <span class="n">state</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_file_upload_states</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;client_id&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">client_id</span>
+        <span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_current_file_upload_states</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">transfer_uuid</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_finish_file_upload</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span>
@@ -941,9 +968,22 @@
             <span class="k">return</span>
         <span class="n">handle_state</span> <span class="o">=</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span>
 
+        <span class="n">content</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;parts&quot;</span><span class="p">][</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;part_count&quot;</span><span class="p">]))</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">content</span><span class="p">)</span> <span class="o">!=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;total_bytes&quot;</span><span class="p">]:</span>
+            <span class="c1"># All part slots filled but the bytes don&#39;t match the declared</span>
+            <span class="c1"># size: a buggy/hostile client. Discard rather than surface a</span>
+            <span class="c1"># file that lies about its length (state is already popped above,</span>
+            <span class="c1"># so nothing leaks).</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;[viser] Dropping upload </span><span class="si">{</span><span class="n">state</span><span class="p">[</span><span class="s1">&#39;filename&#39;</span><span class="p">]</span><span class="si">!r}</span><span class="s2">: received &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">content</span><span class="p">)</span><span class="si">}</span><span class="s2"> bytes but the client declared &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">state</span><span class="p">[</span><span class="s1">&#39;total_bytes&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span>
+
         <span class="n">value</span> <span class="o">=</span> <span class="n">UploadedFile</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;filename&quot;</span><span class="p">],</span>
-            <span class="n">content</span><span class="o">=</span><span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;parts&quot;</span><span class="p">][</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;part_count&quot;</span><span class="p">])),</span>
+            <span class="n">content</span><span class="o">=</span><span class="n">content</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="c1"># Update state.</span>
@@ -976,10 +1016,20 @@
         <span class="c1"># state and then no-ops on the removed/missing handle.</span>
 
         <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_file_upload_states</span><span class="p">[</span><span class="n">message</span><span class="o">.</span><span class="n">transfer_uuid</span><span class="p">]</span>
-        <span class="n">state</span><span class="p">[</span><span class="s2">&quot;parts&quot;</span><span class="p">][</span><span class="n">message</span><span class="o">.</span><span class="n">part_index</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">content</span>
+        <span class="n">part_count</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;part_count&quot;</span><span class="p">]</span>
         <span class="n">total_bytes</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;total_bytes&quot;</span><span class="p">]</span>
 
         <span class="k">with</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;lock&quot;</span><span class="p">]:</span>
+            <span class="c1"># Drop duplicate or out-of-range parts instead of letting them</span>
+            <span class="c1"># corrupt the transfer: a repeated part_index used to inflate the</span>
+            <span class="c1"># byte-count completion gate, so assembly ran with missing part</span>
+            <span class="c1"># slots (KeyError) or overshot the declared size (assert) -- both</span>
+            <span class="c1"># crashing the handler task and leaking the transfer state.</span>
+            <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">part_index</span> <span class="ow">in</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;parts&quot;</span><span class="p">]</span> <span class="ow">or</span> <span class="ow">not</span> <span class="p">(</span>
+                <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">message</span><span class="o">.</span><span class="n">part_index</span> <span class="o">&lt;</span> <span class="n">part_count</span>
+            <span class="p">):</span>
+                <span class="k">return</span>
+            <span class="n">state</span><span class="p">[</span><span class="s2">&quot;parts&quot;</span><span class="p">][</span><span class="n">message</span><span class="o">.</span><span class="n">part_index</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">content</span>
             <span class="n">state</span><span class="p">[</span><span class="s2">&quot;transferred_bytes&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
 
             <span class="c1"># Send ack to the server.</span>
@@ -992,11 +1042,13 @@
                 <span class="p">)</span>
             <span class="p">)</span>
 
-            <span class="k">if</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;transferred_bytes&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">total_bytes</span><span class="p">:</span>
+            <span class="c1"># Complete only when every part slot is filled: the byte count</span>
+            <span class="c1"># alone can&#39;t distinguish &quot;all parts arrived&quot; from a client whose</span>
+            <span class="c1"># parts don&#39;t add up to its declared size.</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s2">&quot;parts&quot;</span><span class="p">])</span> <span class="o">&lt;</span> <span class="n">part_count</span><span class="p">:</span>
                 <span class="k">return</span>
 
         <span class="c1"># Finish the upload.</span>
-        <span class="k">assert</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;transferred_bytes&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">total_bytes</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_finish_file_upload</span><span class="p">(</span>
             <span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">transfer_uuid</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">source_component_uuid</span>
         <span class="p">)</span>
@@ -2355,6 +2407,20 @@
         <span class="n">value</span> <span class="o">=</span> <span class="n">initial_value</span>
 
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span>
+        <span class="k">if</span> <span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">max</span> <span class="o">&lt;</span> <span class="nb">min</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;add_number: max (</span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">) must be &gt;= min (</span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2">).&quot;</span><span class="p">)</span>
+        <span class="c1"># `not (value &gt;= min)` (rather than `value &lt; min`) so a NaN initial</span>
+        <span class="c1"># value is rejected too -- matching add_slider, whose `not (max &gt;=</span>
+        <span class="c1"># value &gt;= min)` already does. A bare `&lt;`/`&gt;` is False for NaN.</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">value</span> <span class="o">&gt;=</span> <span class="nb">min</span><span class="p">))</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">value</span> <span class="o">&lt;=</span> <span class="nb">max</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_number: initial_value (</span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">) is outside of &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;[min, max] = [</span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">].&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">step</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">step</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;add_number: step (</span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">) must be &gt; 0.&quot;</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">step</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># It&#39;s ok that `step` is always a float, even if the value is an integer,</span>
@@ -2433,6 +2499,21 @@
         <span class="n">value</span> <span class="o">=</span> <span class="n">cast_vector</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
         <span class="nb">min</span> <span class="o">=</span> <span class="n">cast_vector</span><span class="p">(</span><span class="nb">min</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="k">if</span> <span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="nb">max</span> <span class="o">=</span> <span class="n">cast_vector</span><span class="p">(</span><span class="nb">max</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="k">if</span> <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">mn</span> <span class="o">&gt;</span> <span class="n">mx</span> <span class="k">for</span> <span class="n">mn</span><span class="p">,</span> <span class="n">mx</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">))</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_vector2: min </span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2"> must be component-wise &lt;= max </span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="ow">not</span> <span class="p">(</span><span class="n">v</span> <span class="o">&gt;=</span> <span class="n">mn</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span><span class="p">,</span> <span class="n">mn</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">min</span><span class="p">)))</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="ow">not</span> <span class="p">(</span><span class="n">v</span> <span class="o">&lt;=</span> <span class="n">mx</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span><span class="p">,</span> <span class="n">mx</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">max</span><span class="p">))</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_vector2: initial_value </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2"> has components outside &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;[min, max] = [</span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">].&quot;</span>
+            <span class="p">)</span>
         <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
 
@@ -2497,6 +2578,21 @@
         <span class="n">value</span> <span class="o">=</span> <span class="n">cast_vector</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
         <span class="nb">min</span> <span class="o">=</span> <span class="n">cast_vector</span><span class="p">(</span><span class="nb">min</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="k">if</span> <span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="nb">max</span> <span class="o">=</span> <span class="n">cast_vector</span><span class="p">(</span><span class="nb">max</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="k">if</span> <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">mn</span> <span class="o">&gt;</span> <span class="n">mx</span> <span class="k">for</span> <span class="n">mn</span><span class="p">,</span> <span class="n">mx</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">))</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_vector3: min </span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2"> must be component-wise &lt;= max </span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nb">min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="ow">not</span> <span class="p">(</span><span class="n">v</span> <span class="o">&gt;=</span> <span class="n">mn</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span><span class="p">,</span> <span class="n">mn</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">min</span><span class="p">)))</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="nb">max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="ow">not</span> <span class="p">(</span><span class="n">v</span> <span class="o">&lt;=</span> <span class="n">mx</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span><span class="p">,</span> <span class="n">mx</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">max</span><span class="p">))</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_vector3: initial_value </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2"> has components outside &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;[min, max] = [</span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">].&quot;</span>
+            <span class="p">)</span>
         <span class="n">uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
         <span class="n">order</span> <span class="o">=</span> <span class="n">_apply_default_order</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
 
@@ -2701,9 +2797,20 @@
 <span class="sd">            A handle that can be used to interact with the GUI element.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">value</span><span class="p">:</span> <span class="n">IntOrFloat</span> <span class="o">=</span> <span class="n">initial_value</span>
-        <span class="k">assert</span> <span class="nb">max</span> <span class="o">&gt;=</span> <span class="nb">min</span>
-        <span class="n">step</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">step</span><span class="p">,</span> <span class="nb">max</span> <span class="o">-</span> <span class="nb">min</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="nb">max</span> <span class="o">&gt;=</span> <span class="n">value</span> <span class="o">&gt;=</span> <span class="nb">min</span>
+        <span class="k">if</span> <span class="nb">max</span> <span class="o">&lt;</span> <span class="nb">min</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;add_slider: max (</span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">) must be &gt;= min (</span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2">).&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">step</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;add_slider: step (</span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">) must be &gt; 0.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">max</span> <span class="o">&gt;</span> <span class="nb">min</span><span class="p">:</span>
+            <span class="c1"># Clamped only for a non-degenerate range: min == max is allowed</span>
+            <span class="c1"># (an inert slider), but a clamped step of 0 must never reach the</span>
+            <span class="c1"># client.</span>
+            <span class="n">step</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">step</span><span class="p">,</span> <span class="nb">max</span> <span class="o">-</span> <span class="nb">min</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="nb">max</span> <span class="o">&gt;=</span> <span class="n">value</span> <span class="o">&gt;=</span> <span class="nb">min</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_slider: initial_value (</span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">) is outside of &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;[min, max] = [</span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">].&quot;</span>
+            <span class="p">)</span>
 
         <span class="c1"># GUI callbacks cast incoming values to match the type of the initial value. If</span>
         <span class="c1"># the min, max, or step is a float, we should cast to a float.</span>
@@ -2786,9 +2893,30 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            A handle that can be used to interact with the GUI element.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">assert</span> <span class="nb">max</span> <span class="o">&gt;=</span> <span class="nb">min</span>
-        <span class="n">step</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">step</span><span class="p">,</span> <span class="nb">max</span> <span class="o">-</span> <span class="nb">min</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="nb">max</span> <span class="o">&gt;=</span> <span class="n">x</span> <span class="o">&gt;=</span> <span class="nb">min</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">initial_value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">max</span> <span class="o">&lt;</span> <span class="nb">min</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;add_multi_slider: max (</span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">) must be &gt;= min (</span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2">).&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">step</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;add_multi_slider: step (</span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">) must be &gt; 0.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">min_range</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">min_range</span> <span class="o">&gt;</span> <span class="nb">max</span> <span class="o">-</span> <span class="nb">min</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_multi_slider: min_range (</span><span class="si">{</span><span class="n">min_range</span><span class="si">}</span><span class="s2">) exceeds the value &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;range (</span><span class="si">{</span><span class="nb">max</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">min</span><span class="si">}</span><span class="s2">); the handle spacing would be unsatisfiable.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">max</span> <span class="o">&gt;</span> <span class="nb">min</span><span class="p">:</span>
+            <span class="n">step</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">step</span><span class="p">,</span> <span class="nb">max</span> <span class="o">-</span> <span class="nb">min</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">max</span> <span class="o">&gt;=</span> <span class="n">x</span> <span class="o">&gt;=</span> <span class="nb">min</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">initial_value</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_multi_slider: initial_value </span><span class="si">{</span><span class="n">initial_value</span><span class="si">}</span><span class="s2"> has entries &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;outside of [min, max] = [</span><span class="si">{</span><span class="nb">min</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="nb">max</span><span class="si">}</span><span class="s2">].&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">b</span> <span class="o">&lt;</span> <span class="n">a</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">initial_value</span><span class="p">,</span> <span class="n">initial_value</span><span class="p">[</span><span class="mi">1</span><span class="p">:])):</span>
+            <span class="c1"># The client constrains each handle against its neighbors assuming</span>
+            <span class="c1"># sorted order; unsorted values made the first drag snap handles to</span>
+            <span class="c1"># surprising positions.</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;add_multi_slider: initial_value </span><span class="si">{</span><span class="n">initial_value</span><span class="si">}</span><span class="s2"> must be &quot;</span>
+                <span class="s2">&quot;sorted in non-decreasing order.&quot;</span>
+            <span class="p">)</span>
 
         <span class="c1"># GUI callbacks cast incoming values to match the type of the initial value. If</span>
         <span class="c1"># any of the arguments are floats, we should always use a float value.</span>

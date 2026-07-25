@@ -451,7 +451,11 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">._gui_handles</span><span class="w"> </span><span class="kn">import</span> <span class="n">_make_uuid</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">._notification_handle</span><span class="w"> </span><span class="kn">import</span> <span class="n">NotificationHandle</span><span class="p">,</span> <span class="n">_NotificationHandleState</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">._scene_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">SceneApi</span><span class="p">,</span> <span class="n">cast_vector</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">._threadpool_exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">print_threadpool_errors</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._threadpool_exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">print_awaited_callback_error</span><span class="p">,</span>
+    <span class="n">print_task_error</span><span class="p">,</span>
+    <span class="n">print_threadpool_errors</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">._tunnel</span><span class="w"> </span><span class="kn">import</span> <span class="n">ViserTunnel</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.infra._infra</span><span class="w"> </span><span class="kn">import</span> <span class="n">StateSerializer</span>
 
@@ -682,6 +686,12 @@
     <span class="nd">@position</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">position</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">position_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">position</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="c1"># Validate BEFORE mutating or queuing: this setter queues its message</span>
+        <span class="c1"># and then shifts look_at (which validates), so a non-finite position</span>
+        <span class="c1"># caught late would leave the client sent a bad position and the</span>
+        <span class="c1"># server state half-updated.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">position_array</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Camera position must be finite, got </span><span class="si">{</span><span class="n">position_array</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">position_array</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">position</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="n">offset</span> <span class="o">=</span> <span class="n">position_array</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">position</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
@@ -696,11 +706,40 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_update_wxyz</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute and update the camera orientation from the internal look_at, position, and up vectors.&quot;&quot;&quot;</span>
+        <span class="c1"># Reject non-finite inputs up front: a NaN/Inf position, look_at, or</span>
+        <span class="c1"># up_direction would otherwise produce a non-zero (NaN) norm that</span>
+        <span class="c1"># slips past the degeneracy checks below and stores a NaN quaternion</span>
+        <span class="c1"># -- the exact silent corruption these guards exist to prevent (every</span>
+        <span class="c1"># later camera read and on_update callback would then see it).</span>
+        <span class="k">for</span> <span class="n">_name</span><span class="p">,</span> <span class="n">_vec</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="s2">&quot;position&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">position</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;look_at&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">&quot;up_direction&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span><span class="p">),</span>
+        <span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">_vec</span><span class="p">)):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Camera </span><span class="si">{</span><span class="n">_name</span><span class="si">}</span><span class="s2"> must be finite, got </span><span class="si">{</span><span class="n">_vec</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
         <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">position</span>
-        <span class="n">z</span> <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+        <span class="n">z_norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">z_norm</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="c1"># look_at == position: the view direction is undefined. Reject</span>
+            <span class="c1"># rather than store a NaN quaternion (which every later camera</span>
+            <span class="c1"># read and on_update callback would then see, silently).</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Camera look_at cannot equal position (zero look distance).&quot;</span>
+            <span class="p">)</span>
+        <span class="n">z</span> <span class="o">/=</span> <span class="n">z_norm</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">z</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">y</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">*</span> <span class="n">z</span>
-        <span class="n">y</span> <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">y_norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">y_norm</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="c1"># No component of up_direction is perpendicular to the view: it is</span>
+            <span class="c1"># zero, or parallel to (look_at - position). Reject rather than</span>
+            <span class="c1"># store/broadcast a NaN basis.</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Camera up_direction must be nonzero and not parallel to the &quot;</span>
+                <span class="s2">&quot;view direction (look_at - position).&quot;</span>
+            <span class="p">)</span>
+        <span class="n">y</span> <span class="o">/=</span> <span class="n">y_norm</span>
         <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span>
         <span class="c1"># Cast to float64 explicitly: newer numpy stubs type np.cross() as</span>
         <span class="c1"># possibly complex, which from_matrix() rejects.</span>
@@ -833,9 +872,18 @@
         <span class="n">look_at_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">look_at</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span><span class="p">,</span> <span class="n">look_at_array</span><span class="p">):</span>
             <span class="k">return</span>
+        <span class="n">old_look_at</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span>
+        <span class="n">old_timestamp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span> <span class="o">=</span> <span class="n">look_at_array</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_update_wxyz</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_update_wxyz</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># Roll back so a caught error doesn&#39;t leave a desynced half-built</span>
+            <span class="c1"># camera (state mutated, orientation stale, nothing sent).</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span> <span class="o">=</span> <span class="n">old_look_at</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">old_timestamp</span>
+            <span class="k">raise</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">SetCameraLookAtMessage</span><span class="p">(</span><span class="n">cast_vector</span><span class="p">(</span><span class="n">look_at</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
         <span class="p">)</span>
@@ -853,8 +901,14 @@
         <span class="n">up_direction_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">up_direction</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span><span class="p">,</span> <span class="n">up_direction_array</span><span class="p">):</span>
             <span class="k">return</span>
+        <span class="n">old_up</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">up_direction_array</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_update_wxyz</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_update_wxyz</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># Roll back so a caught error doesn&#39;t leave a desynced camera.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span> <span class="o">=</span> <span class="n">old_up</span>
+            <span class="k">raise</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">SetCameraUpDirectionMessage</span><span class="p">(</span><span class="n">cast_vector</span><span class="p">(</span><span class="n">up_direction</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
@@ -884,6 +938,7 @@
         <span class="n">height</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">width</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Request a render from a client, block until it&#39;s done and received, then</span>
 <span class="sd">        return it as a numpy array. This is an alias for :meth:`ClientHandle.get_render()`.</span>
@@ -894,9 +949,13 @@
 <span class="sd">            transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will</span>
 <span class="sd">                return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called</span>
 <span class="sd">                too quickly for higher-resolution images.</span>
+<span class="sd">            timeout: Optional maximum seconds to wait for the frame. ``None``</span>
+<span class="sd">                (default) waits indefinitely; a disconnect still raises promptly</span>
+<span class="sd">                either way. Set this to bound a client that stays connected but</span>
+<span class="sd">                never returns a frame.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get_render</span><span class="p">(</span>
-            <span class="n">height</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">transport_format</span><span class="o">=</span><span class="n">transport_format</span>
+            <span class="n">height</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">transport_format</span><span class="o">=</span><span class="n">transport_format</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span>
         <span class="p">)</span></div>
 </div>
 
@@ -1115,6 +1174,7 @@
         <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">fov</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span> <span class="o">...</span>
 
     <span class="nd">@overload</span>
@@ -1124,6 +1184,7 @@
         <span class="n">width</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span> <span class="o">...</span>
 
 <div class="viewcode-block" id="ClientHandle.get_render">
@@ -1137,6 +1198,7 @@
         <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">fov</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Request a render from a client, block until it&#39;s done and received, then</span>
 <span class="sd">        return it as a numpy array. If wxyz, position, and fov are not provided, the</span>
@@ -1154,6 +1216,10 @@
 <span class="sd">            transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will</span>
 <span class="sd">                return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called</span>
 <span class="sd">                too quickly for higher-resolution images.</span>
+<span class="sd">            timeout: Optional maximum seconds to wait for the frame. ``None``</span>
+<span class="sd">                (default) waits indefinitely; a disconnect still raises promptly</span>
+<span class="sd">                either way. Set this to bound a client that stays connected but</span>
+<span class="sd">                never returns a frame (raises ``TimeoutError``).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
         <span class="c1"># Listen for a render reseponse message, which should contain the rendered</span>
@@ -1165,6 +1231,25 @@
 
         <span class="n">render_uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
 
+        <span class="c1"># THREE exits race to unregister the handler: a frame arriving</span>
+        <span class="c1"># (got_render_cb, on the event loop), and the caller&#39;s disconnect /</span>
+        <span class="c1"># timeout branches below. infra&#39;s unregister_handler raises ValueError</span>
+        <span class="c1"># on a second remove, so exactly one exit may perform it; the losers</span>
+        <span class="c1"># defer to the winner instead of double-unregistering.</span>
+        <span class="n">unregister_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="n">unregistered</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">unregister_once</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="k">nonlocal</span> <span class="n">unregistered</span>
+            <span class="k">with</span> <span class="n">unregister_lock</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">unregistered</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">False</span>
+                <span class="n">unregistered</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">connection</span><span class="o">.</span><span class="n">unregister_handler</span><span class="p">(</span>
+                <span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderResponseMessage</span><span class="p">,</span> <span class="n">got_render_cb</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
         <span class="k">def</span><span class="w"> </span><span class="nf">got_render_cb</span><span class="p">(</span>
             <span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderResponseMessage</span>
         <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -1173,9 +1258,12 @@
             <span class="c1"># client; only ours matches our request&#39;s uuid.</span>
             <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">render_uuid</span> <span class="o">!=</span> <span class="n">render_uuid</span><span class="p">:</span>
                 <span class="k">return</span>
-            <span class="n">connection</span><span class="o">.</span><span class="n">unregister_handler</span><span class="p">(</span>
-                <span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderResponseMessage</span><span class="p">,</span> <span class="n">got_render_cb</span>
-            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">unregister_once</span><span class="p">():</span>
+                <span class="c1"># The caller already gave up (timeout/disconnect) and</span>
+                <span class="c1"># unregistered us; we can still be invoked once more if the</span>
+                <span class="c1"># dispatch loop snapshotted the handler list before the</span>
+                <span class="c1"># removal. The caller is gone -- drop the frame.</span>
+                <span class="k">return</span>
             <span class="k">nonlocal</span> <span class="n">out</span>
             <span class="c1"># An empty payload is the client&#39;s failure sentinel (capture threw,</span>
             <span class="c1"># or toBlob() returned null). Leave `out` as None and let the</span>
@@ -1211,7 +1299,36 @@
                 <span class="n">render_uuid</span><span class="o">=</span><span class="n">render_uuid</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">)</span>
-        <span class="n">render_ready_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+        <span class="c1"># Poll rather than wait unbounded: a client that DISCONNECTS (tab</span>
+        <span class="c1"># closed, network drop) never sends a response, so this raises as soon</span>
+        <span class="c1"># as it leaves _connected_clients instead of hanging the caller (and,</span>
+        <span class="c1"># from a sync callback, its pool worker). A client that stays</span>
+        <span class="c1"># connected but never returns a frame (frozen/backgrounded tab, wedged</span>
+        <span class="c1"># capture) is only bounded if the caller passes `timeout`.</span>
+        <span class="n">deadline</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">+</span> <span class="n">timeout</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">render_ready_event</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">client_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_viser_server</span><span class="o">.</span><span class="n">_connected_clients</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">unregister_once</span><span class="p">():</span>
+                    <span class="c1"># got_render_cb won the race: a frame was delivered in the</span>
+                    <span class="c1"># window between its unregister and its event.set(). Take</span>
+                    <span class="c1"># the frame rather than raising on a request that in fact</span>
+                    <span class="c1"># completed.</span>
+                    <span class="n">render_ready_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+                    <span class="k">break</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="s2">&quot;Render request failed: the client disconnected before &quot;</span>
+                    <span class="s2">&quot;returning a frame.&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">deadline</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">deadline</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">unregister_once</span><span class="p">():</span>
+                    <span class="c1"># Same race as above: the frame beat the deadline&#39;s</span>
+                    <span class="c1"># unregister. Return it instead of raising TimeoutError.</span>
+                    <span class="n">render_ready_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+                    <span class="k">break</span>
+                <span class="k">raise</span> <span class="ne">TimeoutError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Render request timed out after </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s: the client &quot;</span>
+                    <span class="s2">&quot;did not return a frame.&quot;</span>
+                <span class="p">)</span>
         <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
                 <span class="s2">&quot;Render request failed: the client could not capture a frame.&quot;</span>
@@ -1336,15 +1453,22 @@
                 <span class="c1"># received.</span>
                 <span class="k">if</span> <span class="n">first</span><span class="p">:</span>
                     <span class="n">first</span> <span class="o">=</span> <span class="kc">False</span>
+                    <span class="c1"># Register the client and snapshot the callback list in</span>
+                    <span class="c1"># one critical section, then invoke OUTSIDE the lock: an</span>
+                    <span class="c1"># async callback runs inline on the event loop, and any</span>
+                    <span class="c1"># server API it calls that takes _client_lock (e.g.</span>
+                    <span class="c1"># get_clients(), or on_scene_pointer registration) would</span>
+                    <span class="c1"># deadlock against the lock this thread already holds.</span>
+                    <span class="c1"># Exactly-once dispatch per (client, callback) pair only</span>
+                    <span class="c1"># needs the mutate+snapshot to be atomic: a concurrent</span>
+                    <span class="c1"># on_client_connect registration either lands in this</span>
+                    <span class="c1"># snapshot, or its own already-connected replay sees the</span>
+                    <span class="c1"># client in _connected_clients -- never both, never</span>
+                    <span class="c1"># neither.</span>
                     <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_lock</span><span class="p">:</span>
                         <span class="bp">self</span><span class="o">.</span><span class="n">_connected_clients</span><span class="p">[</span><span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">client</span>
-                        <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_connect_cb</span><span class="p">:</span>
-                            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-                                <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
-                            <span class="k">else</span><span class="p">:</span>
-                                <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
-                                    <span class="n">cb</span><span class="p">,</span> <span class="n">client</span>
-                                <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_threadpool_errors</span><span class="p">)</span>
+                        <span class="n">connect_cbs</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_client_connect_cb</span><span class="p">)</span>
+                    <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_client_callbacks</span><span class="p">(</span><span class="n">connect_cbs</span><span class="p">,</span> <span class="n">client</span><span class="p">)</span>
 
                 <span class="k">for</span> <span class="n">camera_cb</span> <span class="ow">in</span> <span class="n">client</span><span class="o">.</span><span class="n">camera</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">camera_cb</span><span class="p">:</span>
                     <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">camera_cb</span><span class="p">):</span>
@@ -1359,28 +1483,37 @@
         <span class="c1"># Remove clients when they disconnect.</span>
         <span class="nd">@server</span><span class="o">.</span><span class="n">on_client_disconnect</span>
         <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">conn</span><span class="p">:</span> <span class="n">infra</span><span class="o">.</span><span class="n">WebsockClientConnection</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Never hold _client_lock across an await: the awaited user</span>
+            <span class="c1"># callbacks (and the synthesized drag-end callbacks below) run</span>
+            <span class="c1"># inline on the event loop, and any server API they call that</span>
+            <span class="c1"># takes the lock (e.g. get_clients()) would deadlock against</span>
+            <span class="c1"># the lock this thread already holds. Pop FIRST so no observer</span>
+            <span class="c1"># (get_clients(), connect-callback replay) can see a physically</span>
+            <span class="c1"># dead client while its teardown awaits user code.</span>
             <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_lock</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_connected_clients</span><span class="p">:</span>
-                    <span class="k">return</span>
+                <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_connected_clients</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">disconnect_cbs</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_client_disconnect_cb</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span>
 
-                <span class="c1"># Drop any in-flight drag entries for this client; the</span>
-                <span class="c1"># corresponding ``phase=&quot;end&quot;`` will never arrive, so</span>
-                <span class="c1"># without this the active-drag map leaks an entry per</span>
-                <span class="c1"># dropped drag and ``on_drag_end`` is silently skipped.</span>
-                <span class="c1"># Run this *before* popping from ``_connected_clients``</span>
-                <span class="c1"># so the synthesized end event can resolve a</span>
-                <span class="c1"># ``ClientHandle`` for ``event.client``.</span>
-                <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_drop_active_drags_for_client</span><span class="p">(</span>
-                    <span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">)</span>
-                <span class="p">)</span>
-                <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_connected_clients</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_disconnect_cb</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-                        <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
-                            <span class="n">print_threadpool_errors</span>
-                        <span class="p">)</span>
+            <span class="c1"># Drop this client&#39;s in-flight upload buffers (shared GUI and the</span>
+            <span class="c1"># client&#39;s own): nothing else removes them -- completion is the</span>
+            <span class="c1"># only other pop -- so a tab closed mid-upload leaked its</span>
+            <span class="c1"># accumulated parts forever.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_drop_uploads_from_client</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">))</span>
+            <span class="n">handle</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_drop_uploads_from_client</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">))</span>
+
+            <span class="c1"># Drop any in-flight drag entries for this client; the</span>
+            <span class="c1"># corresponding ``phase=&quot;end&quot;`` will never arrive, so without</span>
+            <span class="c1"># this the active-drag map leaks an entry per dropped drag and</span>
+            <span class="c1"># ``on_drag_end`` is silently skipped. The popped handle is</span>
+            <span class="c1"># passed in explicitly so the synthesized end events can still</span>
+            <span class="c1"># resolve ``event.client`` without the client being publicly</span>
+            <span class="c1"># listed.</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_drop_active_drags_for_client</span><span class="p">(</span>
+                <span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">),</span> <span class="n">event_client</span><span class="o">=</span><span class="n">handle</span>
+            <span class="p">)</span>
+            <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_client_callbacks</span><span class="p">(</span><span class="n">disconnect_cbs</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
 
         <span class="c1"># Start the server.</span>
         <span class="n">server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
@@ -1396,17 +1529,24 @@
         <span class="p">)</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for interacting with the GUI.&quot;&quot;&quot;</span>
 
+        <span class="c1"># Dispatch the share-tunnel handlers to the thread pool, NOT inline on</span>
+        <span class="c1"># the event loop: request_share_url() blocks (HTTP round-trip to the</span>
+        <span class="c1"># share backend, and connect_event.wait() with no timeout). Run inline,</span>
+        <span class="c1"># a single ShareUrlRequest from any client would freeze the whole</span>
+        <span class="c1"># event loop -- every client stalls -- for the round-trip, or forever</span>
+        <span class="c1"># if the share backend is unreachable. On a pool thread the blocking is</span>
+        <span class="c1"># confined to that worker.</span>
         <span class="n">server</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">ShareUrlDisconnect</span><span class="p">,</span>
-            <span class="k">lambda</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">msg</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">disconnect_share_url</span><span class="p">(),</span>
+            <span class="k">lambda</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">msg</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">disconnect_share_url</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_threadpool_errors</span><span class="p">),</span>
         <span class="p">)</span>
-
-        <span class="k">def</span><span class="w"> </span><span class="nf">request_share_url_no_return</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># To suppress type error.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">request_share_url</span><span class="p">()</span>
-
         <span class="n">server</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">ShareUrlRequest</span><span class="p">,</span>
-            <span class="k">lambda</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">msg</span><span class="p">:</span> <span class="n">cast</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">request_share_url_no_return</span><span class="p">()),</span>
+            <span class="k">lambda</span> <span class="n">client_id</span><span class="p">,</span> <span class="n">msg</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">request_share_url</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_threadpool_errors</span><span class="p">),</span>
         <span class="p">)</span>
 
         <span class="c1"># Form status print.</span>
@@ -1444,6 +1584,11 @@
         <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="p">:</span> <span class="n">ViserTunnel</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Guards the share-tunnel slot&#39;s check-then-act. The handlers now run</span>
+        <span class="c1"># on pool threads (not serialized on the event loop), so two</span>
+        <span class="c1"># concurrent requests could both see None and each create a tunnel,</span>
+        <span class="c1"># orphaning (leaking) the first.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
 
         <span class="c1"># Create share tunnel if requested.</span>
         <span class="c1"># This is deprecated: we should use get_share_url() instead.</span>
@@ -1492,16 +1637,26 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">buffer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_broadcast_buffer</span>
         <span class="k">with</span> <span class="n">buffer</span><span class="o">.</span><span class="n">buffer_lock</span><span class="p">:</span>
-            <span class="c1"># Skip GC while there are messages queued but not yet processed by</span>
-            <span class="c1"># the window generators. Without this, we could cull messages</span>
-            <span class="c1"># before they reach existing clients.</span>
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="ow">not</span> <span class="n">force</span>
-                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">message_event</span><span class="o">.</span><span class="n">is_set</span><span class="p">()</span>
-            <span class="p">):</span>
-                <span class="k">return</span>
+            <span class="c1"># Deletion floor: only messages EVERY active window generator has</span>
+            <span class="c1"># already consumed may be purged. Do NOT gate on message_event --</span>
+            <span class="c1"># it is not a consumption watermark (any one generator clears</span>
+            <span class="c1"># it), so a BACKPRESSURED client&#39;s cursor can sit arbitrarily far</span>
+            <span class="c1"># behind, and purging a remove-tombstone it hadn&#39;t consumed makes</span>
+            <span class="c1"># it retain the entity forever (its cursor skips the hole),</span>
+            <span class="c1"># permanently diverging it from other clients. With no active</span>
+            <span class="c1"># generators everything is purgeable: a connecting client&#39;s</span>
+            <span class="c1"># generator registers only when its producer starts, and a fresh</span>
+            <span class="c1"># client must not replay removals of entities it never saw --</span>
+            <span class="c1"># which is this GC&#39;s entire purpose.</span>
+            <span class="n">purge_floor</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">buffer</span><span class="o">.</span><span class="n">generator_cursors</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 
-            <span class="c1"># First pass: collect every tombstone&#39;s entity id.</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">deletable</span><span class="p">(</span><span class="n">msg_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">force</span> <span class="ow">or</span> <span class="n">purge_floor</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">msg_id</span> <span class="o">&lt;=</span> <span class="n">purge_floor</span>
+
+            <span class="c1"># First pass: collect every tombstone&#39;s entity id. The entity id</span>
+            <span class="c1"># set gates the second pass regardless of the floor; the tombstone</span>
+            <span class="c1"># MESSAGE itself is only deleted once every active client has</span>
+            <span class="c1"># consumed it.</span>
             <span class="n">remove_message_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="n">removed_ids_by_type</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
             <span class="k">for</span> <span class="n">msg_id</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
@@ -1510,15 +1665,31 @@
                         <span class="n">message</span><span class="o">.</span><span class="n">entity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                         <span class="ow">and</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                     <span class="p">)</span>
-                    <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">deletable</span><span class="p">(</span><span class="n">msg_id</span><span class="p">):</span>
+                        <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
                     <span class="n">removed_ids_by_type</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">entity_type</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
                         <span class="nb">getattr</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span><span class="p">)</span>
                     <span class="p">)</span>
 
             <span class="c1"># Second pass: purge updates whose target entity has a tombstone,</span>
             <span class="c1"># including scene-adjacent Set*Message variants that target a</span>
-            <span class="c1"># removed scene node by `name` but aren&#39;t entity-declared. Skip</span>
-            <span class="c1"># the walk entirely when nothing was tombstoned this round.</span>
+            <span class="c1"># removed scene node by `name` but aren&#39;t entity-declared. The</span>
+            <span class="c1"># per-message taxonomy is Message.targets_entity_state -- the ONE</span>
+            <span class="c1"># definition, shared with the same-name-replacement purge -- with</span>
+            <span class="c1"># set-based id matching inlined here so the sweep stays a single</span>
+            <span class="c1"># pass over the buffer rather than per-name predicate calls.</span>
+            <span class="c1"># Skip the walk entirely when nothing was tombstoned this round.</span>
+            <span class="c1">#</span>
+            <span class="c1"># These deletes are NOT floor-gated, unlike the tombstones above:</span>
+            <span class="c1"># an update targeting a removed entity is dead weight for EVERY</span>
+            <span class="c1"># client. A laggard that hasn&#39;t consumed it still receives the</span>
+            <span class="c1"># (floor-retained) tombstone, so its final state is identical --</span>
+            <span class="c1"># while floor-gating it let a single backpressured client pin an</span>
+            <span class="c1"># update that sorts AFTER its entity&#39;s remove in the buffer, and</span>
+            <span class="c1"># every late-joiner then replayed &quot;remove /x&quot; (no-op) followed by</span>
+            <span class="c1"># &quot;update /x&quot;: a ghost node other clients don&#39;t have. push()</span>
+            <span class="c1"># already purges pending updates on Remove with no floor gate;</span>
+            <span class="c1"># this sweep follows the same reasoning.</span>
             <span class="k">if</span> <span class="n">removed_ids_by_type</span><span class="p">:</span>
                 <span class="k">for</span> <span class="n">msg_id</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                     <span class="n">phase</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">lifecycle_phase</span>
@@ -1582,60 +1753,77 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Share URL as string, or None if connection fails or is closed.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># Tunnel already exists.</span>
-            <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;ready&quot;</span><span class="p">,</span> <span class="s2">&quot;connecting&quot;</span><span class="p">):</span>
-                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">get_url</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># Create a new tunnel!.</span>
-            <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
-                <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
-
-                <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Share URL requested!&quot;</span><span class="p">)</span>
-
-            <span class="n">connect_event</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
-
-            <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="o">=</span> <span class="n">ViserTunnel</span><span class="p">(</span>
-                <span class="s2">&quot;share.viser.studio&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_port</span>
-            <span class="p">)</span>
-
-            <span class="nd">@self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">on_disconnect</span>
-            <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
-
-                <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Disconnected from share URL&quot;</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="o">=</span> <span class="kc">None</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">ShareUrlUpdated</span><span class="p">(</span><span class="kc">None</span><span class="p">))</span>
-
-            <span class="nd">@self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">on_connect</span>
-            <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">max_clients</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="n">share_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">get_url</span><span class="p">()</span>
+        <span class="c1"># Claim the tunnel slot atomically: only ONE concurrent request</span>
+        <span class="c1"># creates a tunnel; the rest wait on it. The blocking waits below are</span>
+        <span class="c1"># OUTSIDE the lock so requests don&#39;t serialize on the connection.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span><span class="p">:</span>
+            <span class="n">tunnel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span>
+            <span class="n">we_created</span> <span class="o">=</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">we_created</span><span class="p">:</span>
                 <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
                     <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
 
-                    <span class="k">if</span> <span class="n">share_url</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Could not generate share URL&quot;</span><span class="p">)</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
-                            <span class="sa">f</span><span class="s2">&quot;[bold](viser)[/bold] Generated share URL (expires in 24 hours, max </span><span class="si">{</span><span class="n">max_clients</span><span class="si">}</span><span class="s2"> clients): </span><span class="si">{</span><span class="n">share_url</span><span class="si">}</span><span class="s2">&quot;</span>
-                        <span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">ShareUrlUpdated</span><span class="p">(</span><span class="n">share_url</span><span class="p">))</span>
-                <span class="n">connect_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+                    <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Share URL requested!&quot;</span><span class="p">)</span>
+                <span class="n">tunnel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="o">=</span> <span class="n">ViserTunnel</span><span class="p">(</span>
+                    <span class="s2">&quot;share.viser.studio&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_port</span>
+                <span class="p">)</span>
 
-            <span class="n">connect_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">we_created</span><span class="p">:</span>
+            <span class="c1"># Another request created (or is creating) the tunnel.</span>
+            <span class="k">assert</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">while</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;ready&quot;</span><span class="p">,</span> <span class="s2">&quot;connecting&quot;</span><span class="p">):</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_url</span><span class="p">()</span>
 
-            <span class="n">url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">get_url</span><span class="p">()</span>
-            <span class="k">return</span> <span class="n">url</span></div>
+        <span class="c1"># We own the new tunnel: wire callbacks and wait for it to connect.</span>
+        <span class="k">assert</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">connect_event</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
+
+        <span class="nd">@tunnel</span><span class="o">.</span><span class="n">on_disconnect</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
+
+            <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Disconnected from share URL&quot;</span><span class="p">)</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span><span class="p">:</span>
+                <span class="c1"># Only clear the slot if it still points at OUR tunnel (a</span>
+                <span class="c1"># newer request may have replaced it).</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="n">tunnel</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">ShareUrlUpdated</span><span class="p">(</span><span class="kc">None</span><span class="p">))</span>
+
+        <span class="nd">@tunnel</span><span class="o">.</span><span class="n">on_connect</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">max_clients</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">share_url</span> <span class="o">=</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_url</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
+
+                <span class="k">if</span> <span class="n">share_url</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Could not generate share URL&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;[bold](viser)[/bold] Generated share URL (expires in 24 hours, max </span><span class="si">{</span><span class="n">max_clients</span><span class="si">}</span><span class="s2"> clients): </span><span class="si">{</span><span class="n">share_url</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">ShareUrlUpdated</span><span class="p">(</span><span class="n">share_url</span><span class="p">))</span>
+            <span class="n">connect_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+
+        <span class="c1"># Wait for connect, but ALSO watch for failure: on_connect only fires</span>
+        <span class="c1"># on success, and a failed tunnel (share backend unreachable) sets</span>
+        <span class="c1"># status=&quot;failed&quot; without touching connect_event -- a bare wait()</span>
+        <span class="c1"># blocked the creator forever instead of returning None as documented.</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">connect_event</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;failed&quot;</span><span class="p">,</span> <span class="s2">&quot;closed&quot;</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_url</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="ViserServer.disconnect_share_url">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.disconnect_share_url">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">disconnect_share_url</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Disconnect from the share URL server.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span><span class="p">:</span>
+            <span class="n">tunnel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span>
+        <span class="k">if</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">tunnel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
 
@@ -1650,8 +1838,42 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Stop the Viser server and associated threads and tunnels.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="c1"># Let the background event loop finish its connection teardown before</span>
+        <span class="c1"># shutting the pool: that teardown submits disconnect/camera callbacks</span>
+        <span class="c1"># to the pool, and websock_server.stop() only join()s the loop thread</span>
+        <span class="c1"># for 0.1s -- so shutting the pool right after would make those late</span>
+        <span class="c1"># submits raise &quot;cannot schedule new futures after shutdown&quot; and drop</span>
+        <span class="c1"># the user&#39;s callbacks silently. Bounded so a hung callback can&#39;t</span>
+        <span class="c1"># block stop() forever (in that pathological case the pool still</span>
+        <span class="c1"># shuts and the straggler is dropped, as before this join).</span>
+        <span class="n">loop_thread</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_server_thread</span>
+        <span class="k">if</span> <span class="n">loop_thread</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">loop_thread</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
+        <span class="c1"># Release the callback/get_render worker pool: stop() otherwise left</span>
+        <span class="c1"># its (up to 32) threads alive until the server object was GC&#39;d out of</span>
+        <span class="c1"># its callback ref-cycles, contradicting &quot;stops associated threads&quot;.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">shutdown</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
 
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_dispatch_client_callbacks</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">callbacks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run connect/disconnect callbacks for one client: async callbacks</span>
+<span class="sd">        awaited in order, sync callbacks on the thread pool, every callback</span>
+<span class="sd">        exception-isolated so one failure cannot starve its siblings.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="n">callbacks</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                    <span class="n">print_awaited_callback_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">client</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
+                    <span class="n">print_threadpool_errors</span>
+                <span class="p">)</span>
 
 <div class="viewcode-block" id="ViserServer.get_clients">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.get_clients">[docs]</a>
@@ -1693,7 +1915,8 @@
         <span class="c1"># connect between the two lines.</span>
         <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cb</span><span class="p">(</span><span class="n">client</span><span class="p">))</span>
+                <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cb</span><span class="p">(</span><span class="n">client</span><span class="p">))</span>
+                <span class="n">task</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_task_error</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">client</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
                     <span class="n">print_threadpool_errors</span>
@@ -1827,15 +2050,20 @@
 <span class="sd">        This can be used for saving .viser files, which are used for offline</span>
 <span class="sd">        visualization.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">serializer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">get_message_serializer</span><span class="p">(</span>
-            <span class="nb">filter</span><span class="o">=</span><span class="k">lambda</span> <span class="n">message</span><span class="p">:</span> <span class="n">message</span><span class="o">.</span><span class="n">include_in_scene_serialization</span>
-        <span class="p">)</span>
-        <span class="c1"># Insert current scene state.</span>
+        <span class="c1"># Register + snapshot atomically (under _record_lock, which</span>
+        <span class="c1"># queue_message also holds for its feed+push): otherwise a message</span>
+        <span class="c1"># queued from another thread between the two lands in BOTH the live</span>
+        <span class="c1"># recording and the snapshot, duplicating it in the .viser file.</span>
         <span class="n">buffer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_broadcast_buffer</span>
-        <span class="k">with</span> <span class="n">buffer</span><span class="o">.</span><span class="n">buffer_lock</span><span class="p">:</span>
-            <span class="n">messages</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
-        <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">messages</span><span class="p">:</span>
-            <span class="n">serializer</span><span class="o">.</span><span class="n">_insert_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_record_lock</span><span class="p">:</span>
+            <span class="n">serializer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">get_message_serializer</span><span class="p">(</span>
+                <span class="nb">filter</span><span class="o">=</span><span class="k">lambda</span> <span class="n">message</span><span class="p">:</span> <span class="n">message</span><span class="o">.</span><span class="n">include_in_scene_serialization</span>
+            <span class="p">)</span>
+            <span class="c1"># Insert current scene state.</span>
+            <span class="k">with</span> <span class="n">buffer</span><span class="o">.</span><span class="n">buffer_lock</span><span class="p">:</span>
+                <span class="n">messages</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+            <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">messages</span><span class="p">:</span>
+                <span class="n">serializer</span><span class="o">.</span><span class="n">_insert_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">serializer</span></div>
 </div>
 

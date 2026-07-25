@@ -508,6 +508,12 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Insert a sleep into the recorded file. This can be useful for</span>
 <span class="sd">        dynamic 3D data.&quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="bp">self</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">,</span> <span class="s2">&quot;serialize() was already called!&quot;</span>
+        <span class="c1"># A negative sleep would rewind the recording clock, making later</span>
+        <span class="c1"># messages carry smaller timestamps -- the player assumes ascending</span>
+        <span class="c1"># order and would apply them late or never (and durationSeconds could</span>
+        <span class="c1"># fall below a recorded message&#39;s time).</span>
+        <span class="k">if</span> <span class="n">duration</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;insert_sleep duration must be &gt;= 0, got </span><span class="si">{</span><span class="n">duration</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_time</span> <span class="o">+=</span> <span class="n">duration</span></div>
 
 
@@ -535,7 +541,8 @@
             <span class="p">}</span>
         <span class="p">)</span>
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
         <span class="c1"># Build uncompressed inner payload:</span>
         <span class="c1">#   [8 bytes] msgpack length (little-endian uint64)</span>
@@ -653,8 +660,15 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_queued_messages</span><span class="p">:</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_locked_thread_id</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
 
-        <span class="c1"># List of active serializers recording messages.</span>
+        <span class="c1"># List of active serializers recording messages. _record_lock makes</span>
+        <span class="c1"># &quot;register a serializer + snapshot existing state&quot; atomic against</span>
+        <span class="c1"># queue_message&#39;s &quot;feed serializers + push to buffer&quot;: without it, a</span>
+        <span class="c1"># message queued between registration and the snapshot is recorded</span>
+        <span class="c1"># TWICE (once live, once from the snapshot). Reentrant so callers can</span>
+        <span class="c1"># hold it across get_message_serializer(). Ordering: _record_lock is</span>
+        <span class="c1"># always taken BEFORE the buffer&#39;s buffer_lock, never after.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">StateSerializer</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_record_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
 
 <div class="viewcode-block" id="WebsockMessageHandler.get_message_serializer">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockMessageHandler.get_message_serializer">[docs]</a>
@@ -664,7 +678,8 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Start recording messages that are sent. Sent messages will be</span>
 <span class="sd">        serialized and can be used for playback.&quot;&quot;&quot;</span>
         <span class="n">serializer</span> <span class="o">=</span> <span class="n">StateSerializer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">filter</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">serializer</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_record_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">serializer</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">serializer</span></div>
 
 
@@ -722,10 +737,14 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockMessageHandler.queue_message">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">queue_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">Message</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Wrapped method for sending messages.&quot;&quot;&quot;</span>
-        <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">:</span>
-            <span class="n">handle</span><span class="o">.</span><span class="n">_insert_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+        <span class="c1"># Feed + push under _record_lock so a concurrently-registering</span>
+        <span class="c1"># serializer either sees this message in its buffer snapshot OR</span>
+        <span class="c1"># records it live -- never both (duplicate) and never neither (loss).</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_record_lock</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">:</span>
+                <span class="n">handle</span><span class="o">.</span><span class="n">_insert_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">get_message_buffer</span><span class="p">()</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">get_message_buffer</span><span class="p">()</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="WebsockMessageHandler.atomic">
@@ -1046,10 +1065,17 @@
                     <span class="s2">&quot; messages&quot;</span>
                 <span class="p">)</span>
 
-            <span class="k">try</span><span class="p">:</span>
-                <span class="c1"># For each client: infinite loop over producers (which send messages)</span>
-                <span class="c1"># and consumers (which receive messages).</span>
-                <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span>
+            <span class="c1"># For each client: infinite loop over producers (which send</span>
+            <span class="c1"># messages) and consumers (which receive messages). Explicit</span>
+            <span class="c1"># tasks, because gather() does NOT cancel siblings when one</span>
+            <span class="c1"># raises: the consumer&#39;s ConnectionClosed left the broadcast</span>
+            <span class="c1"># producer parked on message_event.wait() as a zombie -- its</span>
+            <span class="c1"># window generator&#39;s finally (which releases the GC cursor) then</span>
+            <span class="c1"># ran only when the NEXT broadcast woke it, and on a quiet server</span>
+            <span class="c1"># the stale cursor pinned the GC deletion floor indefinitely.</span>
+            <span class="n">producer_consumer_tasks</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">coro</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">coro</span> <span class="ow">in</span> <span class="p">(</span>
                     <span class="n">_message_producer</span><span class="p">(</span>
                         <span class="n">connection</span><span class="p">,</span>
                         <span class="n">client_state</span><span class="o">.</span><span class="n">message_buffer</span><span class="p">,</span>
@@ -1065,6 +1091,9 @@
                     <span class="p">),</span>
                     <span class="n">_message_consumer</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">handle_incoming</span><span class="p">,</span> <span class="n">message_class</span><span class="p">),</span>
                 <span class="p">)</span>
+            <span class="p">]</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="o">*</span><span class="n">producer_consumer_tasks</span><span class="p">)</span>
             <span class="k">except</span> <span class="p">(</span>
                 <span class="n">websockets</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">ConnectionClosedOK</span><span class="p">,</span>
                 <span class="n">websockets</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">ConnectionClosedError</span><span class="p">,</span>
@@ -1075,6 +1104,13 @@
                 <span class="c1"># and disconnect callbacks always fire.</span>
                 <span class="k">pass</span>
             <span class="k">finally</span><span class="p">:</span>
+                <span class="c1"># Tear down the surviving siblings NOW (cancellation runs the</span>
+                <span class="c1"># broadcast window generator&#39;s finally, releasing its GC</span>
+                <span class="c1"># cursor deterministically); await them so no task outlives</span>
+                <span class="c1"># its connection.</span>
+                <span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="n">producer_consumer_tasks</span><span class="p">:</span>
+                    <span class="n">task</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>
+                <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="o">*</span><span class="n">producer_consumer_tasks</span><span class="p">,</span> <span class="n">return_exceptions</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
                 <span class="c1"># We use a sentinel value to signal that the client producer thread</span>
                 <span class="c1"># should exit.</span>
                 <span class="c1">#</span>
@@ -1089,6 +1125,12 @@
                 <span class="c1"># leak the client. `pop(..., None)` keeps this idempotent.</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_client_state_from_id</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_live_connections</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="c1"># Drop this connection&#39;s broadcast GC cursor HERE, not only in</span>
+                <span class="c1"># the generator&#39;s own finally: the idle broadcast producer can</span>
+                <span class="c1"># stay parked (same zombie hazard as the explicit-tasks note</span>
+                <span class="c1"># above), so its finally may not have run. pop() is idempotent</span>
+                <span class="c1"># with the generator&#39;s own cleanup, whichever runs first.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">generator_cursors</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
                 <span class="n">total_connections</span> <span class="o">-=</span> <span class="mi">1</span>
 
                 <span class="c1"># Disconnection callbacks.</span>
@@ -1254,7 +1296,16 @@
                         <span class="p">),</span>
                     <span class="p">)</span> <span class="k">as</span> <span class="n">serve_future</span><span class="p">:</span>
                         <span class="k">assert</span> <span class="n">serve_future</span><span class="o">.</span><span class="n">server</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">_port</span> <span class="o">=</span> <span class="n">port_attempt</span>
+                        <span class="c1"># Report the port actually BOUND, not the one</span>
+                        <span class="c1"># requested: with port=0 the OS assigns an ephemeral</span>
+                        <span class="c1"># port, and echoing the 0 back made get_port() (and</span>
+                        <span class="c1"># the printed URLs) useless.</span>
+                        <span class="n">bound_sockets</span> <span class="o">=</span> <span class="n">serve_future</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">sockets</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_port</span> <span class="o">=</span> <span class="p">(</span>
+                            <span class="n">bound_sockets</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">getsockname</span><span class="p">()[</span><span class="mi">1</span><span class="p">]</span>
+                            <span class="k">if</span> <span class="n">bound_sockets</span>
+                            <span class="k">else</span> <span class="n">port_attempt</span>
+                        <span class="p">)</span>
                         <span class="n">ready_sem</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
                         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stop_event</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                         <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stop_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
@@ -1322,32 +1373,41 @@
         <span class="n">client_id</span><span class="p">,</span> <span class="n">backlog_done_message</span><span class="o">=</span><span class="n">backlog_done_message</span>
     <span class="p">)</span>
     <span class="n">zstd</span> <span class="o">=</span> <span class="n">zstandard</span><span class="o">.</span><span class="n">ZstdCompressor</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">while</span> <span class="ow">not</span> <span class="n">buffer</span><span class="o">.</span><span class="n">done</span><span class="p">:</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">outgoing</span> <span class="o">=</span> <span class="k">await</span> <span class="n">window_generator</span><span class="o">.</span><span class="fm">__anext__</span><span class="p">()</span>
-        <span class="k">except</span> <span class="ne">StopAsyncIteration</span><span class="p">:</span>
-            <span class="k">break</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">buffer</span><span class="o">.</span><span class="n">done</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">outgoing</span> <span class="o">=</span> <span class="k">await</span> <span class="n">window_generator</span><span class="o">.</span><span class="fm">__anext__</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">StopAsyncIteration</span><span class="p">:</span>
+                <span class="k">break</span>
 
-        <span class="n">binary_buffers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">memoryview</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">serialized_messages</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
-            <span class="n">message</span><span class="o">.</span><span class="n">as_serializable_dict</span><span class="p">(</span><span class="n">binary_buffers</span><span class="p">)</span> <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">outgoing</span>
-        <span class="p">)</span>
-        <span class="n">inner</span> <span class="o">=</span> <span class="n">msgspec</span><span class="o">.</span><span class="n">msgpack</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span>
-            <span class="p">{</span>
-                <span class="s2">&quot;messages&quot;</span><span class="p">:</span> <span class="n">serialized_messages</span><span class="p">,</span>
-                <span class="s2">&quot;timestampSec&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">(),</span>
-                <span class="s2">&quot;binaryBufferLengths&quot;</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">binary_buffers</span><span class="p">),</span>
-            <span class="p">}</span>
-        <span class="p">)</span>
-        <span class="n">compressed</span> <span class="o">=</span> <span class="n">zstd</span><span class="o">.</span><span class="n">compress</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span>
+            <span class="n">binary_buffers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">memoryview</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">serialized_messages</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+                <span class="n">message</span><span class="o">.</span><span class="n">as_serializable_dict</span><span class="p">(</span><span class="n">binary_buffers</span><span class="p">)</span> <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">outgoing</span>
+            <span class="p">)</span>
+            <span class="n">inner</span> <span class="o">=</span> <span class="n">msgspec</span><span class="o">.</span><span class="n">msgpack</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">&quot;messages&quot;</span><span class="p">:</span> <span class="n">serialized_messages</span><span class="p">,</span>
+                    <span class="s2">&quot;timestampSec&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">(),</span>
+                    <span class="s2">&quot;binaryBufferLengths&quot;</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">binary_buffers</span><span class="p">),</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+            <span class="n">compressed</span> <span class="o">=</span> <span class="n">zstd</span><span class="o">.</span><span class="n">compress</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span>
 
-        <span class="n">parts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">bytes</span> <span class="o">|</span> <span class="nb">memoryview</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">),</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">compressed</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">),</span>
-            <span class="n">compressed</span><span class="p">,</span>
-        <span class="p">]</span>
-        <span class="n">_append_aligned_buffers</span><span class="p">(</span><span class="n">parts</span><span class="p">,</span> <span class="n">binary_buffers</span><span class="p">,</span> <span class="mi">16</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">compressed</span><span class="p">))</span>
-        <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">))</span>
+            <span class="n">parts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">bytes</span> <span class="o">|</span> <span class="nb">memoryview</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">compressed</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">),</span>
+                <span class="n">compressed</span><span class="p">,</span>
+            <span class="p">]</span>
+            <span class="n">_append_aligned_buffers</span><span class="p">(</span><span class="n">parts</span><span class="p">,</span> <span class="n">binary_buffers</span><span class="p">,</span> <span class="mi">16</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">compressed</span><span class="p">))</span>
+            <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">))</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="c1"># Close the generator DETERMINISTICALLY. A cancellation delivered at</span>
+        <span class="c1"># `websocket.send` leaves the generator suspended at its yield --</span>
+        <span class="c1"># exiting the async-for does NOT close it, so its finallys (the GC</span>
+        <span class="c1"># cursor pop, the flush-waiter cancel) would otherwise run only at a</span>
+        <span class="c1"># later garbage-collection pass. aclose() raises GeneratorExit at the</span>
+        <span class="c1"># yield and runs them now, before this producer task completes.</span>
+        <span class="k">await</span> <span class="n">window_generator</span><span class="o">.</span><span class="n">aclose</span><span class="p">()</span>
 
 
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_message_consumer</span><span class="p">(</span>

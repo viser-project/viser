@@ -494,6 +494,25 @@
     <span class="n">websock</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">make_message</span><span class="p">(</span><span class="n">value_cast</span><span class="p">))</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_queue_empty_interaction_bindings</span><span class="p">(</span>
+    <span class="n">api</span><span class="p">:</span> <span class="n">SceneApi</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">had_click</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">had_drag</span><span class="p">:</span> <span class="nb">bool</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Broadcast empty click/drag binding tuples for a node whose name-keyed</span>
+<span class="sd">    interaction state is being retired, so a re-created node with the same</span>
+<span class="sd">    name doesn&#39;t inherit the prior node&#39;s filters from the persistent buffer.</span>
+<span class="sd">    Shared by ``remove()`` and the same-name-replacement supersede in</span>
+<span class="sd">    ``_make`` so the two can&#39;t drift; emits only -- callers own any</span>
+<span class="sd">    ``drag_cb`` bookkeeping.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">had_click</span><span class="p">:</span>
+        <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickBindingsMessage</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">())</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">had_drag</span><span class="p">:</span>
+        <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeDragBindingsMessage</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">())</span>
+        <span class="p">)</span>
+
+
 <div class="viewcode-block" id="SceneClickEvent">
 <a class="viewcode-back" href="../../../api/advanced/events/#viser.SceneClickEvent">[docs]</a>
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -706,23 +725,81 @@
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">_field_value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
                 <span class="nb">setattr</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">props</span><span class="p">,</span> <span class="n">_field_name</span><span class="p">,</span> <span class="n">_field_value</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
 
-        <span class="c1"># Send message.</span>
-        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">Message</span><span class="p">)</span>
-        <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+        <span class="c1"># Same-name REPLACEMENT (explicitly supported: re-adding a node under</span>
+        <span class="c1"># an existing name swaps it out) plus the new node&#39;s registration,</span>
+        <span class="c1"># atomic under the lifecycle lock: a concurrent old_handle.remove()</span>
+        <span class="c1"># from another thread must either run fully before this block or</span>
+        <span class="c1"># observe the FINISHED supersession (registry pointing at the new</span>
+        <span class="c1"># handle) and warn-return -- never interleave while the old handle</span>
+        <span class="c1"># is marked removed but still registered, where its remove() would</span>
+        <span class="c1"># tear down the replacement&#39;s fresh state.</span>
+        <span class="k">with</span> <span class="n">api</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+            <span class="n">old_handle</span> <span class="o">=</span> <span class="n">api</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">old_handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">old_handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+                <span class="c1"># 1. The old Python handle goes inert. Removal resolves by NAME,</span>
+                <span class="c1">#    so a later old_handle.remove() would otherwise find the</span>
+                <span class="c1">#    REPLACEMENT in the registry and delete it (marking the new</span>
+                <span class="c1">#    handle removed) out from under the caller.</span>
+                <span class="n">old_handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">old_handle</span><span class="o">.</span><span class="n">_on_remove</span><span class="p">()</span>
+                <span class="c1"># 2. The old node&#39;s per-axis updates must not replay onto the new</span>
+                <span class="c1">#    node: the new create replaces the old one in the persistent</span>
+                <span class="c1">#    buffer via its redundancy key, but pose/visibility/props</span>
+                <span class="c1">#    updates and name-keyed binding messages live in separate</span>
+                <span class="c1">#    namespaces -- a late joiner would apply the OLD pose to the</span>
+                <span class="c1">#    NEW node. Purge them (mirrors the remove()/GC sweep); the</span>
+                <span class="c1">#    new node&#39;s own state is queued below.</span>
+                <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">get_message_buffer</span><span class="p">()</span><span class="o">.</span><span class="n">remove_from_buffer</span><span class="p">(</span>
+                    <span class="k">lambda</span> <span class="n">m</span><span class="p">:</span> <span class="n">m</span><span class="o">.</span><span class="n">targets_entity_state</span><span class="p">(</span><span class="s2">&quot;scene&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">),</span>
+                <span class="p">)</span>
+                <span class="c1"># 3. LIVE clients keep interaction bindings across a same-name</span>
+                <span class="c1">#    create (deliberate, for reconnect replays), so the buffer</span>
+                <span class="c1">#    purge alone leaves the replacement clickable/draggable on</span>
+                <span class="c1">#    already-connected clients -- firing events with no matching</span>
+                <span class="c1">#    callbacks. Broadcast explicit empty bindings, exactly as</span>
+                <span class="c1">#    remove() does. The inert old handle&#39;s callbacks stay: an</span>
+                <span class="c1">#    in-flight drag on the old node must still dispatch its end.</span>
+                <span class="n">_queue_empty_interaction_bindings</span><span class="p">(</span>
+                    <span class="n">api</span><span class="p">,</span>
+                    <span class="n">name</span><span class="p">,</span>
+                    <span class="n">had_click</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">old_handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span>
+                    <span class="n">had_drag</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">old_handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">),</span>
+                <span class="p">)</span>
 
-        <span class="c1"># Shallow copy is enough to decouple the handle from the queued message:</span>
-        <span class="c1"># AssignablePropsBase.__init__ copies each top-level array, and</span>
-        <span class="c1"># scene-node props are flat (arrays + immutable scalars/tuples).</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">_SceneNodeHandleState</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">props</span><span class="p">),</span> <span class="n">api</span><span class="p">))</span>
-        <span class="n">api</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span>
+            <span class="c1"># Send message.</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">_messages</span><span class="o">.</span><span class="n">Message</span><span class="p">)</span>
+            <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
 
-        <span class="c1"># Track parent -&gt; child relationship.</span>
-        <span class="n">parent</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">api</span><span class="o">.</span><span class="n">_children_from_node_name</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-        <span class="n">api</span><span class="o">.</span><span class="n">_children_from_node_name</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
+            <span class="c1"># Shallow copy is enough to decouple the handle from the queued</span>
+            <span class="c1"># message: AssignablePropsBase.__init__ copies each top-level</span>
+            <span class="c1"># array, and scene-node props are flat (arrays + immutable</span>
+            <span class="c1"># scalars/tuples).</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">_SceneNodeHandleState</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">props</span><span class="p">),</span> <span class="n">api</span><span class="p">))</span>
+            <span class="n">api</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span>
+
+            <span class="c1"># Track parent -&gt; child relationship.</span>
+            <span class="n">parent</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">api</span><span class="o">.</span><span class="n">_children_from_node_name</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">api</span><span class="o">.</span><span class="n">_children_from_node_name</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
 
         <span class="n">out</span><span class="o">.</span><span class="n">wxyz</span> <span class="o">=</span> <span class="n">wxyz</span>
         <span class="n">out</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">position</span>
+        <span class="k">if</span> <span class="n">old_handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Replacement: force-broadcast the new node&#39;s pose even when it</span>
+            <span class="c1"># equals the fresh-handle default (the setters above no-op on</span>
+            <span class="c1"># equality). A live client that applied the OLD node&#39;s pose keeps</span>
+            <span class="c1"># it across the re-add (the client preserves node state on</span>
+            <span class="c1"># same-name creates for reconnect replays), so the reset must</span>
+            <span class="c1"># arrive as an explicit message -- and it replaces any stale pose</span>
+            <span class="c1"># entry in the buffer via its redundancy key.</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">._scene_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast_vector</span>
+
+            <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+                <span class="n">_messages</span><span class="o">.</span><span class="n">SetOrientationMessage</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">cast_vector</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+            <span class="p">)</span>
+            <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+                <span class="n">_messages</span><span class="o">.</span><span class="n">SetPositionMessage</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">cast_vector</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">position</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+            <span class="p">)</span>
 
         <span class="c1"># Toggle visibility to make sure we send a</span>
         <span class="c1"># SetSceneNodeVisibilityMessage to the client.</span>
@@ -784,13 +861,22 @@
 <a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.SceneNodeHandle.remove">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove the node from the scene.&quot;&quot;&quot;</span>
+        <span class="c1"># The whole teardown runs under the scene&#39;s lifecycle lock: it must</span>
+        <span class="c1"># be atomic against interaction-callback registration and same-name</span>
+        <span class="c1"># supersession from other threads (see _node_lifecycle_lock). The</span>
+        <span class="c1"># body is synchronous and never re-enters the lock.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_remove_locked</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_remove_locked</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Warn if already removed.</span>
+        <span class="n">api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Attempted to remove already removed node: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="k">return</span>
 
         <span class="c1"># Collect all descendants via BFS.</span>
-        <span class="n">api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span>
         <span class="n">to_remove</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
         <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">to_remove</span><span class="p">):</span>
@@ -819,19 +905,28 @@
             <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="n">impl</span> <span class="o">=</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">impl</span><span class="o">.</span><span class="n">click_cb</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="c1"># Empty the per-node click-binding set so a re-created</span>
-                <span class="c1"># node with the same name doesn&#39;t inherit the prior</span>
-                <span class="c1"># node&#39;s modifier filters from the persistent buffer.</span>
-                <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-                    <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeClickBindingsMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">,</span> <span class="p">())</span>
-                <span class="p">)</span>
-            <span class="k">if</span> <span class="n">impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">:</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">api</span><span class="o">.</span><span class="n">_is_drag_active_for</span><span class="p">(</span><span class="n">node_name</span><span class="p">):</span>
-                    <span class="n">impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
-                <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-                    <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeDragBindingsMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">,</span> <span class="p">())</span>
-                <span class="p">)</span>
+            <span class="n">had_drag</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">)</span>
+            <span class="c1"># Snapshot the active-drag state BEFORE the emits: a concurrent</span>
+            <span class="c1"># drag-end can retire the active marker while the emits run, and</span>
+            <span class="c1"># a post-emit-only check would then clear the callbacks the end</span>
+            <span class="c1"># dispatch is about to snapshot -- losing the user&#39;s required</span>
+            <span class="c1"># on_drag_end.</span>
+            <span class="n">drag_active</span> <span class="o">=</span> <span class="n">api</span><span class="o">.</span><span class="n">_is_drag_active_for</span><span class="p">(</span><span class="n">node_name</span><span class="p">)</span>
+            <span class="n">_queue_empty_interaction_bindings</span><span class="p">(</span>
+                <span class="n">api</span><span class="p">,</span>
+                <span class="n">node_name</span><span class="p">,</span>
+                <span class="n">had_click</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">impl</span><span class="o">.</span><span class="n">click_cb</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="n">had_drag</span><span class="o">=</span><span class="n">had_drag</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="c1"># Clear AFTER both emits (the snapshots above key them): if an</span>
+            <span class="c1"># emit raises mid-remove, the handle keeps its callback state, so</span>
+            <span class="c1"># a RETRY re-emits everything -- clearing first left a retry</span>
+            <span class="c1"># reading had_drag=False and the stale non-empty drag binding</span>
+            <span class="c1"># persistent forever. Cleared only when no drag was in flight</span>
+            <span class="c1"># either before OR after the emits (belt and braces for a drag</span>
+            <span class="c1"># retiring mid-emit).</span>
+            <span class="k">if</span> <span class="n">had_drag</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">drag_active</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">api</span><span class="o">.</span><span class="n">_is_drag_active_for</span><span class="p">(</span><span class="n">node_name</span><span class="p">):</span>
+                <span class="n">impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
 
         <span class="c1"># Tear down each descendant from both dicts and let it release any</span>
         <span class="c1"># subclass-specific registries via the polymorphic ``_on_remove`` hook.</span>
@@ -857,8 +952,7 @@
         <span class="k">for</span> <span class="n">node_name</span> <span class="ow">in</span> <span class="n">to_remove</span><span class="p">:</span>
             <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
                 <span class="n">_messages</span><span class="o">.</span><span class="n">RemoveSceneNodeMessage</span><span class="p">(</span><span class="n">node_name</span><span class="p">)</span>
-            <span class="p">)</span></div>
-
+            <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_on_remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Release any subclass-specific registries for this node.</span>
@@ -983,6 +1077,18 @@
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_RaycastSupportedSceneNodeHandle</span><span class="p">(</span><span class="n">SceneNodeHandle</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_not_removed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Interaction-callback (de)registration publishes name-keyed binding</span>
+<span class="sd">        messages into the persistent broadcast buffer; on a removed handle</span>
+<span class="sd">        those are ghosts that replay to late joiners once the node&#39;s remove</span>
+<span class="sd">        tombstone is garbage-collected. Same contract as property writes,</span>
+<span class="sd">        which raise via AssignablePropsBase.__setattr__.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Cannot register or remove callbacks on a removed &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_sync_drag_bindings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Recompute the union of registered (button, modifiers) and</span>
 <span class="sd">        push it to the client as a full binding set.&quot;&quot;&quot;</span>
@@ -1036,6 +1142,7 @@
         <span class="n">Callable</span><span class="p">[[</span><span class="n">SceneNodeDragEvent</span><span class="p">[</span><span class="n">Self</span><span class="p">]],</span> <span class="n">NoneOrCoroutine</span><span class="p">],</span>
     <span class="p">]:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_button</span><span class="p">(</span><span class="n">button</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_not_removed</span><span class="p">()</span>
         <span class="n">normalized</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">_normalize_key_modifier</span><span class="p">(</span><span class="n">modifier</span><span class="p">)</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">decorator</span><span class="p">(</span>
@@ -1052,12 +1159,17 @@
                 <span class="n">button</span><span class="o">=</span><span class="n">button</span><span class="p">,</span>
                 <span class="n">modifier</span><span class="o">=</span><span class="n">normalized</span><span class="p">,</span>
             <span class="p">)</span>
-            <span class="c1"># Skip duplicate registration -- without this, the same</span>
-            <span class="c1"># callback fires twice per matching event. Equality is by</span>
-            <span class="c1"># tuple/dataclass value.</span>
-            <span class="k">if</span> <span class="n">entry</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_sync_drag_bindings</span><span class="p">()</span>
+            <span class="c1"># Atomic vs remove()/supersede from other threads, and</span>
+            <span class="c1"># re-checked: the decorator can be applied long after the eager</span>
+            <span class="c1"># factory-time check (e.g. held across a remove()).</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_not_removed</span><span class="p">()</span>
+                <span class="c1"># Skip duplicate registration -- without this, the same</span>
+                <span class="c1"># callback fires twice per matching event. Equality is by</span>
+                <span class="c1"># tuple/dataclass value.</span>
+                <span class="k">if</span> <span class="n">entry</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_sync_drag_bindings</span><span class="p">()</span>
             <span class="k">return</span> <span class="n">func</span>
 
         <span class="k">return</span> <span class="n">decorator</span>
@@ -1155,13 +1267,15 @@
 <span class="sd">        ``callback=&quot;all&quot;`` removes every drag callback; a specific</span>
 <span class="sd">        function removes only entries whose callback identity matches.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">!=</span> <span class="n">callback</span>
-            <span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_sync_drag_bindings</span><span class="p">()</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_not_removed</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">drag_cb</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">!=</span> <span class="n">callback</span>
+                <span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sync_drag_bindings</span><span class="p">()</span>
 
     <span class="nd">@overload</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">on_click</span><span class="p">(</span>
@@ -1204,22 +1318,32 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Validate eagerly so a bad string raises at the call site,</span>
         <span class="c1"># not when the user later applies the returned decorator.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_not_removed</span><span class="p">()</span>
         <span class="n">normalized_modifier</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">_normalize_key_modifier</span><span class="p">(</span><span class="n">modifier</span><span class="p">)</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">register</span><span class="p">(</span><span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="n">_ClickCallbackEntry</span><span class="p">(</span>
-                    <span class="n">callback</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span>
-                        <span class="n">Callable</span><span class="p">[</span>
-                            <span class="p">[</span><span class="n">SceneNodePointerEvent</span><span class="p">[</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">]],</span>
-                            <span class="n">Union</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">],</span>
-                        <span class="p">],</span>
-                        <span class="n">callback</span><span class="p">,</span>
-                    <span class="p">),</span>
-                    <span class="n">modifier</span><span class="o">=</span><span class="n">normalized_modifier</span><span class="p">,</span>
+            <span class="c1"># Atomic vs remove()/supersede from other threads, and</span>
+            <span class="c1"># re-checked: the decorator can be applied long after the eager</span>
+            <span class="c1"># factory-time check (e.g. held across a remove()).</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_not_removed</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">_ClickCallbackEntry</span><span class="p">(</span>
+                        <span class="n">callback</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span>
+                            <span class="n">Callable</span><span class="p">[</span>
+                                <span class="p">[</span>
+                                    <span class="n">SceneNodePointerEvent</span><span class="p">[</span>
+                                        <span class="n">_RaycastSupportedSceneNodeHandle</span>
+                                    <span class="p">]</span>
+                                <span class="p">],</span>
+                                <span class="n">Union</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">],</span>
+                            <span class="p">],</span>
+                            <span class="n">callback</span><span class="p">,</span>
+                        <span class="p">),</span>
+                        <span class="n">modifier</span><span class="o">=</span><span class="n">normalized_modifier</span><span class="p">,</span>
+                    <span class="p">)</span>
                 <span class="p">)</span>
-            <span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_publish_click_state</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_publish_click_state</span><span class="p">()</span>
             <span class="k">return</span> <span class="n">callback</span>
 
         <span class="k">if</span> <span class="n">func</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1234,13 +1358,15 @@
 <span class="sd">        Args:</span>
 <span class="sd">            callback: Either &quot;all&quot; to remove all callbacks, or a specific callback function to remove.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">!=</span> <span class="n">callback</span>
-            <span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_publish_click_state</span><span class="p">()</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_not_removed</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">callback</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">callback</span> <span class="o">!=</span> <span class="n">callback</span>
+                <span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_publish_click_state</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_publish_click_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Publish ``SetSceneNodeClickBindingsMessage`` to the client</span>
@@ -1689,6 +1815,9 @@
     <span class="n">bone_index</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">wxyz</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
     <span class="n">position</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
+    <span class="n">mesh_impl</span><span class="p">:</span> <span class="n">_SceneNodeHandleState</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The owning skinned mesh&#39;s node state: bone writes are refused once the</span>
+<span class="sd">    mesh is removed, like every other write on a removed handle.&quot;&quot;&quot;</span>
 
 
 <div class="viewcode-block" id="MeshSkinnedBoneHandle">
@@ -1698,6 +1827,14 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle for reading and writing the poses of bones in a skinned mesh.&quot;&quot;&quot;</span>
 
     <span class="n">_impl</span><span class="p">:</span> <span class="n">BoneState</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_mesh_not_removed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">mesh_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;Cannot assign a bone pose on a removed skinned mesh: the &quot;</span>
+                <span class="s2">&quot;SetBone message would linger for the dead name and corrupt &quot;</span>
+                <span class="s2">&quot;a re-added same-name mesh.&quot;</span>
+            <span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">wxyz</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
@@ -1709,6 +1846,7 @@
     <span class="nd">@wxyz</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">wxyz</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># wxyz is assumed to be a unit quaternion (see SceneNodeHandle.wxyz).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_mesh_not_removed</span><span class="p">()</span>
         <span class="n">_set_pose_vector</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span>
             <span class="n">wxyz</span><span class="p">,</span>
@@ -1728,6 +1866,7 @@
 
     <span class="nd">@position</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">position</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_mesh_not_removed</span><span class="p">()</span>
         <span class="n">_set_pose_vector</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">position</span><span class="p">,</span>
             <span class="n">position</span><span class="p">,</span>

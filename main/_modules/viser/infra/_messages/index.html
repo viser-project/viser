@@ -523,6 +523,21 @@
         <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">annotation</span> <span class="ow">is</span> <span class="nb">int</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">):</span>
         <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="c1"># np.bool_ (from mask.any(), arr &gt; 0, np.all(...), etc.) is neither</span>
+    <span class="c1"># np.floating nor np.integer, and msgpack cannot encode it -- unconverted</span>
+    <span class="c1"># it raised inside the broadcast producer, tearing down every client&#39;s</span>
+    <span class="c1"># connection (and, being a persistent update, re-crashing on reconnect).</span>
+    <span class="k">if</span> <span class="n">annotation</span> <span class="ow">is</span> <span class="nb">bool</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="c1"># Any OTHER numpy scalar msgpack can&#39;t encode -- most importantly np.str_</span>
+    <span class="c1"># and np.bytes_ from a numpy string array (names[i], labels), which are</span>
+    <span class="c1"># far more common than bool. .item() returns the python-native</span>
+    <span class="c1"># equivalent. Closes the same crash class as the branches above; without</span>
+    <span class="c1"># it a numpy-array-sourced name/label bricked the producer for all</span>
+    <span class="c1"># clients. (Placed after float/int/bool so the common numeric paths keep</span>
+    <span class="c1"># their explicit fast conversions.)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">generic</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
 
     <span class="k">if</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">is_dataclass</span><span class="p">(</span><span class="n">annotation</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="nb">vars</span><span class="p">(</span><span class="n">value</span><span class="p">),</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">binary_buffers</span><span class="p">)</span>
@@ -605,6 +620,29 @@
     <span class="c1"># so infra-level readers (e.g. the state-serializer filter) can access</span>
     <span class="c1"># the attribute without static errors.</span>
     <span class="n">include_in_scene_serialization</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
+
+<div class="viewcode-block" id="Message.targets_entity_state">
+<a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.targets_entity_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">targets_entity_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entity_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">entity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;True for messages that carry PER-ENTITY state for the given entity:</span>
+<span class="sd">        update messages declared against it (``update_dict``/``update_simple``</span>
+<span class="sd">        with a matching entity id), plus phase-less name-keyed messages whose</span>
+<span class="sd">        ``name`` matches (e.g. scene interaction-binding messages). The ONE</span>
+<span class="sd">        definition of this taxonomy -- the same-name-replacement purge and the</span>
+<span class="sd">        connect-time garbage collector&#39;s sweep must never disagree on it.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">lifecycle_phase</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;update_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;update_simple&quot;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">entity_type</span> <span class="o">==</span> <span class="n">entity_type</span>
+                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_id_field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">entity_id</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">lifecycle_phase</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Name-keyed adjacency exists only for SCENE nodes (interaction</span>
+            <span class="c1"># bindings etc.); other entity families key by uuid fields that</span>
+            <span class="c1"># never collide with a scene name.</span>
+            <span class="k">return</span> <span class="n">entity_type</span> <span class="o">==</span> <span class="s2">&quot;scene&quot;</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">entity_id</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
 
 <div class="viewcode-block" id="Message.as_serializable_dict">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.as_serializable_dict">[docs]</a>

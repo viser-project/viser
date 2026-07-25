@@ -950,6 +950,28 @@ send synchronization information to other clients.</p>
 <dd></dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="viser.infra.Message.targets_entity_state">
+<span class="sig-name descname"><span class="pre">targets_entity_state</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">entity_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">entity_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span></span><a class="reference internal" href="../../../_modules/viser/infra/_messages/#Message.targets_entity_state"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.Message.targets_entity_state" title="Link to this definition">¶</a></dt>
+<dd><p>True for messages that carry PER-ENTITY state for the given entity:
+update messages declared against it (<code class="docutils literal notranslate"><span class="pre">update_dict</span></code>/<code class="docutils literal notranslate"><span class="pre">update_simple</span></code>
+with a matching entity id), plus phase-less name-keyed messages whose
+<code class="docutils literal notranslate"><span class="pre">name</span></code> matches (e.g. scene interaction-binding messages). The ONE
+definition of this taxonomy – the same-name-replacement purge and the
+connect-time garbage collector’s sweep must never disagree on it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>entity_type</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>entity_id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="viser.infra.Message.as_serializable_dict">
 <span class="sig-name descname"><span class="pre">as_serializable_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">binary_buffers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.List" title="(in Python v3.14)"><span class="pre">List</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#memoryview" title="(in Python v3.14)"><span class="pre">memoryview</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.14)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../../_modules/viser/infra/_messages/#Message.as_serializable_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.infra.Message.as_serializable_dict" title="Link to this definition">¶</a></dt>
 <dd><p>Convert a Python Message object into a serializable dict.</p>
@@ -1158,6 +1180,7 @@ TypeScript annotation corresponding to a dataclass field.</p>
 <li><a class="reference internal" href="#viser.infra.Message.lifecycle_phase"><code class="docutils literal notranslate"><span class="pre">Message.lifecycle_phase</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.Message.entity_id_field"><code class="docutils literal notranslate"><span class="pre">Message.entity_id_field</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.Message.include_in_scene_serialization"><code class="docutils literal notranslate"><span class="pre">Message.include_in_scene_serialization</span></code></a></li>
+<li><a class="reference internal" href="#viser.infra.Message.targets_entity_state"><code class="docutils literal notranslate"><span class="pre">Message.targets_entity_state()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.Message.as_serializable_dict"><code class="docutils literal notranslate"><span class="pre">Message.as_serializable_dict()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.Message.deserialize"><code class="docutils literal notranslate"><span class="pre">Message.deserialize()</span></code></a></li>
 <li><a class="reference internal" href="#viser.infra.Message.get_subclasses"><code class="docutils literal notranslate"><span class="pre">Message.get_subclasses()</span></code></a></li>
