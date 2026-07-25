@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import dataclasses
 import io
 import mimetypes
@@ -1058,6 +1059,16 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         # Start the server.
         server.start()
+        # server.start() registered the infra-level WebsockServer.stop with
+        # atexit; also register the full ViserServer.stop, which runs first
+        # (LIFO) and supersedes it (WebsockServer.stop unregisters itself).
+        # This matters for scripts that exit without calling stop(): the
+        # ViserServer-level stop waits longer for the loop thread to wind
+        # down, and a loop thread that outlives interpreter shutdown pins
+        # user callbacks from its frozen frames (seen as nanobind leak
+        # warnings in https://github.com/viser-project/viser/issues/518 and
+        # https://github.com/viser-project/viser/issues/744).
+        atexit.register(self.stop)
         self._event_loop = server._broadcast_buffer.event_loop
 
         self.scene: SceneApi = SceneApi(
@@ -1363,13 +1374,16 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
     def stop(self) -> None:
         """Stop the Viser server and associated threads and tunnels."""
+        # stop() is also registered via atexit; unregister so a manual stop
+        # isn't followed by a redundant second one at interpreter exit.
+        atexit.unregister(self.stop)
         self._websock_server.stop()
         if self._share_tunnel is not None:
             self._share_tunnel.close()
         # Let the background event loop finish its connection teardown before
         # shutting the pool: that teardown submits disconnect/camera callbacks
         # to the pool, and websock_server.stop() only join()s the loop thread
-        # for 0.1s -- so shutting the pool right after would make those late
+        # for 1s -- so shutting the pool right after would make those late
         # submits raise "cannot schedule new futures after shutdown" and drop
         # the user's callbacks silently. Bounded so a hung callback can't
         # block stop() forever (in that pathological case the pool still

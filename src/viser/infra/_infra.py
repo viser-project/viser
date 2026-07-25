@@ -453,8 +453,16 @@ class WebsockServer(WebsockMessageHandler):
         for client in list(self._client_state_from_id.values()):
             client.message_buffer.set_done()
 
-        # Wait for the server thread to finish.
-        self._server_thread.join(timeout=0.1)
+        # Wait for the server thread to finish. The thread is daemonic, so an
+        # expired timeout never blocks interpreter exit -- but a thread that's
+        # still winding down at interpreter shutdown keeps server state and
+        # user callbacks referenced from its frozen frames, which surfaces as
+        # spurious leak reports from binding frameworks like nanobind. 1s is
+        # generous for the wind-down (~0.5s observed under heavy GIL
+        # contention) and costs nothing when teardown is fast: join() returns
+        # as soon as the thread exits.
+        # https://github.com/viser-project/viser/issues/744
+        self._server_thread.join(timeout=1.0)
 
     def on_client_connect(
         self, cb: Callable[[WebsockClientConnection], None | Coroutine]

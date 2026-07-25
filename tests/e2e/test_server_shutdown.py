@@ -3,12 +3,12 @@
 ViserServer.stop() shuts the callback thread pool so its worker threads don't
 linger after the server is gone. But the background event loop's connection
 teardown fires on_client_disconnect and submits the (sync) user callbacks to
-that same pool -- and the infra server only join()s the loop thread for 0.1s.
-Shutting the pool right after that short join races those late submits: a
-submit that lands after shutdown() raises "cannot schedule new futures after
-shutdown" and the user's disconnect callback is silently dropped. stop() now
-joins the loop thread (bounded) before shutting the pool, so the teardown's
-submits are all in the queue first.
+that same pool -- historically the infra server only join()ed the loop thread
+for 0.1s. Shutting the pool right after such a short join races those late
+submits: a submit that lands after shutdown() raises "cannot schedule new
+futures after shutdown" and the user's disconnect callback is silently
+dropped. stop() now joins the loop thread (bounded) before shutting the pool,
+so the teardown's submits are all in the queue first.
 """
 
 from __future__ import annotations
@@ -54,12 +54,13 @@ def test_stop_runs_disconnect_callback_queued_during_teardown(
 ) -> None:
     disconnect_ran = threading.Event()
 
-    # A slow ASYNC disconnect callback runs first, inline on the event loop. It
-    # holds the loop thread's teardown past websock_server.stop()'s short 0.1s
-    # join, so the SYNC callback's pool submit below lands only after stop()
-    # has moved on -- the exact window where a premature pool shutdown drops
-    # it. Without this delay the submit finishes inside the 0.1s join and the
-    # race never surfaces locally.
+    # A slow ASYNC disconnect callback runs first, inline on the event loop.
+    # It holds the loop thread's teardown well past the historical 0.1s
+    # websock_server.stop() join, so with a short join the SYNC callback's
+    # pool submit below would land only after stop() had moved on -- the
+    # exact window where a premature pool shutdown drops it. Without this
+    # delay the submit finishes inside even a short join and the race never
+    # surfaces locally.
     @own_server.on_client_disconnect
     async def _(client: viser.ClientHandle) -> None:
         await asyncio.sleep(0.5)
