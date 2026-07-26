@@ -771,7 +771,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # Listen for a render reseponse message, which should contain the rendered
         # image.
         render_ready_event = threading.Event()
-        out: np.ndarray | None = None
+        payload: bytes | None = None
 
         connection = self._websock_connection
 
@@ -810,21 +810,12 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 # dispatch loop snapshotted the handler list before the
                 # removal. The caller is gone -- drop the frame.
                 return
-            nonlocal out
-            # An empty payload is the client's failure sentinel (capture threw,
-            # or toBlob() returned null). Leave `out` as None and let the
-            # waiter raise, rather than crashing the decode here (which would
-            # never set the event and hang get_render() forever).
-            if len(message.payload) > 0:
-                import imageio.v3 as iio
-
-                try:
-                    out = iio.imread(
-                        io.BytesIO(message.payload),
-                        extension=f".{transport_format}",
-                    )
-                except Exception:
-                    out = None
+            nonlocal payload
+            # Store the raw payload only; decoding happens on the caller's
+            # thread below. This callback runs on the server's event loop,
+            # where a large PNG/JPEG decode (or imageio's slow first import)
+            # would block message handling for EVERY client.
+            payload = message.payload
             render_ready_event.set()
 
         connection.register_handler(_messages.GetRenderResponseMessage, got_render_cb)
@@ -845,6 +836,16 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 render_uuid=render_uuid,
             )
         )
+        # Outgoing messages are windowed by default (up to ~1/60s of batching
+        # delay before they hit the wire). For a blocking round trip that
+        # delay is pure added latency, so flush the request out immediately.
+        self.flush()
+
+        # Import the decoder while the client is busy rendering: on first use
+        # this import is slow, and doing it here (request already in flight)
+        # overlaps it with the round trip instead of adding to it.
+        import imageio.v3 as iio
+
         # Poll rather than wait unbounded: a client that DISCONNECTS (tab
         # closed, network drop) never sends a response, so this raises as soon
         # as it leaves _connected_clients instead of hanging the caller (and,
@@ -875,11 +876,21 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     f"Render request timed out after {timeout}s: the client "
                     "did not return a frame."
                 )
-        if out is None:
+        # An empty payload is the client's failure sentinel (capture threw, or
+        # toBlob() returned null).
+        if payload is None or len(payload) == 0:
             raise RuntimeError(
                 "Render request failed: the client could not capture a frame."
             )
-        return out
+        try:
+            return iio.imread(
+                io.BytesIO(payload),
+                extension=f".{transport_format}",
+            )
+        except Exception as e:
+            raise RuntimeError(
+                "Render request failed: the client could not capture a frame."
+            ) from e
 
 
 class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
