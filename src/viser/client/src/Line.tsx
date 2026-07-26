@@ -4,6 +4,7 @@
  */
 
 import "./r3f-extend";
+import "./patchLineMaterialReversedDepth";
 import * as React from "react";
 import * as THREE from "three";
 import { ColorRepresentation } from "three";
@@ -106,31 +107,13 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         [ref],
       );
 
-      // LineMaterial's trimSegment near-plane estimate assumes standard
-      // depth; under reversed depth (App.tsx) it explodes and lines smear
-      // when the camera is close. Switch the formula on sign(a). Three.js
-      // has an equivalent fix queued for r185
-      // (https://github.com/mrdoob/three.js/pull/33572); drop this patch
-      // once we upgrade to three@>=0.185.
-      const patchLineMaterialShader = React.useCallback(
-        (mat: LineMaterial | null) => {
-          (matRef as React.MutableRefObject<LineMaterial | null>).current = mat;
-          if (!mat) return;
-          mat.onBeforeCompile = (shader) => {
-            shader.vertexShader = shader.vertexShader.replace(
-              "float nearEstimate = - 0.5 * b / a;",
-              "float nearEstimate = ( a > 0.0 ) ? ( - b / ( 1.0 + a ) ) : ( - 0.5 * b / a );",
-            );
-          };
-          mat.needsUpdate = true;
-        },
-        [],
-      );
+      // Reversed-depth near-plane fix for LineMaterial is applied globally
+      // (all instances, including drei's) in patchLineMaterialReversedDepth.
 
       // R3F manages lifecycle for all declarative children -- no manual disposal.
       const materialJsx = (
         <lineMaterial
-          ref={patchLineMaterialShader}
+          ref={matRef}
           color={effectiveColor}
           vertexColors={Boolean(vertexColors)}
           resolution={[size.width, size.height]}

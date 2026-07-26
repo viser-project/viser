@@ -1,3 +1,6 @@
+// drei's Line constructs its own three-stdlib LineMaterial; make sure the
+// reversed-depth near-plane patch is installed before that happens.
+import "./patchLineMaterialReversedDepth";
 import { Line } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import React from "react";
