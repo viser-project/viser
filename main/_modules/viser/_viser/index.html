@@ -428,6 +428,7 @@
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">atexit</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">mimetypes</span>
@@ -1517,6 +1518,16 @@
 
         <span class="c1"># Start the server.</span>
         <span class="n">server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="c1"># server.start() registered the infra-level WebsockServer.stop with</span>
+        <span class="c1"># atexit; also register the full ViserServer.stop, which runs first</span>
+        <span class="c1"># (LIFO) and supersedes it (WebsockServer.stop unregisters itself).</span>
+        <span class="c1"># This matters for scripts that exit without calling stop(): the</span>
+        <span class="c1"># ViserServer-level stop waits longer for the loop thread to wind</span>
+        <span class="c1"># down, and a loop thread that outlives interpreter shutdown pins</span>
+        <span class="c1"># user callbacks from its frozen frames (seen as nanobind leak</span>
+        <span class="c1"># warnings in https://github.com/viser-project/viser/issues/518 and</span>
+        <span class="c1"># https://github.com/viser-project/viser/issues/744).</span>
+        <span class="n">atexit</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">event_loop</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="p">:</span> <span class="n">SceneApi</span> <span class="o">=</span> <span class="n">SceneApi</span><span class="p">(</span>
@@ -1836,13 +1847,16 @@
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.stop">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Stop the Viser server and associated threads and tunnels.&quot;&quot;&quot;</span>
+        <span class="c1"># stop() is also registered via atexit; unregister so a manual stop</span>
+        <span class="c1"># isn&#39;t followed by a redundant second one at interpreter exit.</span>
+        <span class="n">atexit</span><span class="o">.</span><span class="n">unregister</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="c1"># Let the background event loop finish its connection teardown before</span>
         <span class="c1"># shutting the pool: that teardown submits disconnect/camera callbacks</span>
         <span class="c1"># to the pool, and websock_server.stop() only join()s the loop thread</span>
-        <span class="c1"># for 0.1s -- so shutting the pool right after would make those late</span>
+        <span class="c1"># for 1s -- so shutting the pool right after would make those late</span>
         <span class="c1"># submits raise &quot;cannot schedule new futures after shutdown&quot; and drop</span>
         <span class="c1"># the user&#39;s callbacks silently. Bounded so a hung callback can&#39;t</span>
         <span class="c1"># block stop() forever (in that pathological case the pool still</span>
