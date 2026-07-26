@@ -389,14 +389,26 @@ def _wait_for_request(
     raise AssertionError("get_render never registered/queued its request")
 
 
+def test_get_render_default_transport_is_jpeg() -> None:
+    """The default transport stays "jpeg": raw is 10-20x larger on the wire
+    (width * height * 4 bytes), so making it the default would silently
+    regress callers capturing over slow or remote links (e.g. share URLs).
+    Raw is opt-in for local connections."""
+    import inspect
+
+    from viser._viser import CameraHandle
+
+    for fn in (ClientHandle.get_render, CameraHandle.get_render):
+        default = inspect.signature(fn).parameters["transport_format"].default
+        assert default == "jpeg", f"{fn.__qualname__} default is {default!r}"
+
+
 def test_get_render_raw_transport_round_trip() -> None:
-    """The DEFAULT transport requests format "raw_rgb" on the wire and
-    returns the unencoded RGBA payload reshaped, alpha dropped, to a
-    writable (H, W, 3) array -- no image decode. raw_rgba keeps all four
-    channels. A payload whose size doesn't match the requested dimensions
-    raises instead of returning garbage. (transport_format is deliberately
-    omitted in the first call: this test also pins raw_rgb as the
-    default.)"""
+    """transport_format="raw_rgb" requests raw_rgb on the wire and returns
+    the unencoded RGBA payload reshaped, alpha dropped, to a writable
+    (H, W, 3) array -- no image decode. raw_rgba keeps all four channels.
+    A payload whose size doesn't match the requested dimensions raises
+    instead of returning garbage."""
     height, width = 4, 6
     with _server() as server:
         conn = _RecordingConn()
@@ -414,6 +426,7 @@ def test_get_render_raw_transport_round_trip() -> None:
                         height=height,
                         width=width,
                         **_camera_kwargs(),
+                        transport_format="raw_rgb",
                         timeout=5.0,
                     )
                 except BaseException as e:  # noqa: BLE001

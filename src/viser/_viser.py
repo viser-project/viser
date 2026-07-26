@@ -501,7 +501,7 @@ class CameraHandle:
         self,
         height: int,
         width: int,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
+        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "jpeg",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -510,20 +510,15 @@ class CameraHandle:
         Args:
             height: Height of rendered image. Should be <= the browser height.
             width: Width of rendered image. Should be <= the browser width.
-            transport_format: Image transport format. The raw formats skip image encoding and decoding
-                entirely; they are the fastest option for local or LAN connections, at the cost of
-                transferring uncompressed pixels. RAW_RGB (default) returns a lossless (H, W, 3) RGB array
-                rendered on an opaque white background, like JPEG but without compression artifacts.
-                RAW_RGBA returns a lossless (H, W, 4) RGBA array with a transparent background, like PNG.
-                JPEG returns a lossy (H, W, 3) RGB array with the smallest payload; prefer it when clients
-                connect over slow or remote links (e.g. share URLs). PNG returns a lossless (H, W, 4) RGBA
-                array with a compressed payload, but can cause memory issues on the frontend if called too
-                quickly for higher-resolution images.
-
-                .. versionchanged::
-                    The default changed from ``"jpeg"`` to ``"raw_rgb"``: same (H, W, 3) RGB shape and
-                    white background as before, but now lossless and substantially faster. Pass
-                    ``transport_format="jpeg"`` explicitly to recover the previous behavior.
+            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
+                array with the smallest payload; it is a safe choice for any connection, including slow
+                or remote links (e.g. share URLs). The raw formats skip image encoding and decoding
+                entirely and are substantially faster over local or LAN connections, at the cost of
+                transferring uncompressed pixels (width * height * 4 bytes per frame, ~8 MB at 1080p):
+                RAW_RGB returns a lossless (H, W, 3) RGB array on the same opaque white background as
+                JPEG, and RAW_RGBA a lossless (H, W, 4) RGBA array on a transparent background. PNG
+                returns a lossless (H, W, 4) RGBA array with a compressed payload, but can cause memory
+                issues on the frontend if called too quickly for higher-resolution images.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
@@ -732,7 +727,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray,
         position: tuple[float, float, float] | np.ndarray,
         fov: float,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
+        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "jpeg",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -742,7 +737,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         height: int,
         width: int,
         *,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
+        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "jpeg",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -754,7 +749,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray | None = None,
         position: tuple[float, float, float] | np.ndarray | None = None,
         fov: float | None = None,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
+        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "jpeg",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -770,20 +765,15 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 be used.
             fov: Vertical field of view of the camera, in radians. If not provided, the
                 current camera position will be used.
-            transport_format: Image transport format. The raw formats skip image encoding and decoding
-                entirely; they are the fastest option for local or LAN connections, at the cost of
-                transferring uncompressed pixels. RAW_RGB (default) returns a lossless (H, W, 3) RGB array
-                rendered on an opaque white background, like JPEG but without compression artifacts.
-                RAW_RGBA returns a lossless (H, W, 4) RGBA array with a transparent background, like PNG.
-                JPEG returns a lossy (H, W, 3) RGB array with the smallest payload; prefer it when clients
-                connect over slow or remote links (e.g. share URLs). PNG returns a lossless (H, W, 4) RGBA
-                array with a compressed payload, but can cause memory issues on the frontend if called too
-                quickly for higher-resolution images.
-
-                .. versionchanged::
-                    The default changed from ``"jpeg"`` to ``"raw_rgb"``: same (H, W, 3) RGB shape and
-                    white background as before, but now lossless and substantially faster. Pass
-                    ``transport_format="jpeg"`` explicitly to recover the previous behavior.
+            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
+                array with the smallest payload; it is a safe choice for any connection, including slow
+                or remote links (e.g. share URLs). The raw formats skip image encoding and decoding
+                entirely and are substantially faster over local or LAN connections, at the cost of
+                transferring uncompressed pixels (width * height * 4 bytes per frame, ~8 MB at 1080p):
+                RAW_RGB returns a lossless (H, W, 3) RGB array on the same opaque white background as
+                JPEG, and RAW_RGBA a lossless (H, W, 4) RGBA array on a transparent background. PNG
+                returns a lossless (H, W, 4) RGBA array with a compressed payload, but can cause memory
+                issues on the frontend if called too quickly for higher-resolution images.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
