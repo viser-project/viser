@@ -104,6 +104,68 @@ def test_get_render_reflects_prior_scene_updates(
         context.close()  # type: ignore[attr-defined]
 
 
+def test_get_render_reflects_fresh_node_poses(
+    own_server: viser.ViserServer, browser: Browser
+) -> None:
+    """A capture requested immediately after ADDING a node at a pose must show
+    the node at that pose. This is the narrowest window of the same-frame
+    capture path: a fresh mount's pose transitions "waitForMakeObject" ->
+    "needsUpdate" via a passive React effect, which -- unlike the store
+    commit itself -- is not synchronously flushed with the sync-lane render.
+    The capture hook's defensive pose sweep plus the one-frame commit wait
+    must cover it; a capture of the box at the default pose (origin) or the
+    previous box's position fails the centroid side check."""
+    client, page, context = _connect_client(own_server, browser)
+    try:
+        h, w = 96, 128
+
+        def centroid_x(img: np.ndarray) -> float:
+            xs = np.nonzero(img[:, :, 3] > 128)[1]
+            return float(xs.mean()) if len(xs) else float("nan")
+
+        # Ground truth: let each position fully settle, then capture.
+        truth = {}
+        for x in (-1.5, 1.5):
+            own_server.scene.add_box(
+                "/truth", color=(255, 0, 0), dimensions=(1, 1, 1), position=(x, 0, 0)
+            )
+            time.sleep(1.0)
+            truth[x] = centroid_x(
+                client.get_render(height=h, width=w, transport_format="raw", timeout=30)
+            )
+        own_server.scene.remove_by_name("/truth")
+        time.sleep(0.5)
+        mid = (truth[-1.5] + truth[1.5]) / 2
+        assert abs(truth[-1.5] - truth[1.5]) > 15, (
+            f"positions not distinguishable from the default camera: {truth}"
+        )
+
+        # Rapid add-at-pose -> capture cycles, alternating sides, each with a
+        # FRESH node name (a true first mount) and the previous node removed.
+        for i in range(12):
+            x = -1.5 if i % 2 == 0 else 1.5
+            if i > 0:
+                own_server.scene.remove_by_name(f"/fresh_{i - 1}")
+            own_server.scene.add_box(
+                f"/fresh_{i}",
+                color=(255, 0, 0),
+                dimensions=(1, 1, 1),
+                position=(x, 0, 0),
+            )
+            img = client.get_render(
+                height=h, width=w, transport_format="raw", timeout=30.0
+            )
+            cx = centroid_x(img)
+            assert np.isfinite(cx) and (cx < mid) == (truth[x] < mid), (
+                f"iteration {i}: box added at x={x} but captured centroid "
+                f"{cx:.1f}px (expected side of {mid:.1f}) -- capture ran "
+                "before the fresh node's pose was applied"
+            )
+    finally:
+        page.close()  # type: ignore[attr-defined]
+        context.close()  # type: ignore[attr-defined]
+
+
 def test_get_render_transport_formats_agree(
     own_server: viser.ViserServer, browser: Browser
 ) -> None:
@@ -117,6 +179,19 @@ def test_get_render_transport_formats_agree(
             "/box", color=(0, 120, 255), dimensions=(2.0, 2.0, 2.0)
         )
         h, w = 96, 128
+        # The environment lighting loads asynchronously after connect, so
+        # captures taken before/after it lands have different shading (that's
+        # true for a capture at any speed, and not what this test is about).
+        # Stabilize first: capture until two consecutive frames agree.
+        prev = None
+        for _ in range(40):
+            cur = _center_mean(
+                client.get_render(height=h, width=w, transport_format="raw", timeout=30)
+            )
+            if prev is not None and np.allclose(cur, prev, atol=2.0):
+                break
+            prev = cur
+            time.sleep(0.1)
         jpeg = client.get_render(height=h, width=w, transport_format="jpeg", timeout=30)
         png = client.get_render(height=h, width=w, transport_format="png", timeout=30)
         raw = client.get_render(height=h, width=w, transport_format="raw", timeout=30)
