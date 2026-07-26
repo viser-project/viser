@@ -502,7 +502,9 @@ class CameraHandle:
         self,
         height: int,
         width: int,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "jpeg",
+        transport_format: Literal[
+            "auto", "png", "jpeg", "raw_rgb", "raw_rgba"
+        ] = "auto",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -511,17 +513,24 @@ class CameraHandle:
         Args:
             height: Height of rendered image. Should be <= the browser height.
             width: Width of rendered image. Should be <= the browser width.
-            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
-                array with the smallest payload; it is a safe choice for any connection, including slow
-                or remote links (e.g. share URLs). The raw formats skip image encoding and decoding
-                entirely and are substantially faster over local or LAN connections. Raw frames are
-                losslessly deflate-compressed on the wire when the content compresses (typical 3D scenes:
-                100x or more); the worst case for incompressible content is the full width * height * 4
-                bytes per frame (~8 MB at 1080p):
+            transport_format: Image transport format. AUTO (default) returns an (H, W, 3) RGB array
+                rendered on an opaque white background, choosing its wire encoding by content: frames
+                that compress well losslessly (typical 3D scenes) are sent as losslessly compressed
+                pixels -- much faster to encode/decode than JPEG, and pixel-exact -- while anything else
+                falls back to JPEG, so the payload stays small on arbitrary content and connections.
+                JPEG always returns a lossy (H, W, 3) RGB array with a small payload. The raw formats
+                skip image encoding entirely and are the fastest option over local or LAN connections;
+                their frames are losslessly deflate-compressed on the wire when the content compresses,
+                with a worst case of the full width * height * 4 bytes per frame (~8 MB at 1080p):
                 RAW_RGB returns a lossless (H, W, 3) RGB array on the same opaque white background as
                 JPEG, and RAW_RGBA a lossless (H, W, 4) RGBA array on a transparent background. PNG
                 returns a lossless (H, W, 4) RGBA array with a compressed payload, but can cause memory
                 issues on the frontend if called too quickly for higher-resolution images.
+
+                .. versionchanged::
+                    The default changed from ``"jpeg"`` to ``"auto"``: same (H, W, 3) shape and white
+                    background, but frames are now pixel-exact (and faster) whenever the content
+                    compresses well losslessly. Pass ``transport_format="jpeg"`` to force JPEG.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
@@ -730,7 +739,9 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray,
         position: tuple[float, float, float] | np.ndarray,
         fov: float,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "jpeg",
+        transport_format: Literal[
+            "auto", "png", "jpeg", "raw_rgb", "raw_rgba"
+        ] = "auto",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -740,7 +751,9 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         height: int,
         width: int,
         *,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "jpeg",
+        transport_format: Literal[
+            "auto", "png", "jpeg", "raw_rgb", "raw_rgba"
+        ] = "auto",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -752,7 +765,9 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray | None = None,
         position: tuple[float, float, float] | np.ndarray | None = None,
         fov: float | None = None,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "jpeg",
+        transport_format: Literal[
+            "auto", "png", "jpeg", "raw_rgb", "raw_rgba"
+        ] = "auto",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -768,17 +783,24 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 be used.
             fov: Vertical field of view of the camera, in radians. If not provided, the
                 current camera position will be used.
-            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
-                array with the smallest payload; it is a safe choice for any connection, including slow
-                or remote links (e.g. share URLs). The raw formats skip image encoding and decoding
-                entirely and are substantially faster over local or LAN connections. Raw frames are
-                losslessly deflate-compressed on the wire when the content compresses (typical 3D scenes:
-                100x or more); the worst case for incompressible content is the full width * height * 4
-                bytes per frame (~8 MB at 1080p):
+            transport_format: Image transport format. AUTO (default) returns an (H, W, 3) RGB array
+                rendered on an opaque white background, choosing its wire encoding by content: frames
+                that compress well losslessly (typical 3D scenes) are sent as losslessly compressed
+                pixels -- much faster to encode/decode than JPEG, and pixel-exact -- while anything else
+                falls back to JPEG, so the payload stays small on arbitrary content and connections.
+                JPEG always returns a lossy (H, W, 3) RGB array with a small payload. The raw formats
+                skip image encoding entirely and are the fastest option over local or LAN connections;
+                their frames are losslessly deflate-compressed on the wire when the content compresses,
+                with a worst case of the full width * height * 4 bytes per frame (~8 MB at 1080p):
                 RAW_RGB returns a lossless (H, W, 3) RGB array on the same opaque white background as
                 JPEG, and RAW_RGBA a lossless (H, W, 4) RGBA array on a transparent background. PNG
                 returns a lossless (H, W, 4) RGBA array with a compressed payload, but can cause memory
                 issues on the frontend if called too quickly for higher-resolution images.
+
+                .. versionchanged::
+                    The default changed from ``"jpeg"`` to ``"auto"``: same (H, W, 3) shape and white
+                    background, but frames are now pixel-exact (and faster) whenever the content
+                    compresses well losslessly. Pass ``transport_format="jpeg"`` to force JPEG.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
@@ -846,6 +868,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 "image/jpeg"
                 if transport_format == "jpeg"
                 else ("image/png" if transport_format == "png" else transport_format),
+                # ^"auto", "raw_rgb", and "raw_rgba" pass through unchanged.
                 height=height,
                 width=width,
                 # Only used for JPEG. The main reason to use a lower quality version
@@ -869,7 +892,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # this import is slow, and doing it here (request already in flight)
         # overlaps it with the round trip instead of adding to it. The raw
         # transports need no decoder at all.
-        if transport_format in ("jpeg", "png"):
+        if transport_format in ("auto", "jpeg", "png"):
             import imageio.v3 as iio
 
         # Poll rather than wait unbounded: a client that DISCONNECTS (tab
@@ -907,6 +930,41 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         if payload is None or len(payload) == 0:
             raise RuntimeError(
                 "Render request failed: the client could not capture a frame."
+            )
+        if transport_format == "auto":
+            # 1-byte flag chosen by the client per frame: 1 = deflate-raw
+            # compressed RGBA (content compressed losslessly at
+            # JPEG-competitive rates), 2 = JPEG bytes (fallback for
+            # incompressible content). Both decode to (H, W, 3) RGB on the
+            # white background the client rendered with.
+            flag = payload[0]
+            if flag == 1:
+                try:
+                    inflated = zlib.decompress(memoryview(payload)[1:], wbits=-15)
+                except zlib.error as e:
+                    raise RuntimeError(
+                        "Render request failed: the client returned a "
+                        "corrupt compressed frame."
+                    ) from e
+                if len(inflated) != height * width * 4:
+                    raise RuntimeError(
+                        "Render request failed: the client returned "
+                        f"{len(inflated)} bytes, expected {height * width * 4} "
+                        f"for a raw {height}x{width} RGBA frame."
+                    )
+                rgba = np.frombuffer(inflated, np.uint8).reshape(height, width, 4)
+                return rgba[:, :, :3].copy()
+            elif flag == 2:
+                try:
+                    return iio.imread(
+                        io.BytesIO(memoryview(payload)[1:]), extension=".jpeg"
+                    )
+                except Exception as e:
+                    raise RuntimeError(
+                        "Render request failed: the client could not capture a frame."
+                    ) from e
+            raise RuntimeError(
+                f"Render request failed: unknown auto payload flag {flag}."
             )
         if transport_format in ("raw_rgb", "raw_rgba"):
             # RGBA bytes behind a 1-byte flag: 1 means the client

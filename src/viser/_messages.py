@@ -2351,7 +2351,14 @@ class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     # in background (raw_rgb renders on opaque white like JPEG, raw_rgba on
     # transparent like PNG), and the server drops the alpha channel for
     # raw_rgb.
-    format: Literal["image/jpeg", "image/png", "raw_rgb", "raw_rgba"]
+    #
+    # "auto" renders on opaque white like JPEG and picks its wire encoding
+    # by content, tagged by the same 1-byte flag: deflate-compressed RGBA
+    # (flag 1) when the frame compresses losslessly at JPEG-competitive
+    # rates -- typical 3D scenes, where this is also much cheaper to encode
+    # and decode than JPEG -- and JPEG bytes (flag 2) otherwise, bounding
+    # the payload size on arbitrary content.
+    format: Literal["image/jpeg", "image/png", "raw_rgb", "raw_rgba", "auto"]
     height: int
     width: int
     quality: int

@@ -928,35 +928,34 @@ function useFileDownloadHandler(): (
   };
 }
 
-/** Pack a raw RGBA render payload, deflate-compressing it when that's worth
- * it. The result carries a 1-byte prefix read by the server's get_render():
- * 0 = uncompressed RGBA follows, 1 = deflate-raw compressed RGBA follows.
+/** Prefix a render payload with its 1-byte encoding flag, read by the
+ * server's get_render(): 0 = uncompressed RGBA, 1 = deflate-raw compressed
+ * RGBA, 2 = JPEG bytes (the "auto" format's fallback). */
+function flagPrefixed(flag: number, data: Uint8Array): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(data.length + 1);
+  out[0] = flag;
+  out.set(data, 1);
+  return out;
+}
+
+/** Deflate-compress raw RGBA render pixels when the content compresses at
+ * least `minRatio`; return null when it doesn't (or CompressionStream is
+ * unavailable).
  *
  * Typical 3D renders (flat backgrounds, smooth shading) deflate 100-1000x
- * at a few milliseconds per megapixel, which removes most of the raw
- * formats' bandwidth cost. Incompressible content (photo textures, dense
- * splats) is the exception: deflate then costs tens of milliseconds and
- * saves nothing, so a small strided sample of the frame decides first --
- * CompressionStream exposes no compression-level knob, making a sample the
- * only cheap way to bail out. */
-async function maybeDeflateRenderPayload(
+ * at a few milliseconds per megapixel. Incompressible content (photo
+ * textures, dense splats) is the exception: deflate then costs tens of
+ * milliseconds and saves nothing, so a small strided sample of the frame
+ * decides first -- CompressionStream exposes no compression-level knob,
+ * making a sample the only cheap way to bail out. Callers pick the
+ * threshold: ~1.5x when the alternative is sending uncompressed pixels
+ * (raw formats), ~32x when the alternative is JPEG ("auto": 32x on 32
+ * bits/pixel RGBA is ~1 bit/pixel, competitive with JPEG's rate). */
+async function deflateIfCompressible(
   pixels: Uint8Array<ArrayBuffer>,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const withFlag = (flag: number, data: Uint8Array) => {
-    const out = new Uint8Array(data.length + 1);
-    out[0] = flag;
-    out.set(data, 1);
-    return out;
-  };
-  if (typeof CompressionStream === "undefined") return withFlag(0, pixels);
-
-  const deflate = async (data: Uint8Array<ArrayBuffer>) => {
-    const stream = new CompressionStream("deflate-raw");
-    const writer = stream.writable.getWriter();
-    void writer.write(data);
-    void writer.close();
-    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
-  };
+  minRatio: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (typeof CompressionStream === "undefined") return null;
 
   // Small frames: compressing outright costs about as much as sampling.
   const sampleChunk = 4096;
@@ -970,15 +969,77 @@ async function maybeDeflateRenderPayload(
         i * sampleChunk,
       );
     }
-    const sampleCompressed = await deflate(sample);
-    // Under ~1.5x on the sample, full-frame deflate isn't worth its CPU:
-    // send uncompressed (the raw formats' worst case, exactly as before
-    // compression existed).
-    if (sampleCompressed.length * 1.5 > sample.length) {
-      return withFlag(0, pixels);
-    }
+    const sampleCompressed = await deflateRaw(sample);
+    if (sampleCompressed.length * minRatio > sample.length) return null;
   }
-  return withFlag(1, await deflate(pixels));
+  const compressed = await deflateRaw(pixels);
+  // Small frames skip the sample; still honor the caller's threshold.
+  if (compressed.length * minRatio > pixels.length) return null;
+  return compressed;
+}
+
+async function deflateRaw(
+  data: Uint8Array<ArrayBuffer>,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const stream = new CompressionStream("deflate-raw");
+  const writer = stream.writable.getWriter();
+  void writer.write(data);
+  void writer.close();
+  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+}
+
+/** The "auto" format's lossless path: decide from a few sampled rows whether
+ * the frame deflates at JPEG-competitive rates (~32x on RGBA is ~1
+ * bit/pixel), and return the deflated full frame if so; null means "encode a
+ * JPEG instead". The sample strips are read BEFORE paying for the full-frame
+ * getImageData, so when the answer is JPEG -- the only case where a real
+ * JPEG encode follows -- the readback overhead vs. plain JPEG stays tiny. */
+async function deflateAutoFrame(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (typeof CompressionStream === "undefined") return null;
+
+  // Small frames: deflate outright (bounded at ~10ms even on
+  // incompressible content) -- a tiny sample would be dominated by
+  // deflate's fixed overhead and systematically underestimate the frame's
+  // compressibility.
+  if (width * height * 4 > 512 * 1024) {
+    const sampleRows = Math.min(16, height);
+    const rowBytes = width * 4;
+    const sample = new Uint8Array(sampleRows * rowBytes);
+    for (let i = 0; i < sampleRows; i++) {
+      const y = Math.floor((i * (height - 1)) / Math.max(1, sampleRows - 1));
+      const strip = ctx.getImageData(0, y, width, 1);
+      sample.set(
+        new Uint8Array(
+          strip.data.buffer as ArrayBuffer,
+          strip.data.byteOffset,
+          strip.data.byteLength,
+        ),
+        i * rowBytes,
+      );
+    }
+    // The strip sample underestimates the full frame's ratio (no vertical
+    // redundancy, per-stream overhead), so gate at 16x as a biased-down
+    // proxy for "JPEG-competitive"; the final guard below bounds the cases
+    // where even that was too optimistic.
+    const sampleCompressed = await deflateRaw(sample);
+    if (sampleCompressed.length * 16.0 > sample.length) return null;
+  }
+
+  const img = ctx.getImageData(0, 0, width, height);
+  const pixels = new Uint8Array(
+    img.data.buffer as ArrayBuffer,
+    img.data.byteOffset,
+    img.data.byteLength,
+  );
+  const compressed = await deflateRaw(pixels);
+  // Final guard: never ship a payload outlandishly larger than the JPEG
+  // would have been.
+  if (compressed.length * 8 > pixels.length) return null;
+  return compressed;
 }
 
 export function FrameSynchronizedMessageHandler() {
@@ -1315,13 +1376,15 @@ export function FrameSynchronizedMessageHandler() {
             true,
           );
 
-        // Configure for capture. JPEG and raw_rgb are RGB results, rendered
-        // on an opaque white background; PNG and raw_rgba are RGBA with a
-        // transparent background.
+        // Configure for capture. JPEG, raw_rgb, and auto are RGB results,
+        // rendered on an opaque white background; PNG and raw_rgba are RGBA
+        // with a transparent background.
         gl.setSize(targetWidth, targetHeight);
         gl.setClearColor(0xffffff);
         gl.setClearAlpha(
-          format === "image/jpeg" || format === "raw_rgb" ? 1.0 : 0.0,
+          format === "image/jpeg" || format === "raw_rgb" || format === "auto"
+            ? 1.0
+            : 0.0,
         );
 
         // Render the scene.
@@ -1338,10 +1401,10 @@ export function FrameSynchronizedMessageHandler() {
         ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
 
         if (format === "raw_rgb" || format === "raw_rgba") {
-          // Unencoded RGBA readback: no image encode here, no image decode
-          // on the server. Both raw formats send RGBA bytes (adaptively
-          // deflate-compressed, see maybeDeflateRenderPayload); the server
-          // drops the (uniformly opaque) alpha channel for raw_rgb.
+          // RGBA readback. The raw formats send pixels either as-is or
+          // deflate-compressed, decided from a content sample (see
+          // deflateIfCompressible / flagPrefixed). The server drops the
+          // (uniformly opaque) alpha channel for raw_rgb.
           const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
           viewerMutable.getRenderRequestState = "ready";
           const pixels = new Uint8Array(
@@ -1351,7 +1414,57 @@ export function FrameSynchronizedMessageHandler() {
           );
           void (async () => {
             try {
-              sendRenderResponse(await maybeDeflateRenderPayload(pixels));
+              const deflated = await deflateIfCompressible(pixels, 1.5);
+              sendRenderResponse(
+                deflated === null
+                  ? flagPrefixed(0, pixels)
+                  : flagPrefixed(1, deflated),
+              );
+            } catch (e) {
+              console.error("Failed to pack rendered image:", e);
+              sendRenderResponse(new Uint8Array(0));
+            }
+          })();
+        } else if (format === "auto") {
+          // Content-adaptive: losslessly deflate-compressed pixels when the
+          // frame compresses at JPEG-competitive rates, an actual JPEG
+          // otherwise (see deflateAutoFrame). bufferCanvas is captured by
+          // the closure and immutable, so all readbacks can happen after
+          // message handling resumes.
+          const quality = viewerMutable.getRenderRequest!.quality;
+          viewerMutable.getRenderRequestState = "ready";
+          void (async () => {
+            try {
+              const deflated = await deflateAutoFrame(
+                ctx,
+                targetWidth,
+                targetHeight,
+              );
+              if (deflated !== null) {
+                sendRenderResponse(flagPrefixed(1, deflated));
+                return;
+              }
+              bufferCanvas.toBlob(
+                (blob) => {
+                  void (async () => {
+                    try {
+                      sendRenderResponse(
+                        blob === null
+                          ? new Uint8Array(0)
+                          : flagPrefixed(
+                              2,
+                              new Uint8Array(await blob.arrayBuffer()),
+                            ),
+                      );
+                    } catch (e) {
+                      console.error("Failed to read rendered image:", e);
+                      sendRenderResponse(new Uint8Array(0));
+                    }
+                  })();
+                },
+                "image/jpeg",
+                quality / 100.0,
+              );
             } catch (e) {
               console.error("Failed to pack rendered image:", e);
               sendRenderResponse(new Uint8Array(0));
