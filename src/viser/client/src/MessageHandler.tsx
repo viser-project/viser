@@ -928,6 +928,59 @@ function useFileDownloadHandler(): (
   };
 }
 
+/** Pack a raw RGBA render payload, deflate-compressing it when that's worth
+ * it. The result carries a 1-byte prefix read by the server's get_render():
+ * 0 = uncompressed RGBA follows, 1 = deflate-raw compressed RGBA follows.
+ *
+ * Typical 3D renders (flat backgrounds, smooth shading) deflate 100-1000x
+ * at a few milliseconds per megapixel, which removes most of the raw
+ * formats' bandwidth cost. Incompressible content (photo textures, dense
+ * splats) is the exception: deflate then costs tens of milliseconds and
+ * saves nothing, so a small strided sample of the frame decides first --
+ * CompressionStream exposes no compression-level knob, making a sample the
+ * only cheap way to bail out. */
+async function maybeDeflateRenderPayload(
+  pixels: Uint8Array<ArrayBuffer>,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const withFlag = (flag: number, data: Uint8Array) => {
+    const out = new Uint8Array(data.length + 1);
+    out[0] = flag;
+    out.set(data, 1);
+    return out;
+  };
+  if (typeof CompressionStream === "undefined") return withFlag(0, pixels);
+
+  const deflate = async (data: Uint8Array<ArrayBuffer>) => {
+    const stream = new CompressionStream("deflate-raw");
+    const writer = stream.writable.getWriter();
+    void writer.write(data);
+    void writer.close();
+    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+  };
+
+  // Small frames: compressing outright costs about as much as sampling.
+  const sampleChunk = 4096;
+  const sampleCount = 64;
+  if (pixels.length > 2 * sampleChunk * sampleCount) {
+    const stride = Math.floor(pixels.length / sampleCount);
+    const sample = new Uint8Array(sampleChunk * sampleCount);
+    for (let i = 0; i < sampleCount; i++) {
+      sample.set(
+        pixels.subarray(i * stride, i * stride + sampleChunk),
+        i * sampleChunk,
+      );
+    }
+    const sampleCompressed = await deflate(sample);
+    // Under ~1.5x on the sample, full-frame deflate isn't worth its CPU:
+    // send uncompressed (the raw formats' worst case, exactly as before
+    // compression existed).
+    if (sampleCompressed.length * 1.5 > sample.length) {
+      return withFlag(0, pixels);
+    }
+  }
+  return withFlag(1, await deflate(pixels));
+}
+
 export function FrameSynchronizedMessageHandler() {
   const handleMessage = useMessageHandler();
   const viewer = useContext(ViewerContext)!;
@@ -1286,17 +1339,24 @@ export function FrameSynchronizedMessageHandler() {
 
         if (format === "raw_rgb" || format === "raw_rgba") {
           // Unencoded RGBA readback: no image encode here, no image decode
-          // on the server. Both raw formats send RGBA bytes; the server
+          // on the server. Both raw formats send RGBA bytes (adaptively
+          // deflate-compressed, see maybeDeflateRenderPayload); the server
           // drops the (uniformly opaque) alpha channel for raw_rgb.
           const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
           viewerMutable.getRenderRequestState = "ready";
-          sendRenderResponse(
-            new Uint8Array(
-              imageData.data.buffer as ArrayBuffer,
-              imageData.data.byteOffset,
-              imageData.data.byteLength,
-            ),
+          const pixels = new Uint8Array(
+            imageData.data.buffer as ArrayBuffer,
+            imageData.data.byteOffset,
+            imageData.data.byteLength,
           );
+          void (async () => {
+            try {
+              sendRenderResponse(await maybeDeflateRenderPayload(pixels));
+            } catch (e) {
+              console.error("Failed to pack rendered image:", e);
+              sendRenderResponse(new Uint8Array(0));
+            }
+          })();
         } else {
           // The pixels are copied out of the renderer at this point, so
           // message handling can resume NOW: the async encode below overlaps

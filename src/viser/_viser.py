@@ -9,6 +9,7 @@ import os
 import threading
 import time
 import warnings
+import zlib
 from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -513,8 +514,10 @@ class CameraHandle:
             transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
                 array with the smallest payload; it is a safe choice for any connection, including slow
                 or remote links (e.g. share URLs). The raw formats skip image encoding and decoding
-                entirely and are substantially faster over local or LAN connections, at the cost of
-                transferring uncompressed pixels (width * height * 4 bytes per frame, ~8 MB at 1080p):
+                entirely and are substantially faster over local or LAN connections. Raw frames are
+                losslessly deflate-compressed on the wire when the content compresses (typical 3D scenes:
+                100x or more); the worst case for incompressible content is the full width * height * 4
+                bytes per frame (~8 MB at 1080p):
                 RAW_RGB returns a lossless (H, W, 3) RGB array on the same opaque white background as
                 JPEG, and RAW_RGBA a lossless (H, W, 4) RGBA array on a transparent background. PNG
                 returns a lossless (H, W, 4) RGBA array with a compressed payload, but can cause memory
@@ -768,8 +771,10 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
                 array with the smallest payload; it is a safe choice for any connection, including slow
                 or remote links (e.g. share URLs). The raw formats skip image encoding and decoding
-                entirely and are substantially faster over local or LAN connections, at the cost of
-                transferring uncompressed pixels (width * height * 4 bytes per frame, ~8 MB at 1080p):
+                entirely and are substantially faster over local or LAN connections. Raw frames are
+                losslessly deflate-compressed on the wire when the content compresses (typical 3D scenes:
+                100x or more); the worst case for incompressible content is the full width * height * 4
+                bytes per frame (~8 MB at 1080p):
                 RAW_RGB returns a lossless (H, W, 3) RGB array on the same opaque white background as
                 JPEG, and RAW_RGBA a lossless (H, W, 4) RGBA array on a transparent background. PNG
                 returns a lossless (H, W, 4) RGBA array with a compressed payload, but can cause memory
@@ -904,17 +909,35 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 "Render request failed: the client could not capture a frame."
             )
         if transport_format in ("raw_rgb", "raw_rgba"):
-            # Unencoded bytes, always RGBA on the wire; just reshape (and
-            # drop the -- all-255, opaque-background -- alpha channel for
-            # raw_rgb). The slice/copy also makes the returned array writable
-            # (np.frombuffer views of bytes are read-only).
-            if len(payload) != height * width * 4:
+            # RGBA bytes behind a 1-byte flag: 1 means the client
+            # deflate-compressed the pixels (typical renders compress
+            # 100-1000x for a few ms; the client sends flag 0, uncompressed,
+            # when a content sample shows compression isn't worth its CPU --
+            # see maybeDeflateRenderPayload in MessageHandler.tsx). Then just
+            # reshape, dropping the -- all-255, opaque-background -- alpha
+            # channel for raw_rgb. The slice/copy also makes the returned
+            # array writable (np.frombuffer views of bytes are read-only).
+            flag = payload[0]
+            data: bytes | memoryview = memoryview(payload)[1:]
+            if flag == 1:
+                try:
+                    data = zlib.decompress(data, wbits=-15)
+                except zlib.error as e:
+                    raise RuntimeError(
+                        "Render request failed: the client returned a "
+                        "corrupt compressed frame."
+                    ) from e
+            elif flag != 0:
+                raise RuntimeError(
+                    f"Render request failed: unknown raw payload flag {flag}."
+                )
+            if len(data) != height * width * 4:
                 raise RuntimeError(
                     "Render request failed: the client returned "
-                    f"{len(payload)} bytes, expected {height * width * 4} "
+                    f"{len(data)} bytes, expected {height * width * 4} "
                     f"for a raw {height}x{width} RGBA frame."
                 )
-            rgba = np.frombuffer(payload, np.uint8).reshape(height, width, 4)
+            rgba = np.frombuffer(data, np.uint8).reshape(height, width, 4)
             return (
                 rgba[:, :, :3].copy() if transport_format == "raw_rgb" else rgba.copy()
             )

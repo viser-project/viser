@@ -2344,11 +2344,13 @@ class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     pose."""
 
     # The raw formats are unencoded RGBA bytes (height * width * 4,
-    # row-major): no browser-side image encode and no server-side decode, at
-    # the cost of bandwidth. Fastest for local / LAN connections. Both carry
-    # RGBA on the wire; they differ in background (raw_rgb renders on opaque
-    # white like JPEG, raw_rgba on transparent like PNG), and the server
-    # drops the alpha channel for raw_rgb.
+    # row-major): no browser-side image encode and no server-side decode.
+    # Fastest for local / LAN connections. Both carry RGBA on the wire
+    # behind a 1-byte flag (0 = as-is, 1 = deflate-raw compressed; the
+    # client compresses adaptively based on a content sample); they differ
+    # in background (raw_rgb renders on opaque white like JPEG, raw_rgba on
+    # transparent like PNG), and the server drops the alpha channel for
+    # raw_rgb.
     format: Literal["image/jpeg", "image/png", "raw_rgb", "raw_rgba"]
     height: int
     width: int

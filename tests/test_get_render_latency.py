@@ -405,10 +405,12 @@ def test_get_render_default_transport_is_jpeg() -> None:
 
 def test_get_render_raw_transport_round_trip() -> None:
     """transport_format="raw_rgb" requests raw_rgb on the wire and returns
-    the unencoded RGBA payload reshaped, alpha dropped, to a writable
-    (H, W, 3) array -- no image decode. raw_rgba keeps all four channels.
-    A payload whose size doesn't match the requested dimensions raises
-    instead of returning garbage."""
+    the RGBA payload (1-byte flag + pixels, optionally deflate-compressed)
+    reshaped, alpha dropped, to a writable (H, W, 3) array -- no image
+    decode. raw_rgba keeps all four channels. Size-mismatched or corrupt
+    payloads raise instead of returning garbage."""
+    import zlib
+
     height, width = 4, 6
     with _server() as server:
         conn = _RecordingConn()
@@ -444,7 +446,7 @@ def test_get_render_raw_transport_round_trip() -> None:
             )
             cb(
                 client.client_id,
-                _messages.GetRenderResponseMessage(pixels.tobytes(), uuid),
+                _messages.GetRenderResponseMessage(b"\x00" + pixels.tobytes(), uuid),
             )
             thread.join(timeout=8.0)
             assert not thread.is_alive()
@@ -478,9 +480,13 @@ def test_get_render_raw_transport_round_trip() -> None:
                 m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
             )
             assert request.format == "raw_rgba"
+            # Deliver deflate-compressed (flag 1), as the client does for
+            # compressible content.
+            compressor = zlib.compressobj(wbits=-15)
+            deflated = compressor.compress(pixels.tobytes()) + compressor.flush()
             cb(
                 client.client_id,
-                _messages.GetRenderResponseMessage(pixels.tobytes(), uuid),
+                _messages.GetRenderResponseMessage(b"\x01" + deflated, uuid),
             )
             thread.join(timeout=8.0)
             assert not thread.is_alive()
@@ -490,21 +496,27 @@ def test_get_render_raw_transport_round_trip() -> None:
             assert np.array_equal(out, pixels)
             assert out.flags.writeable
 
-            # Size-mismatched payload (e.g. a client bug) must raise, not
-            # reshape-crash or return garbage.
-            result.clear()
-            thread = threading.Thread(target=call)
-            conn.sent.clear()
-            thread.start()
-            cb, uuid = _wait_for_request(conn)
-            cb(
-                client.client_id,
-                _messages.GetRenderResponseMessage(b"\x00" * 17, uuid),
-            )
-            thread.join(timeout=8.0)
-            assert not thread.is_alive()
-            err = result.get("err")
-            assert isinstance(err, RuntimeError) and "expected" in str(err)
+            # Size-mismatched (flag 0) and corrupt-compressed (flag 1)
+            # payloads must raise, not reshape-crash or return garbage.
+            for bad_payload, match in [
+                (b"\x00" * 17, "expected"),
+                (b"\x01" + b"not deflate data", "corrupt"),
+            ]:
+                result.clear()
+                thread = threading.Thread(target=call)
+                conn.sent.clear()
+                thread.start()
+                cb, uuid = _wait_for_request(conn)
+                cb(
+                    client.client_id,
+                    _messages.GetRenderResponseMessage(bad_payload, uuid),
+                )
+                thread.join(timeout=8.0)
+                assert not thread.is_alive()
+                err = result.get("err")
+                assert isinstance(err, RuntimeError) and match in str(err), (
+                    f"payload {bad_payload[:8]!r}: got {err!r}"
+                )
         finally:
             server._connected_clients.pop(client.client_id, None)
 
