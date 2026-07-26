@@ -4,6 +4,7 @@ import asyncio
 import atexit
 import dataclasses
 import io
+import math
 import mimetypes
 import os
 import threading
@@ -401,7 +402,8 @@ class CameraHandle:
     def max_orbit_distance(self) -> float:
         """How far the camera may be dollied out from its orbit (look-at) point.
         Distinct from :attr:`far`, which clips rendering rather than camera
-        travel. Defaults to 1e4. Synchronized automatically when assigned.
+        travel. Defaults to 1e4; set to ``float("inf")`` for the unbounded
+        pre-1.1.0 behavior. Synchronized automatically when assigned.
 
         Dolly is multiplicative per wheel event, so a very large maximum means a long
         scroll — a trackpad's inertial tail, for instance — can walk the camera out to
@@ -413,10 +415,12 @@ class CameraHandle:
     @max_orbit_distance.setter
     def max_orbit_distance(self, max_orbit_distance: float) -> None:
         # Validate BEFORE the no-op short-circuit; see min_orbit_distance.
-        if not np.isfinite(max_orbit_distance) or max_orbit_distance <= 0.0:
+        # +inf is allowed: it is the pre-1.1.0 unbounded behavior (and the
+        # camera-controls default), the opt-out for large-scale scenes.
+        if math.isnan(max_orbit_distance) or max_orbit_distance <= 0.0:
             raise ValueError(
                 f"max_orbit_distance ({max_orbit_distance}) must be a "
-                "positive, finite number."
+                "positive number (or float('inf') for unbounded)."
             )
         if max_orbit_distance < self._state.min_orbit_distance:
             raise ValueError(

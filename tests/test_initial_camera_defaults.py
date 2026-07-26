@@ -179,6 +179,7 @@ def test_orbit_distance_setter_validation():
     for bad in (0.0, -1.0, math.nan, math.inf):
         with pytest.raises(ValueError, match="min_orbit_distance"):
             handle.min_orbit_distance = bad
+    for bad in (0.0, -1.0, math.nan):
         with pytest.raises(ValueError, match="max_orbit_distance"):
             handle.max_orbit_distance = bad
 
@@ -203,6 +204,12 @@ def test_orbit_distance_setter_validation():
     # Re-assigning the current value stays a no-op (short-circuit preserved).
     handle.min_orbit_distance = 0.5
     assert len(handle._state.client._websock_connection.messages) == 2
+
+    # float("inf") is a valid max: the pre-1.1.0 unbounded behavior, the
+    # opt-out for scenes larger than the 1e4 default.
+    handle.max_orbit_distance = math.inf
+    assert handle._state.max_orbit_distance == math.inf
+    assert len(handle._state.client._websock_connection.messages) == 3
 
     # But a bad value "close" to the stored one must still raise: validation
     # runs before the short-circuit.
