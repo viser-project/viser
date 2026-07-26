@@ -23,7 +23,7 @@ import io
 import threading
 import time
 from contextlib import contextmanager
-from typing import Generator, cast
+from typing import Callable, Generator, cast
 
 import numpy as np
 import pytest
@@ -347,3 +347,149 @@ def test_render_decode_runs_on_caller_thread_not_dispatch_thread() -> None:
             f"caller thread {result['thread']}"
         )
         assert threading.current_thread() not in decode_threads
+
+
+class _RecordingConn(WebsockMessageHandler):
+    """A connection with a real handler registry that records queued messages
+    instead of buffering them."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sent: list[object] = []
+
+    def get_message_buffer(self):  # pragma: no cover - unused
+        raise NotImplementedError()
+
+    def queue_message(self, message) -> None:
+        self.sent.append(message)
+
+
+def _wait_for_request(
+    conn: _RecordingConn, timeout: float = 5.0
+) -> tuple[Callable, str]:
+    """Wait until get_render() registered its handler and queued its request;
+    return (response callback, request uuid)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        handlers = conn._incoming_handlers.get(_messages.GetRenderResponseMessage, [])
+        requests = [
+            m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
+        ]
+        if handlers and requests:
+            return handlers[0], requests[0].render_uuid
+        time.sleep(0.002)
+    raise AssertionError("get_render never registered/queued its request")
+
+
+def test_get_render_raw_transport_round_trip() -> None:
+    """transport_format="raw" requests format "raw" on the wire and returns
+    the unencoded RGBA payload reshaped to (H, W, 4) -- no image decode --
+    as a writable array. A payload whose size doesn't match the requested
+    dimensions raises instead of returning garbage."""
+    height, width = 4, 6
+    with _server() as server:
+        conn = _RecordingConn()
+        client = ClientHandle.__new__(ClientHandle)
+        client.client_id = 810_004
+        client._websock_connection = conn  # type: ignore[assignment]
+        client._viser_server = server
+        server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
+        try:
+            result: dict[str, object] = {}
+
+            def call() -> None:
+                try:
+                    result["out"] = client.get_render(
+                        height=height,
+                        width=width,
+                        **_camera_kwargs(),
+                        transport_format="raw",
+                        timeout=5.0,
+                    )
+                except BaseException as e:  # noqa: BLE001
+                    result["err"] = e
+
+            thread = threading.Thread(target=call)
+            thread.start()
+            cb, uuid = _wait_for_request(conn)
+            request = next(
+                m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
+            )
+            assert request.format == "raw"
+            pixels = np.arange(height * width * 4, dtype=np.uint8).reshape(
+                height, width, 4
+            )
+            cb(
+                client.client_id,
+                _messages.GetRenderResponseMessage(pixels.tobytes(), uuid),
+            )
+            thread.join(timeout=8.0)
+            assert not thread.is_alive()
+            assert "err" not in result, f"caller raised: {result.get('err')!r}"
+            out = cast(np.ndarray, result["out"])
+            assert out.shape == (height, width, 4)
+            assert out.dtype == np.uint8
+            assert np.array_equal(out, pixels)
+            assert out.flags.writeable
+
+            # Size-mismatched payload (e.g. a client bug) must raise, not
+            # reshape-crash or return garbage.
+            result.clear()
+            thread = threading.Thread(target=call)
+            conn.sent.clear()
+            thread.start()
+            cb, uuid = _wait_for_request(conn)
+            cb(
+                client.client_id,
+                _messages.GetRenderResponseMessage(b"\x00" * 17, uuid),
+            )
+            thread.join(timeout=8.0)
+            assert not thread.is_alive()
+            err = result.get("err")
+            assert isinstance(err, RuntimeError) and "expected" in str(err)
+        finally:
+            server._connected_clients.pop(client.client_id, None)
+
+
+def test_get_render_flushes_broadcast_buffer_first() -> None:
+    """Scene updates made before get_render() ride the BROADCAST buffer while
+    the render request rides the per-client buffer. get_render() must flush
+    the broadcast buffer (before its own request) so a still-windowed scene
+    update can't be overtaken by the request and captured stale."""
+    with _server() as server:
+        broadcast = server._websock_server._broadcast_buffer
+        conn = _RecordingConn()
+        client = ClientHandle.__new__(ClientHandle)
+        client.client_id = 810_005
+        client._websock_connection = conn  # type: ignore[assignment]
+        client._viser_server = server
+        server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
+        try:
+            # A scene update sits in the (windowed) broadcast buffer.
+            server.scene.add_frame("/pending")
+            assert not broadcast.flush_event.is_set()
+
+            def call() -> None:
+                try:
+                    client.get_render(
+                        height=8, width=8, **_camera_kwargs(), timeout=0.5
+                    )
+                except BaseException:  # noqa: BLE001
+                    pass
+
+            thread = threading.Thread(target=call)
+            thread.start()
+            _wait_for_request(conn)
+            # The flush signal must have been raised on the broadcast buffer
+            # no later than the request was queued.
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline and not broadcast.flush_event.is_set():
+                time.sleep(0.002)
+            assert broadcast.flush_event.is_set(), (
+                "get_render() must flush the broadcast buffer so pending "
+                "scene updates aren't overtaken by the render request"
+            )
+            thread.join(timeout=5.0)
+            assert not thread.is_alive()
+        finally:
+            server._connected_clients.pop(client.client_id, None)

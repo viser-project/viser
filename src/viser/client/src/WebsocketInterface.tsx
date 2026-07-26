@@ -77,7 +77,17 @@ export function WebsocketMessageProducer() {
         viewer.useGui.set({ websocketState: "connected" });
         updateRetryInterval();
         viewerMutable.sendMessage = (message) => {
-          postToWorker({ type: "send", message });
+          if (message.type === "GetRenderResponseMessage") {
+            // Multi-megabyte render payloads: TRANSFER the buffer to the
+            // worker instead of structured-cloning it. The payload is
+            // freshly allocated per capture, so detaching it here is safe,
+            // and the clone of a large frame measurably delays the send.
+            worker.postMessage({ type: "send", message } as WsWorkerIncoming, [
+              message.payload.buffer,
+            ]);
+          } else {
+            postToWorker({ type: "send", message });
+          }
         };
       } else if (data.type === "closed") {
         isConnected = false;

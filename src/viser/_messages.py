@@ -2343,7 +2343,10 @@ class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     """Message from server->client requesting a render from a specified camera
     pose."""
 
-    format: Literal["image/jpeg", "image/png"]
+    # "raw" is unencoded RGBA bytes (height * width * 4, row-major): no
+    # browser-side image encode and no server-side decode, at the cost of
+    # bandwidth. Fastest for local / LAN connections.
+    format: Literal["image/jpeg", "image/png", "raw"]
     height: int
     width: int
     quality: int

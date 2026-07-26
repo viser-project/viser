@@ -60,7 +60,11 @@ export type ViewerMutable = {
   // hack runs again. Lives here (not a component ref) so WebsocketInterface can
   // reset it on reconnect.
   firstMessageBatch: boolean;
-  getRenderRequestState: "ready" | "triggered" | "pause" | "in_progress";
+  // Render-capture state machine (see RenderCapture in MessageHandler.tsx):
+  // "ready" -> nothing pending; "commit_wait" -> request processed alongside
+  // other messages, give React one frame to commit them; "capture" -> capture
+  // this frame. Message handling is gated on "ready".
+  getRenderRequestState: "ready" | "commit_wait" | "capture";
   getRenderRequest: null | GetRenderRequestMessage;
 
   // Diagnostic snapshot for the initial-camera / scene-orientation flow,
