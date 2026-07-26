@@ -344,6 +344,23 @@ def test_rgb_value_normalizes_floats() -> None:
         assert rgb.value == (63, 255, 0)
 
 
+def test_color_coercion_accepts_generator() -> None:
+    """``_colors_to_int_tuple`` iterates its input twice (float-channel warning
+    check, then the tuple build); a generator input must round-trip instead of
+    arriving exhausted at the second pass (regression: empty tuple)."""
+    from viser._gui_handles import _colors_to_int_tuple
+
+    assert _colors_to_int_tuple((v for v in (10, 20, 30)), warn_stacklevel=2) == (
+        10,
+        20,
+        30,
+    )
+    # Float channels from a generator still scale -- and still warn when > 1.0.
+    with pytest.warns(UserWarning, match=r"\[0, 1\]"):
+        out = _colors_to_int_tuple((v for v in (2.0, 0.5, 0.0)), warn_stacklevel=2)
+    assert out == (255, 127, 0)
+
+
 def test_numpy_assignment_to_int_tuple_rounds_not_truncates() -> None:
     """Assigning float numpy values to an int-typed tuple handle must round to
     the nearest integer, not truncate toward zero (int(2.9) == 2). Rounding

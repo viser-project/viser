@@ -53,6 +53,48 @@ describe("InstancedMesh2 GPU buffer disposal", () => {
     expect(stats().live).toBe(0);
   });
 
+  it("nulls instanceIndex on dispose so a late frame re-inits instead of binding the deleted buffer", () => {
+    const { gl, stats } = makeMockGl();
+    // onAfterRender's unpatchMaterial touches renderer.properties, so the mock
+    // needs the object to exist (its `get` is only restored, never called).
+    const renderer = {
+      getContext: () => gl,
+      properties: { get: undefined },
+    } as unknown as THREE.WebGLRenderer;
+
+    const mesh = new InstancedMesh2(
+      new THREE.BoxGeometry(),
+      new THREE.MeshBasicMaterial(),
+      { capacity: 128, renderer },
+    );
+    expect(mesh.instanceIndex).not.toBeNull();
+
+    mesh.dispose();
+
+    // The reference must be dropped along with the GL buffer: onBeforeRender /
+    // onAfterRender gate on falsiness, so a dangling reference would bind a
+    // deleted buffer on a frame drawn before React commits the unmount -- and
+    // permanently skip the re-init branch.
+    expect(mesh.instanceIndex).toBeNull();
+    // The geometry must not retain the deleted buffer either.
+    expect(mesh.geometry.getAttribute("instanceIndex")).toBeUndefined();
+
+    // A post-dispose render takes the initIndexAttribute re-init branch,
+    // allocating a fresh GL buffer and re-registering the geometry attribute.
+    mesh.onAfterRender(
+      renderer,
+      new THREE.Scene(),
+      new THREE.PerspectiveCamera(),
+      mesh.geometry,
+      new THREE.MeshBasicMaterial(),
+      null,
+    );
+    expect(mesh.instanceIndex).not.toBeNull();
+    expect(mesh.geometry.getAttribute("instanceIndex")).toBeDefined();
+    expect(stats().created).toBe(2); // initial + re-init
+    expect(stats().live).toBe(1); // only the re-init buffer survives
+  });
+
   it("does not leak instanceIndex buffers across repeated create/dispose", () => {
     const { gl, stats } = makeMockGl();
     const renderer = { getContext: () => gl } as unknown as THREE.WebGLRenderer;

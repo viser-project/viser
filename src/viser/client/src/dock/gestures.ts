@@ -72,6 +72,44 @@ export function grabbingCursor(): () => void {
   };
 }
 
+/** The one-gesture mutex (spec §4: "One active gesture at a time; extra
+ * pointers are ignored"). ONE ref, owned by DockManager, holds the active
+ * gesture's cleanup: move drags (dragController's armPress / window-drag
+ * teardown) store theirs directly, and every resize surface routes its
+ * dragGesture through exclusiveDragGesture below. A press on ANY gesture
+ * surface while the slot is held is IGNORED -- never queued. Without the
+ * shared slot a second finger could start a window drag during a live
+ * resize (or vice versa): both gestures called suppressTextSelection, and
+ * the first to end re-enabled text selection under the still-live one. */
+export type GestureSlot = { current: (() => void) | null };
+
+/** Run dragGesture under the shared single-gesture slot: parks the gesture's
+ * cancel in the slot for its whole lifetime and releases the slot exactly
+ * once when the gesture ends (dragGesture's onEnd runs once across release,
+ * Escape, browser cancel, and unmount-cancel, so the release can't
+ * double-run). Callers must check `slot.current !== null` BEFORE their own
+ * pointer-down side effects (ignore-the-press, armPress's semantics); this
+ * re-checks defensively and starts nothing for an already-held slot. */
+export function exclusiveDragGesture(
+  slot: GestureSlot,
+  opts: Parameters<typeof dragGesture>[0],
+): () => void {
+  if (slot.current !== null) return () => {};
+  const { onEnd } = opts;
+  const cancel = dragGesture({
+    ...opts,
+    onEnd: (cancelled) => {
+      slot.current = null;
+      onEnd?.(cancelled);
+    },
+  });
+  // No event can have ended the gesture between dragGesture() returning and
+  // this assignment (ends are event-driven), so the park always happens
+  // before any possible release.
+  slot.current = cancel;
+  return cancel;
+}
+
 /** Run a rAF-throttled drag gesture: capture the pointer on `grip`, record the
  * latest pointer state via `update(e)` on every move, and apply it via
  * `flush()` at most once per animation frame. On a real release, a still-

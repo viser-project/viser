@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import dataclasses
 import json
@@ -72,6 +73,7 @@ from ._messages import (
     SplitPlacement,
 )
 from ._scene_api import _encode_image_binary
+from ._threadpool_exceptions import print_task_error
 from .infra import ClientId
 
 if TYPE_CHECKING:
@@ -260,7 +262,12 @@ class _GuiInputHandle(
             # reduces the likelihood of many common race conditions.
             cb_out = cb(GuiEvent(client_id=None, client=None, target=self))
             if isinstance(cb_out, Coroutine):
-                self._impl.gui_api._event_loop.create_task(cb_out)
+                # run_coroutine_threadsafe, not create_task: assignment
+                # typically happens on a user thread, and create_task is
+                # neither thread-safe nor guaranteed to wake the loop.
+                asyncio.run_coroutine_threadsafe(
+                    cb_out, self._impl.gui_api._event_loop
+                ).add_done_callback(print_task_error)
 
     @property
     def update_timestamp(self) -> float:
@@ -387,10 +394,14 @@ def _colors_to_int_tuple(value: Any, *, warn_stacklevel: int) -> tuple[int, ...]
     assignment path needs 5."""
     if isinstance(value, np.ndarray):
         assert value.ndim == 1, f"Expected a 1D color, got shape {value.shape}."
+    # Materialize once up front: we iterate twice (the float-channel check and
+    # the tuple build below), so a generator input would arrive exhausted at
+    # the second pass and silently yield an empty/partial color.
+    value = tuple(value)
     if any(not np.issubdtype(type(v), np.integer) and v > 1.0 for v in value):
         warnings.warn(
             "Float color channels are interpreted on [0, 1] and scaled to "
-            f"[0, 255]; values > 1.0 are clamped to 255 (got {tuple(value)!r}). "
+            f"[0, 255]; values > 1.0 are clamped to 255 (got {value!r}). "
             "Use ints for absolute [0, 255] channels.",
             stacklevel=warn_stacklevel,
         )
@@ -762,8 +773,8 @@ class _TabContainerMixin:
         icon change) rebuilds through here, so the parallel tuples can never
         desync in length or order."""
         if self._impl.removed:
-            # Tear-down path: PanelHandle.remove() tombstones BEFORE draining
-            # its tabs (the tombstone must be an atomic check-and-set against
+            # Tear-down path: both mixers' remove() tombstone BEFORE draining
+            # their tabs (the tombstone must be an atomic check-and-set against
             # concurrent removers), so the drain's write-backs land here after
             # removal. Skip the wire write-back: props_setattr would
             # (correctly) reject a props write on a removed handle, and the
@@ -792,27 +803,29 @@ class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
 
     def remove(self) -> None:
         """Remove this tab group and all contained GUI elements."""
-        # Warn if already removed.
-        if self._impl.removed:
-            warnings.warn(
-                f"Attempted to remove an already removed {self.__class__.__name__}.",
-                stacklevel=2,
-            )
-            return
-
-        # Remove tabs first. Each tab.remove() writes back to this group's
-        # tab-list props (_tab_labels / _tab_icons_html / _tab_container_ids), so
-        # we must NOT mark the group removed until afterwards -- otherwise the
-        # removed-handle guard in props_setattr raises on those writes, leaving
-        # the group half-removed (still in its parent's _children with
-        # removed=True). A subsequent gui.reset() then spins forever, since its
-        # `while root._children: child.remove()` loop hits that group whose
-        # remove() now no-ops via the already-removed guard.
+        gui_api = self._impl.gui_api
+        # Tombstone CHECK-AND-SET under the lifecycle lock, mirroring
+        # PanelHandle.remove(): add_tab() takes the same lock for its
+        # removed-check + append, so an unlocked tombstone here let a
+        # concurrent add_tab interleave between our tab snapshot and the
+        # tombstone -- registering a live container entry for a group that no
+        # longer exists, which silently accepts children forever.
+        with gui_api._panel_lifecycle_lock:
+            if self._impl.removed:
+                warnings.warn(
+                    f"Attempted to remove an already removed {self.__class__.__name__}.",
+                    stacklevel=2,
+                )
+                return
+            self._impl.removed = True
+            gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
+        # Only the tombstone winner reaches here. The tab drain runs AFTER the
+        # tombstone and OUTSIDE the (non-reentrant) lock: each tab.remove()
+        # writes back to this group's tab tuples, which _rebuild_tab_props
+        # skips for a removed group (props_setattr would reject the write; the
+        # client drops the whole entity via the remove message anyway).
         for tab in tuple(self._tab_handles):
             tab.remove()
-        self._impl.removed = True
-        gui_api = self._impl.gui_api
-        gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
         parent._children.pop(self._impl.uuid)
 
@@ -1470,7 +1483,13 @@ class GuiFormHandle(GuiFolderHandle):
         for cb in self._submit_cb:
             cb_out = cb(GuiEvent(client_id=None, client=None, target=self))
             if isinstance(cb_out, Coroutine):
-                gui_api._event_loop.create_task(cb_out)
+                # run_coroutine_threadsafe, not create_task: submit() is
+                # typically called from a user thread (e.g. a button's
+                # on_click handler), and create_task is neither thread-safe
+                # nor guaranteed to wake the loop.
+                asyncio.run_coroutine_threadsafe(
+                    cb_out, gui_api._event_loop
+                ).add_done_callback(print_task_error)
         # Broadcast to clients so they reset dirty state.
         gui_api._websock_interface.queue_message(
             GuiFormSubmitMessage(uuid=self._impl.uuid)

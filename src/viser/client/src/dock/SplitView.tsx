@@ -15,7 +15,7 @@
 import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { useDock } from "./DockContext";
-import { dragGesture, focusDockControl } from "./gestures";
+import { exclusiveDragGesture, focusDockControl } from "./gestures";
 import { collapseAnim } from "./DockStyles.css";
 import { cascadeResize, expandedFlags, setNodeWeights } from "./layoutOps";
 import { ColumnCollapseChevron, StackHandleBar } from "./handles";
@@ -625,6 +625,9 @@ function SplitDivider({
   contentDetents?: () => number[];
 }) {
   const isRow = dir === "row";
+  // The dock-wide one-gesture mutex (spec §4), shared with every other
+  // gesture surface via context.
+  const { gestureSlot } = useDock();
   // Cancel the in-flight gesture if the divider unmounts mid-drag (its region
   // can be restructured by another client), so the window listeners can't fire
   // after unmount.
@@ -637,7 +640,9 @@ function SplitDivider({
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     if (!resizable) return; // nothing to resize between minimized strips
-    if (activeDrag.current !== null) return; // one drag per divider
+    // One gesture at a time, dock-wide (spec §4): a press while any gesture
+    // -- a move drag, another resize -- is live is ignored.
+    if (gestureSlot.current !== null) return;
     event.stopPropagation();
     const container = containerRef.current;
     if (container === null) return;
@@ -653,7 +658,7 @@ function SplitDivider({
     // the drag's duration, or cells ease-lag behind the divider.
     container.setAttribute("data-dock-resizing", "");
     let latest = start;
-    activeDrag.current = dragGesture({
+    activeDrag.current = exclusiveDragGesture(gestureSlot, {
       grip: event.currentTarget,
       pointerId: event.pointerId,
       update: (e) => {

@@ -141,10 +141,18 @@ class ViserTunnel:
         if self._thread is not None:
             assert self._event_loop is not None
 
-            @self._event_loop.call_soon_threadsafe
-            def _() -> None:
-                assert self._close_event is not None
-                self._close_event.set()
+            try:
+
+                @self._event_loop.call_soon_threadsafe
+                def _() -> None:
+                    assert self._close_event is not None
+                    self._close_event.set()
+
+            except RuntimeError:
+                # The tunnel job already tore its loop down (a failed
+                # connection exits and closes the loop); there's nothing left
+                # to signal, but we still want the join + disconnect below.
+                pass
 
             self._thread.join()
             self._disconnect_event.set()

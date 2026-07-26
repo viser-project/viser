@@ -11,7 +11,7 @@ import { GuiComponentContext } from "./GuiComponentContext";
 import { htmlIconWrapper } from "../components/ComponentStyles.css";
 import { GuiDockContext } from "./GuiDockContext";
 import { DockContext } from "../dock/DockContext";
-import { shallowObjectKeysEqual } from "../utils/shallowObjectKeysEqual";
+import { shallowObjectEqual } from "../utils/shallowObjectKeysEqual";
 import {
   ActionIcon,
   Anchor,
@@ -260,7 +260,11 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
  * honored on this path too); sections sort by the server-side order. */
 function PanelsFallback() {
   const viewer = React.useContext(ViewerContext)!;
-  const panels = viewer.useGui((state) => state.panels, shallowObjectKeysEqual);
+  // Value-level equality, NOT key-set equality: updatePanel replaces the
+  // panel object for the updated uuid (same key set), so a keys-only compare
+  // would swallow visible/order/tab-metadata updates and leave the sheet
+  // rendering stale panel props.
+  const panels = viewer.useGui((state) => state.panels, shallowObjectEqual);
   // On the dock surface, StandalonePanelSync places panels as dock groups -- so
   // this inline fallback must NOT also render them (that would double-render).
   const dockCtx = React.useContext(DockContext);

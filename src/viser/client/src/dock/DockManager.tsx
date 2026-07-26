@@ -162,6 +162,11 @@ export function DockManager({
   // the drag's cached target rects stale (a window growing mid-drag).
   const markDragTargetsStaleRef = React.useRef<(() => void) | null>(null);
   // Cleanup for an in-flight gesture, run if the manager unmounts mid-drag.
+  // Doubles as the dock-wide one-gesture mutex (spec §4: "One active gesture
+  // at a time; extra pointers are ignored"): move drags (dragController) and
+  // every resize surface (dividers, window grips, the region resizer --
+  // threaded as `gestureSlot` via context/props) park their cleanup here, so
+  // a press on any gesture surface while one is live is ignored.
   const activeCleanup = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeCleanup.current?.(), []);
 
@@ -565,6 +570,8 @@ export function DockManager({
       layout,
       groups: layout.groups,
       areas: layout.areas ?? {},
+      // Identity-stable ref: safe under the memo (never invalidates it).
+      gestureSlot: activeCleanup,
       ...stableGestures,
       activateTab,
       expandToTab,
@@ -1015,6 +1022,7 @@ export function DockManager({
                     {resizable && (
                       <RegionResizer
                         edge={edge}
+                        gestureSlot={activeCleanup}
                         // Model-based (unscaled) start: see regionFor's
                         // reservedWidth doc.
                         getStart={() => regions[edge].reservedWidth}

@@ -443,20 +443,46 @@ export function hitTest(
   };
   const skipRegionEdges = overInsertableStrip() || overFloatingTarget();
 
-  // Is the pointer over a collapsed strip cell of the given docked edge? Such a
-  // cell owns its own (short, content-tall) drop zones -- tab-insert / merge /
-  // stack -- so the region-wide "dock beside" band must yield to it there. Used
-  // to let a sole minimized strip's empty region area below/around it still dock
-  // a full-height sibling column without the band eating the strip's own zones.
-  const overCollapsedCell = (edge: DockEdge): boolean => {
+  // Is the pointer over a collapsed strip cell of the given docked edge -- or
+  // in a side band's OVERHANG past one? Such a cell owns its own (short,
+  // content-tall) drop zones -- tab-insert / merge / stack -- so the
+  // region-wide "dock beside" band must yield to it there. Used to let a sole
+  // minimized strip's empty region area below/around it still dock a
+  // full-height sibling column without the band eating the strip's own zones.
+  //
+  // `bands` are the edge's side-band x-runs (client coords). The yield covers
+  // a band's WHOLE run wherever it horizontally overlaps a collapsed cell (at
+  // the pointer's y within that cell), not just the cell's own pixels: a 40px
+  // band overhanging a 36px rail by a few px otherwise resolved that sliver
+  // to the region-boundary seam while both its neighbors (the rail's own
+  // sliver, the divider gap) resolve to the rail's adjacent seam -- one seam,
+  // one drop (D55), but the hint hopped outward and back across the overhang.
+  // Yielded, the overhang falls through to the divider-gap recovery / the
+  // flanking zones, i.e. the same seam as its neighbors. The y-bound keeps
+  // the rail HEADER run resolving at region level (spec 5.3: no cell owns
+  // the pointer there).
+  const overCollapsedCell = (
+    edge: DockEdge,
+    bands: { start: number; end: number }[],
+  ): boolean => {
     for (const t of targets.groups) {
       if (
-        t.collapsed === true &&
-        t.ctx.kind === "docked" &&
-        t.ctx.edge === edge &&
-        inside(t.rect, clientX, clientY)
+        t.collapsed !== true ||
+        t.ctx.kind !== "docked" ||
+        t.ctx.edge !== edge
       )
-        return true;
+        continue;
+      if (clientY < t.rect.top || clientY > t.rect.bottom) continue;
+      if (clientX >= t.rect.left && clientX <= t.rect.right) return true;
+      for (const b of bands) {
+        if (
+          clientX >= b.start &&
+          clientX <= b.end &&
+          t.rect.left < b.end &&
+          t.rect.right > b.start
+        )
+          return true;
+      }
     }
     return false;
   };
@@ -557,8 +583,21 @@ export function hitTest(
     // sliver already docks a column beside it (sweep invariant: every
     // target reachable). This yield also covers packed regions whole --
     // their strips tile the full region, so dock-beside there is entirely
-    // the rails' own slivers (edge case 13).
-    if (overCollapsedCell(edge)) continue;
+    // the rails' own slivers (edge case 13) -- and each band's OVERHANG
+    // past a collapsed cell it shadows (overCollapsedCell doc: the whole
+    // overhang resolves with the divider-gap/flanking zones to the cell's
+    // adjacent seam, D55's one-seam-one-drop).
+    const bands = [
+      {
+        start: crect.left + regionLeft,
+        end: crect.left + regionLeft + sideBand,
+      },
+      {
+        start: crect.left + regionRight - sideBand,
+        end: crect.left + regionRight,
+      },
+    ];
+    if (overCollapsedCell(edge, bands)) continue;
     // Both bands resolve to the canonical seam (D55): the outer/inner
     // boundary is seam 0 / seam N of the region's columns, with the one
     // seam-centered region-tall line (a new column lands beside
@@ -1030,6 +1069,19 @@ export function hitTest(
               ),
             };
       }
+      // Spec 5.3: "over a spine row -> insert at that tab position; the
+      // rest, cap included: merge." verticalTabInsertion picks the nearest
+      // row by Y with no distance bound, so without one every strip pixel
+      // resolved to insert-around-the-nearest-row and merge (the cap's own
+      // outcome) was unreachable -- the vertical analog of the bar-path
+      // bound above. Past the last row the docked branch already routes to
+      // stack-below (contentBottom); the bound here keeps the cap run above
+      // the first row (and any tail on a floating strip) a merge.
+      const first = g.tabs[0];
+      const lastRow = g.tabs[g.tabs.length - 1];
+      if (first !== undefined && clientY < first.rect.top - 8) return null;
+      if (lastRow !== undefined && clientY > lastRow.rect.bottom + 8)
+        return null;
       const ins = verticalTabInsertion(g.tabs, clientY);
       return ins === null
         ? null
@@ -1201,8 +1253,18 @@ export function hitTest(
   // also pixel-capped so the band doesn't balloon on a wide panel (a docked
   // control panel can be 320-384px wide -- 22% of that reads as "most of the
   // way in" rather than "near the edge").
+  //
+  // P11/D4: a zone that cannot afford its 8px minimum is REMOVED, not
+  // shrunk. The band is vBand*ch px in its narrow dimension; on a short
+  // content area (ch < 32px) the 25% fraction dips under the floor, so the
+  // zone is dropped entirely (band = 0) and the short body stays merge --
+  // mirroring the collapsed branch's edgeBand removal above. Shared by the
+  // docked bottom-split, the merge-suppressed top band, and the floating
+  // snap-below band (all read vBand).
   const vBand =
-    ch > 0 ? Math.min(SPLIT_BAND_V, SPLIT_BAND_V_MAX_PX / ch) : SPLIT_BAND_V;
+    ch <= 0 || SPLIT_BAND_V * ch < MINIMIZED_EDGE_BAND_PX
+      ? 0
+      : Math.min(SPLIT_BAND_V, SPLIT_BAND_V_MAX_PX / ch);
   const hBand =
     r.width > 0
       ? Math.min(SPLIT_BAND, SPLIT_BAND_H_MAX_PX / r.width)

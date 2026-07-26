@@ -376,6 +376,19 @@ class CameraHandle:
 
     @min_orbit_distance.setter
     def min_orbit_distance(self, min_orbit_distance: float) -> None:
+        # Validate BEFORE the no-op short-circuit: a bad value must raise even
+        # when it happens to be "close" to the stored one (e.g. re-assigning
+        # the same bad value after a raise).
+        if not np.isfinite(min_orbit_distance) or min_orbit_distance <= 0.0:
+            raise ValueError(
+                f"min_orbit_distance ({min_orbit_distance}) must be a "
+                "positive, finite number."
+            )
+        if min_orbit_distance > self._state.max_orbit_distance:
+            raise ValueError(
+                f"min_orbit_distance ({min_orbit_distance}) must be <= "
+                f"max_orbit_distance ({self._state.max_orbit_distance})."
+            )
         if np.allclose(self._state.min_orbit_distance, min_orbit_distance):
             return
         self._state.min_orbit_distance = min_orbit_distance
@@ -399,6 +412,17 @@ class CameraHandle:
 
     @max_orbit_distance.setter
     def max_orbit_distance(self, max_orbit_distance: float) -> None:
+        # Validate BEFORE the no-op short-circuit; see min_orbit_distance.
+        if not np.isfinite(max_orbit_distance) or max_orbit_distance <= 0.0:
+            raise ValueError(
+                f"max_orbit_distance ({max_orbit_distance}) must be a "
+                "positive, finite number."
+            )
+        if max_orbit_distance < self._state.min_orbit_distance:
+            raise ValueError(
+                f"max_orbit_distance ({max_orbit_distance}) must be >= "
+                f"min_orbit_distance ({self._state.min_orbit_distance})."
+            )
         if np.allclose(self._state.max_orbit_distance, max_orbit_distance):
             return
         self._state.max_orbit_distance = max_orbit_distance
@@ -1059,6 +1083,18 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         # Start the server.
         server.start()
+        # The share-tunnel slot must exist BEFORE stop() is registered with
+        # atexit below: stop() reads it, and if __init__ fails later, the
+        # atexit-time stop() on the partially-built server would otherwise
+        # miss the attribute and fall into DeprecatedAttributeShim.__getattr__
+        # (whose `self.scene` lookup recurses without `scene` set -->
+        # RecursionError at interpreter exit).
+        self._share_tunnel: ViserTunnel | None = None
+        # Guards the share-tunnel slot's check-then-act. The handlers below run
+        # on pool threads (not serialized on the event loop), so two
+        # concurrent requests could both see None and each create a tunnel,
+        # orphaning (leaking) the first.
+        self._share_tunnel_lock = threading.Lock()
         # server.start() registered the infra-level WebsockServer.stop with
         # atexit; also register the full ViserServer.stop, which runs first
         # (LIFO) and supersedes it (WebsockServer.stop unregisters itself).
@@ -1134,13 +1170,6 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 expand=False,
             )
         )
-
-        self._share_tunnel: ViserTunnel | None = None
-        # Guards the share-tunnel slot's check-then-act. The handlers now run
-        # on pool threads (not serialized on the event loop), so two
-        # concurrent requests could both see None and each create a tunnel,
-        # orphaning (leaking) the first.
-        self._share_tunnel_lock = threading.Lock()
 
         # Create share tunnel if requested.
         # This is deprecated: we should use get_share_url() instead.
@@ -1302,6 +1331,14 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # OUTSIDE the lock so requests don't serialize on the connection.
         with self._share_tunnel_lock:
             tunnel = self._share_tunnel
+            if tunnel is not None and tunnel.get_status() in ("failed", "closed"):
+                # A tunnel that failed to connect never signals disconnect, so
+                # nothing else clears the slot: without this, every later
+                # request would see the dead tunnel and return None forever.
+                # Close it (its worker already exited, so this is bookkeeping,
+                # not blocking) and let this request create a fresh one.
+                tunnel.close()
+                tunnel = self._share_tunnel = None
             we_created = tunnel is None
             if we_created:
                 if verbose:
@@ -1450,8 +1487,11 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # connect between the two lines.
         for client in clients:
             if asyncio.iscoroutinefunction(cb):
-                task = self._event_loop.create_task(cb(client))
-                task.add_done_callback(print_task_error)
+                # run_coroutine_threadsafe, not create_task: registration
+                # typically happens on a user thread, and create_task is
+                # neither thread-safe nor guaranteed to wake the loop.
+                future = asyncio.run_coroutine_threadsafe(cb(client), self._event_loop)
+                future.add_done_callback(print_task_error)
             else:
                 self._thread_executor.submit(cb, client).add_done_callback(
                     print_threadpool_errors

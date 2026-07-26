@@ -1078,9 +1078,20 @@ export class InstancedMesh2<
       const gl = this._renderer.getContext() as WebGL2RenderingContext;
       this.instanceIndex?.dispose(gl);
       if (this.LODinfo) {
-        for (const obj of this.LODinfo.objects) obj.instanceIndex?.dispose(gl);
+        for (const obj of this.LODinfo.objects) {
+          obj.instanceIndex?.dispose(gl);
+          obj.instanceIndex = null;
+        }
       }
     }
+    // Null the reference (and the geometry's copy of it) after freeing the GL
+    // buffer: onBeforeRender/onAfterRender gate on `this.instanceIndex`
+    // falsiness, so a frame drawn between dispose() and React's unmount commit
+    // would otherwise bind the deleted buffer -- and never take the
+    // initIndexAttribute re-init branch. initIndexAttribute re-creates both
+    // the attribute and the geometry entry, so this doesn't break re-init.
+    this.instanceIndex = null;
+    this._geometry?.deleteAttribute("instanceIndex");
     // === END VISER LOCAL PATCH ===
   }
 
