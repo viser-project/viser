@@ -4,8 +4,8 @@ The client-side capture path is latency-optimized: a request that arrives
 alone captures in the same frame it is processed (after the SceneTree pose
 appliers), a request that arrives alongside scene updates waits exactly one
 frame for React to commit them, JPEG/PNG encoding happens off the
-message-handling critical path, and the "raw" transport skips image
-encoding entirely. These tests pin the contract those optimizations must
+message-handling critical path, and the raw_rgb/raw_rgba transports skip
+image encoding entirely. These tests pin the contract those optimizations must
 preserve: a frame returned by get_render() reflects every scene update made
 before the call, and every transport format returns sane pixels.
 """
@@ -91,7 +91,7 @@ def test_get_render_reflects_prior_scene_updates(
         for i, color in enumerate(colors):
             box.color = color
             img = client.get_render(
-                height=96, width=128, transport_format="raw", timeout=30.0
+                height=96, width=128, transport_format="raw_rgba", timeout=30.0
             )
             center = _center_mean(img)
             expected_channel = int(np.argmax(color))
@@ -131,7 +131,9 @@ def test_get_render_reflects_fresh_node_poses(
             )
             time.sleep(1.0)
             truth[x] = centroid_x(
-                client.get_render(height=h, width=w, transport_format="raw", timeout=30)
+                client.get_render(
+                    height=h, width=w, transport_format="raw_rgba", timeout=30
+                )
             )
         own_server.scene.remove_by_name("/truth")
         time.sleep(0.5)
@@ -153,7 +155,7 @@ def test_get_render_reflects_fresh_node_poses(
                 position=(x, 0, 0),
             )
             img = client.get_render(
-                height=h, width=w, transport_format="raw", timeout=30.0
+                height=h, width=w, transport_format="raw_rgba", timeout=30.0
             )
             cx = centroid_x(img)
             assert np.isfinite(cx) and (cx < mid) == (truth[x] < mid), (
@@ -169,10 +171,11 @@ def test_get_render_reflects_fresh_node_poses(
 def test_get_render_transport_formats_agree(
     own_server: viser.ViserServer, browser: Browser
 ) -> None:
-    """All three transport formats return correctly-shaped arrays of the same
-    scene: JPEG (H, W, 3), PNG and raw (H, W, 4) -- with raw and PNG (both
-    lossless, same render path) agreeing on the center pixels, and repeated
-    solo captures (the same-frame fast path) staying stable."""
+    """All transport formats return correctly-shaped arrays of the same
+    scene: JPEG and raw_rgb (H, W, 3) on white; PNG and raw_rgba (H, W, 4)
+    on transparent -- with the lossless formats agreeing on the center
+    pixels, corner pixels showing each format's background convention, and
+    repeated solo captures (the same-frame fast path) staying stable."""
     client, page, context = _connect_client(own_server, browser)
     try:
         own_server.scene.add_box(
@@ -186,7 +189,9 @@ def test_get_render_transport_formats_agree(
         prev = None
         for _ in range(40):
             cur = _center_mean(
-                client.get_render(height=h, width=w, transport_format="raw", timeout=30)
+                client.get_render(
+                    height=h, width=w, transport_format="raw_rgba", timeout=30
+                )
             )
             if prev is not None and np.allclose(cur, prev, atol=2.0):
                 break
@@ -194,22 +199,42 @@ def test_get_render_transport_formats_agree(
             time.sleep(0.1)
         jpeg = client.get_render(height=h, width=w, transport_format="jpeg", timeout=30)
         png = client.get_render(height=h, width=w, transport_format="png", timeout=30)
-        raw = client.get_render(height=h, width=w, transport_format="raw", timeout=30)
+        raw = client.get_render(
+            height=h, width=w, transport_format="raw_rgba", timeout=30
+        )
+        rgb = client.get_render(
+            height=h, width=w, transport_format="raw_rgb", timeout=30
+        )
         assert jpeg.shape == (h, w, 3) and jpeg.dtype == np.uint8
         assert png.shape == (h, w, 4) and png.dtype == np.uint8
         assert raw.shape == (h, w, 4) and raw.dtype == np.uint8
-        # Lossless formats agree on the (fully opaque) box at the center.
+        assert rgb.shape == (h, w, 3) and rgb.dtype == np.uint8
+        # Same-background formats agree on the full center region...
         assert np.allclose(_center_mean(png), _center_mean(raw), atol=3.0), (
             f"png center {_center_mean(png)} != raw center {_center_mean(raw)}"
         )
-        assert np.allclose(_center_mean(jpeg), _center_mean(raw), atol=12.0)
+        assert np.allclose(_center_mean(jpeg), _center_mean(rgb), atol=12.0)
+        # ...while rgb-vs-rgba are compared only where the box is fully
+        # opaque: background pixels legitimately differ (white vs
+        # transparent), and the center window can catch some.
+        mask = raw[:, :, 3] == 255
+        assert mask.mean() > 0.02, "no opaque pixels to compare"
+        assert np.allclose(
+            rgb[mask].mean(axis=0), raw[mask][:, :3].mean(axis=0), atol=3.0
+        ), f"rgb {rgb[mask].mean(axis=0)} != rgba {raw[mask][:, :3].mean(axis=0)}"
         # The center is opaque in the alpha formats.
         assert int(raw[h // 2, w // 2, 3]) == 255
         assert int(png[h // 2, w // 2, 3]) == 255
+        # Background conventions: the corner is off-scene from the default
+        # camera -- transparent for the RGBA formats, white for the RGB ones.
+        assert int(raw[0, 0, 3]) == 0 and int(png[0, 0, 3]) == 0
+        assert np.all(rgb[0, 0] >= 250) and np.all(jpeg[0, 0] >= 245)
 
         # Back-to-back solo captures (no interleaved scene updates) take the
         # same-frame capture path; they must stay correct and identical-ish.
-        again = client.get_render(height=h, width=w, transport_format="raw", timeout=30)
+        again = client.get_render(
+            height=h, width=w, transport_format="raw_rgba", timeout=30
+        )
         assert np.allclose(_center_mean(again), _center_mean(raw), atol=3.0)
     finally:
         page.close()  # type: ignore[attr-defined]

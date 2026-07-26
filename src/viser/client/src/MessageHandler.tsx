@@ -1262,12 +1262,14 @@ export function FrameSynchronizedMessageHandler() {
             true,
           );
 
-        // Configure for capture. JPEG has no alpha channel, so it gets an
-        // opaque white background; PNG and raw are RGBA with a transparent
-        // background.
+        // Configure for capture. JPEG and raw_rgb are RGB results, rendered
+        // on an opaque white background; PNG and raw_rgba are RGBA with a
+        // transparent background.
         gl.setSize(targetWidth, targetHeight);
         gl.setClearColor(0xffffff);
-        gl.setClearAlpha(format === "image/jpeg" ? 1.0 : 0.0);
+        gl.setClearAlpha(
+          format === "image/jpeg" || format === "raw_rgb" ? 1.0 : 0.0,
+        );
 
         // Render the scene.
         gl.render(viewerMutable.scene!, camera);
@@ -1282,9 +1284,10 @@ export function FrameSynchronizedMessageHandler() {
         const ctx = bufferCanvas.getContext("2d")!;
         ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
 
-        if (format === "raw") {
+        if (format === "raw_rgb" || format === "raw_rgba") {
           // Unencoded RGBA readback: no image encode here, no image decode
-          // on the server.
+          // on the server. Both raw formats send RGBA bytes; the server
+          // drops the (uniformly opaque) alpha channel for raw_rgb.
           const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
           viewerMutable.getRenderRequestState = "ready";
           sendRenderResponse(

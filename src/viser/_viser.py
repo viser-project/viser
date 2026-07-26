@@ -501,7 +501,7 @@ class CameraHandle:
         self,
         height: int,
         width: int,
-        transport_format: Literal["png", "jpeg", "raw"] = "jpeg",
+        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -510,11 +510,20 @@ class CameraHandle:
         Args:
             height: Height of rendered image. Should be <= the browser height.
             width: Width of rendered image. Should be <= the browser width.
-            transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
-                return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
-                too quickly for higher-resolution images. RAW returns a lossless (H, W, 4) RGBA array with no
-                image encoding or decoding at all; it is the fastest option for local or LAN connections, at
-                the cost of transferring uncompressed pixels.
+            transport_format: Image transport format. The raw formats skip image encoding and decoding
+                entirely; they are the fastest option for local or LAN connections, at the cost of
+                transferring uncompressed pixels. RAW_RGB (default) returns a lossless (H, W, 3) RGB array
+                rendered on an opaque white background, like JPEG but without compression artifacts.
+                RAW_RGBA returns a lossless (H, W, 4) RGBA array with a transparent background, like PNG.
+                JPEG returns a lossy (H, W, 3) RGB array with the smallest payload; prefer it when clients
+                connect over slow or remote links (e.g. share URLs). PNG returns a lossless (H, W, 4) RGBA
+                array with a compressed payload, but can cause memory issues on the frontend if called too
+                quickly for higher-resolution images.
+
+                .. versionchanged::
+                    The default changed from ``"jpeg"`` to ``"raw_rgb"``: same (H, W, 3) RGB shape and
+                    white background as before, but now lossless and substantially faster. Pass
+                    ``transport_format="jpeg"`` explicitly to recover the previous behavior.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
@@ -723,7 +732,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray,
         position: tuple[float, float, float] | np.ndarray,
         fov: float,
-        transport_format: Literal["png", "jpeg", "raw"] = "jpeg",
+        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -733,7 +742,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         height: int,
         width: int,
         *,
-        transport_format: Literal["png", "jpeg", "raw"] = "jpeg",
+        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -745,7 +754,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray | None = None,
         position: tuple[float, float, float] | np.ndarray | None = None,
         fov: float | None = None,
-        transport_format: Literal["png", "jpeg", "raw"] = "jpeg",
+        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -761,11 +770,20 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 be used.
             fov: Vertical field of view of the camera, in radians. If not provided, the
                 current camera position will be used.
-            transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
-                return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
-                too quickly for higher-resolution images. RAW returns a lossless (H, W, 4) RGBA array with no
-                image encoding or decoding at all; it is the fastest option for local or LAN connections, at
-                the cost of transferring uncompressed pixels.
+            transport_format: Image transport format. The raw formats skip image encoding and decoding
+                entirely; they are the fastest option for local or LAN connections, at the cost of
+                transferring uncompressed pixels. RAW_RGB (default) returns a lossless (H, W, 3) RGB array
+                rendered on an opaque white background, like JPEG but without compression artifacts.
+                RAW_RGBA returns a lossless (H, W, 4) RGBA array with a transparent background, like PNG.
+                JPEG returns a lossy (H, W, 3) RGB array with the smallest payload; prefer it when clients
+                connect over slow or remote links (e.g. share URLs). PNG returns a lossless (H, W, 4) RGBA
+                array with a compressed payload, but can cause memory issues on the frontend if called too
+                quickly for higher-resolution images.
+
+                .. versionchanged::
+                    The default changed from ``"jpeg"`` to ``"raw_rgb"``: same (H, W, 3) RGB shape and
+                    white background as before, but now lossless and substantially faster. Pass
+                    ``transport_format="jpeg"`` explicitly to recover the previous behavior.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
@@ -832,7 +850,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             _messages.GetRenderRequestMessage(
                 "image/jpeg"
                 if transport_format == "jpeg"
-                else ("image/png" if transport_format == "png" else "raw"),
+                else ("image/png" if transport_format == "png" else transport_format),
                 height=height,
                 width=width,
                 # Only used for JPEG. The main reason to use a lower quality version
@@ -855,8 +873,8 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # Import the decoder while the client is busy rendering: on first use
         # this import is slow, and doing it here (request already in flight)
         # overlaps it with the round trip instead of adding to it. The raw
-        # transport needs no decoder at all.
-        if transport_format != "raw":
+        # transports need no decoder at all.
+        if transport_format in ("jpeg", "png"):
             import imageio.v3 as iio
 
         # Poll rather than wait unbounded: a client that DISCONNECTS (tab
@@ -895,16 +913,21 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             raise RuntimeError(
                 "Render request failed: the client could not capture a frame."
             )
-        if transport_format == "raw":
-            # Unencoded RGBA bytes; just reshape. Copy so the caller gets a
-            # writable array (np.frombuffer views of bytes are read-only).
+        if transport_format in ("raw_rgb", "raw_rgba"):
+            # Unencoded bytes, always RGBA on the wire; just reshape (and
+            # drop the -- all-255, opaque-background -- alpha channel for
+            # raw_rgb). The slice/copy also makes the returned array writable
+            # (np.frombuffer views of bytes are read-only).
             if len(payload) != height * width * 4:
                 raise RuntimeError(
                     "Render request failed: the client returned "
                     f"{len(payload)} bytes, expected {height * width * 4} "
                     f"for a raw {height}x{width} RGBA frame."
                 )
-            return np.frombuffer(payload, np.uint8).reshape(height, width, 4).copy()
+            rgba = np.frombuffer(payload, np.uint8).reshape(height, width, 4)
+            return (
+                rgba[:, :, :3].copy() if transport_format == "raw_rgb" else rgba.copy()
+            )
         try:
             return iio.imread(
                 io.BytesIO(payload),

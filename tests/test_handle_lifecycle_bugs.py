@@ -1092,6 +1092,8 @@ def test_get_render_timeout_exits_do_not_double_unregister() -> None:
             wxyz=(1.0, 0.0, 0.0, 0.0),
             position=(0.0, 0.0, 0.0),
             fov=1.0,
+            # Explicit: Case B below delivers a JPEG payload.
+            transport_format="jpeg",
             timeout=timeout,
         )
 

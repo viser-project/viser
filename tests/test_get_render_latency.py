@@ -134,7 +134,11 @@ def test_concurrent_get_render_requests_both_survive_and_resolve() -> None:
         def call(height: int) -> None:
             try:
                 out = client.get_render(
-                    height=height, width=height, **_camera_kwargs(), timeout=6.0
+                    height=height,
+                    width=height,
+                    **_camera_kwargs(),
+                    transport_format="jpeg",
+                    timeout=6.0,
                 )
                 with results_lock:
                     results[height] = out
@@ -303,7 +307,11 @@ def test_render_decode_runs_on_caller_thread_not_dispatch_thread() -> None:
             result["thread"] = threading.current_thread()
             try:
                 result["out"] = client.get_render(
-                    height=8, width=8, **_camera_kwargs(), timeout=5.0
+                    height=8,
+                    width=8,
+                    **_camera_kwargs(),
+                    transport_format="jpeg",
+                    timeout=5.0,
                 )
             except BaseException as e:  # noqa: BLE001
                 result["err"] = e
@@ -382,10 +390,13 @@ def _wait_for_request(
 
 
 def test_get_render_raw_transport_round_trip() -> None:
-    """transport_format="raw" requests format "raw" on the wire and returns
-    the unencoded RGBA payload reshaped to (H, W, 4) -- no image decode --
-    as a writable array. A payload whose size doesn't match the requested
-    dimensions raises instead of returning garbage."""
+    """The DEFAULT transport requests format "raw_rgb" on the wire and
+    returns the unencoded RGBA payload reshaped, alpha dropped, to a
+    writable (H, W, 3) array -- no image decode. raw_rgba keeps all four
+    channels. A payload whose size doesn't match the requested dimensions
+    raises instead of returning garbage. (transport_format is deliberately
+    omitted in the first call: this test also pins raw_rgb as the
+    default.)"""
     height, width = 4, 6
     with _server() as server:
         conn = _RecordingConn()
@@ -403,7 +414,6 @@ def test_get_render_raw_transport_round_trip() -> None:
                         height=height,
                         width=width,
                         **_camera_kwargs(),
-                        transport_format="raw",
                         timeout=5.0,
                     )
                 except BaseException as e:  # noqa: BLE001
@@ -415,7 +425,7 @@ def test_get_render_raw_transport_round_trip() -> None:
             request = next(
                 m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
             )
-            assert request.format == "raw"
+            assert request.format == "raw_rgb"
             pixels = np.arange(height * width * 4, dtype=np.uint8).reshape(
                 height, width, 4
             )
@@ -427,8 +437,43 @@ def test_get_render_raw_transport_round_trip() -> None:
             assert not thread.is_alive()
             assert "err" not in result, f"caller raised: {result.get('err')!r}"
             out = cast(np.ndarray, result["out"])
-            assert out.shape == (height, width, 4)
+            assert out.shape == (height, width, 3)
             assert out.dtype == np.uint8
+            assert np.array_equal(out, pixels[:, :, :3])
+            assert out.flags.writeable
+
+            # raw_rgba keeps the alpha channel.
+            result.clear()
+            conn.sent.clear()
+
+            def call_rgba() -> None:
+                try:
+                    result["out"] = client.get_render(
+                        height=height,
+                        width=width,
+                        **_camera_kwargs(),
+                        transport_format="raw_rgba",
+                        timeout=5.0,
+                    )
+                except BaseException as e:  # noqa: BLE001
+                    result["err"] = e
+
+            thread = threading.Thread(target=call_rgba)
+            thread.start()
+            cb, uuid = _wait_for_request(conn)
+            request = next(
+                m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
+            )
+            assert request.format == "raw_rgba"
+            cb(
+                client.client_id,
+                _messages.GetRenderResponseMessage(pixels.tobytes(), uuid),
+            )
+            thread.join(timeout=8.0)
+            assert not thread.is_alive()
+            assert "err" not in result, f"caller raised: {result.get('err')!r}"
+            out = cast(np.ndarray, result["out"])
+            assert out.shape == (height, width, 4)
             assert np.array_equal(out, pixels)
             assert out.flags.writeable
 

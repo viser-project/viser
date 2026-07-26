@@ -1825,7 +1825,7 @@ export interface ThemeConfigurationMessage {
  */
 export interface GetRenderRequestMessage {
   type: "GetRenderRequestMessage";
-  format: "image/jpeg" | "image/png" | "raw";
+  format: "image/jpeg" | "image/png" | "raw_rgb" | "raw_rgba";
   height: number;
   width: number;
   quality: number;
