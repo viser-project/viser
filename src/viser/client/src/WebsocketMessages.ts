@@ -1825,7 +1825,7 @@ export interface ThemeConfigurationMessage {
  */
 export interface GetRenderRequestMessage {
   type: "GetRenderRequestMessage";
-  format: "image/jpeg" | "image/png" | "deflate_rgb" | "deflate_rgba";
+  format: "image/jpeg" | "image/png" | "deflate_rgb" | "deflate_rgba" | "auto";
   height: number;
   width: number;
   quality: number;

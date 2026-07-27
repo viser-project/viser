@@ -230,8 +230,10 @@ def test_get_render_transport_formats_agree(
         assert int(raw[0, 0, 3]) == 0 and int(png[0, 0, 3]) == 0
         assert np.all(rgb[0, 0] >= 250) and np.all(jpeg[0, 0] >= 245)
 
-        # The default (deflate_rgb) returns (H, W, 3) on white, pixel-exact
-        # against an explicit deflate_rgb capture.
+        # The default ("auto") returns (H, W, 3) on white. On this simple
+        # scene the content compresses far beyond auto's lossless threshold,
+        # so the frame must be pixel-exact against deflate_rgb -- proof the
+        # lossless wire path engaged end to end.
         default = client.get_render(height=h, width=w, timeout=30)
         assert default.shape == (h, w, 3) and default.dtype == np.uint8
         assert np.all(default[0, 0] >= 250)
