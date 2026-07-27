@@ -1,14 +1,5 @@
-import {
-  Vector2,
-  Vector3,
-  DirectionalLight,
-  MathUtils,
-  ShaderChunk,
-  Matrix4,
-  Box3,
-} from "three";
+import { Vector3, DirectionalLight, MathUtils, Matrix4, Box3 } from "three";
 import { CSMFrustum } from "./CSMFrustum.js";
-import { CSMShader } from "./CSMShader.js";
 
 const _cameraToLightMatrix = new Matrix4();
 const _lightSpaceFrustum = new CSMFrustum({ webGL: true });
@@ -22,12 +13,17 @@ const _lightOrientationMatrixInverse = new Matrix4();
 const _up = new Vector3(0, 1, 0);
 
 /**
- * An implementation of Cascade Shadow Maps (CSM).
+ * Cascade-fitting math for cascaded shadow maps, trimmed down from three.js's
+ * CSM addon (three/addons/csm/CSM.js).
  *
- * This module can only be used with {@link WebGLRenderer}. When using {@link WebGPURenderer},
- * use {@link CSMShadowNode} instead.
- *
- * @three_import import { CSM } from 'three/addons/csm/CSM.js';
+ * Unlike upstream, this class does NOT patch material shaders
+ * (setupMaterial/CSMShader are removed). viser renders each cascade as an
+ * ordinary shadow-casting DirectionalLight at intensity/cascades: every
+ * fragment is lit by all cascade lights, and cascade "selection" happens
+ * implicitly because fragments outside a cascade's shadow-camera bounds are
+ * simply unshadowed by that cascade's light. This composes with any material
+ * (streamed meshes, GLB imports, instanced meshes) without per-material
+ * setup, at the cost of softer far shadows than true CSM.
  */
 export class CSM {
   /**
@@ -56,7 +52,7 @@ export class CSM {
      * @type {number}
      * @default 3
      */
-    this.cascades = data.cascades || 3;
+    this.cascades = data.cascades ?? 3;
 
     /**
      * The maximum far value.
@@ -64,7 +60,7 @@ export class CSM {
      * @type {number}
      * @default 100000
      */
-    this.maxFar = data.maxFar || 100000;
+    this.maxFar = data.maxFar ?? 100000;
 
     /**
      * The frustum split mode.
@@ -72,7 +68,7 @@ export class CSM {
      * @type {('practical'|'uniform'|'logarithmic'|'custom')}
      * @default 'practical'
      */
-    this.mode = data.mode || "practical";
+    this.mode = data.mode ?? "practical";
 
     /**
      * The shadow map size.
@@ -80,7 +76,7 @@ export class CSM {
      * @type {number}
      * @default 2048
      */
-    this.shadowMapSize = data.shadowMapSize || 2048;
+    this.shadowMapSize = data.shadowMapSize ?? 2048;
 
     /**
      * The shadow bias.
@@ -88,7 +84,7 @@ export class CSM {
      * @type {number}
      * @default 0.000001
      */
-    this.shadowBias = data.shadowBias || 0.000001;
+    this.shadowBias = data.shadowBias ?? 0.000001;
 
     /**
      * The light direction.
@@ -104,7 +100,7 @@ export class CSM {
      * @type {number}
      * @default 3
      */
-    this.lightIntensity = data.lightIntensity || 3;
+    this.lightIntensity = data.lightIntensity ?? 3;
 
     /**
      * The light near value.
@@ -112,7 +108,7 @@ export class CSM {
      * @type {number}
      * @default 1
      */
-    this.lightNear = data.lightNear || 1;
+    this.lightNear = data.lightNear ?? 1;
 
     /**
      * The light far value.
@@ -120,15 +116,17 @@ export class CSM {
      * @type {number}
      * @default 2000
      */
-    this.lightFar = data.lightFar || 2000;
+    this.lightFar = data.lightFar ?? 2000;
 
     /**
-     * The light margin.
+     * The light margin: how far the shadow camera is pulled back toward the
+     * light beyond the closest point of each cascade's bounding box, so
+     * off-screen geometry between the light and the view frustum still casts.
      *
      * @type {number}
      * @default 200
      */
-    this.lightMargin = data.lightMargin || 200;
+    this.lightMargin = data.lightMargin ?? 200;
 
     /**
      * Custom split callback when using `mode='custom'`.
@@ -138,20 +136,12 @@ export class CSM {
     this.customSplitsCallback = data.customSplitsCallback;
 
     /**
-     * Whether to fade between cascades or not.
-     *
-     * @type {boolean}
-     * @default false
-     */
-    this.fade = false;
-
-    /**
      * Whether a reversed depth buffer is in use.
      *
      * @type {boolean}
      * @default false
      */
-    this.reversedDepth = data.reversedDepth || false;
+    this.reversedDepth = data.reversedDepth ?? false;
 
     /**
      * The main frustum.
@@ -187,16 +177,8 @@ export class CSM {
      */
     this.lights = [];
 
-    /**
-     * A Map holding enhanced material shaders.
-     *
-     * @type {Map<Material,Object>}
-     */
-    this.shaders = new Map();
-
     this._createLights();
     this.updateFrustums();
-    this._injectInclude();
   }
 
   /**
@@ -261,16 +243,7 @@ export class CSM {
         point2 = nearVerts[2];
       }
 
-      let squaredBBWidth = point1.distanceTo(point2);
-      if (this.fade) {
-        // expand the shadow extents by the fade margin if fade is enabled.
-        const camera = this.camera;
-        const far = Math.max(camera.far, this.maxFar);
-        const linearDepth = frustum.vertices.far[0].z / (far - camera.near);
-        const margin = 0.25 * Math.pow(linearDepth, 2.0) * (far - camera.near);
-
-        squaredBBWidth += margin;
-      }
+      const squaredBBWidth = point1.distanceTo(point2);
 
       shadowCam.left = -squaredBBWidth / 2;
       shadowCam.right = squaredBBWidth / 2;
@@ -390,103 +363,12 @@ export class CSM {
   }
 
   /**
-   * Injects the CSM shader enhancements into the built-in materials.
-   *
-   * @private
-   */
-  _injectInclude() {
-    ShaderChunk.lights_fragment_begin = CSMShader.lights_fragment_begin;
-    ShaderChunk.lights_pars_begin = CSMShader.lights_pars_begin;
-  }
-
-  /**
-   * Applications must call this method for all materials that should be affected by CSM.
-   *
-   * @param {Material} material - The material to setup for CSM support.
-   */
-  setupMaterial(material) {
-    material.defines = material.defines || {};
-    material.defines.USE_CSM = 1;
-    material.defines.CSM_CASCADES = this.cascades;
-
-    if (this.fade) {
-      material.defines.CSM_FADE = "";
-    }
-
-    const breaksVec2 = [];
-    const scope = this;
-    const shaders = this.shaders;
-
-    material.onBeforeCompile = function (shader) {
-      const far = Math.min(scope.camera.far, scope.maxFar);
-      scope._getExtendedBreaks(breaksVec2);
-
-      shader.uniforms.CSM_cascades = { value: breaksVec2 };
-      shader.uniforms.cameraNear = { value: scope.camera.near };
-      shader.uniforms.shadowFar = { value: far };
-
-      shaders.set(material, shader);
-    };
-
-    shaders.set(material, null);
-  }
-
-  /**
-   * Updates the CSM uniforms.
-   *
-   * @private
-   */
-  _updateUniforms() {
-    const far = Math.min(this.camera.far, this.maxFar);
-    const shaders = this.shaders;
-
-    shaders.forEach(function (shader, material) {
-      if (shader !== null) {
-        const uniforms = shader.uniforms;
-        this._getExtendedBreaks(uniforms.CSM_cascades.value);
-        uniforms.cameraNear.value = this.camera.near;
-        uniforms.shadowFar.value = far;
-      }
-
-      if (!this.fade && "CSM_FADE" in material.defines) {
-        delete material.defines.CSM_FADE;
-        material.needsUpdate = true;
-      } else if (this.fade && !("CSM_FADE" in material.defines)) {
-        material.defines.CSM_FADE = "";
-        material.needsUpdate = true;
-      }
-    }, this);
-  }
-
-  /**
-   * Computes the extended breaks for the CSM uniforms.
-   *
-   * @private
-   * @param {Array<Vector2>} target - The target array that holds the extended breaks.
-   */
-  _getExtendedBreaks(target) {
-    while (target.length < this.breaks.length) {
-      target.push(new Vector2());
-    }
-
-    target.length = this.breaks.length;
-
-    for (let i = 0; i < this.cascades; i++) {
-      const amount = this.breaks[i];
-      const prev = this.breaks[i - 1] || 0;
-      target[i].x = prev;
-      target[i].y = amount;
-    }
-  }
-
-  /**
    * Applications must call this method every time they change camera or CSM settings.
    */
   updateFrustums() {
     this._getBreaks();
     this._initCascades();
     this._updateShadowBounds();
-    this._updateUniforms();
   }
 
   /**
@@ -504,22 +386,10 @@ export class CSM {
    * method whenever this instance is no longer used in your app.
    */
   dispose() {
-    const shaders = this.shaders;
-    shaders.forEach(function (shader, material) {
-      delete material.onBeforeCompile;
-      delete material.defines.USE_CSM;
-      delete material.defines.CSM_CASCADES;
-      delete material.defines.CSM_FADE;
-
-      if (shader !== null) {
-        delete shader.uniforms.CSM_cascades;
-        delete shader.uniforms.cameraNear;
-        delete shader.uniforms.shadowFar;
-      }
-
-      material.needsUpdate = true;
-    });
-    shaders.clear();
+    for (const light of this.lights) {
+      // Frees the cascade's shadow-map render target.
+      light.dispose();
+    }
   }
 }
 
@@ -538,6 +408,6 @@ export class CSM {
  * @property {Vector3} [lightDirection] - The light direction.
  * @property {number} [lightIntensity=3] - The light intensity.
  * @property {number} [lightNear=1] - The light near value.
- * @property {number} [lightNear=2000] - The light far value.
+ * @property {number} [lightFar=2000] - The light far value.
  * @property {number} [lightMargin=200] - The light margin.
  **/

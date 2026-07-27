@@ -1,4 +1,4 @@
-import { Camera, DirectionalLight, Material, Object3D, Vector3 } from "three";
+import { Camera, DirectionalLight, Object3D, Vector3 } from "three";
 
 export interface CSMParameters {
   camera: Camera;
@@ -41,7 +41,6 @@ export class CSM {
     far: number,
     breaks: number[],
   ) => void;
-  fade: boolean;
   lights: DirectionalLight[];
 
   constructor(data: CSMParameters);
@@ -50,5 +49,4 @@ export class CSM {
   updateFrustums(): void;
   remove(): void;
   dispose(): void;
-  setupMaterial(material: Material): void;
 }
