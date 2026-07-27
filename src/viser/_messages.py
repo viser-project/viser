@@ -2343,24 +2343,7 @@ class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     """Message from server->client requesting a render from a specified camera
     pose."""
 
-    # The deflate formats carry RGBA bytes (height * width * 4, row-major)
-    # behind a 1-byte flag: deflate-raw compressed (flag 1) when the content
-    # compresses -- decided from a cheap sample -- and as-is (flag 0)
-    # otherwise. No image codec on either side; fastest for local / LAN
-    # connections. They differ in background (deflate_rgb renders on opaque
-    # white like JPEG, deflate_rgba on transparent like PNG), and the server
-    # drops the alpha channel for deflate_rgb.
-    #
-    # "auto" renders on opaque white like JPEG and picks its wire encoding
-    # per frame, tagged by the same 1-byte flag: deflate-compressed RGBA
-    # (flag 1) when the frame compresses well losslessly -- typical 3D
-    # scenes, where deflate is also much cheaper than JPEG on both ends --
-    # and JPEG bytes (flag 2) otherwise, so high-entropy content (dense
-    # colored point clouds, splats, photo textures) never hits deflate's
-    # slow path or ships uncompressed.
-    format: Literal[
-        "image/jpeg", "image/png", "deflate_rgb", "deflate_rgba", "auto"
-    ]
+    format: Literal["image/jpeg", "image/png"]
     height: int
     width: int
     quality: int

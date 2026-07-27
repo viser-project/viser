@@ -9,7 +9,6 @@ import os
 import threading
 import time
 import warnings
-import zlib
 from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -502,9 +501,7 @@ class CameraHandle:
         self,
         height: int,
         width: int,
-        transport_format: Literal[
-            "auto", "png", "jpeg", "deflate_rgb", "deflate_rgba"
-        ] = "auto",
+        transport_format: Literal["png", "jpeg"] = "jpeg",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -513,24 +510,10 @@ class CameraHandle:
         Args:
             height: Height of rendered image. Should be <= the browser height.
             width: Width of rendered image. Should be <= the browser width.
-            transport_format: Image transport format. AUTO (default) returns an (H, W, 3) RGB array
-                rendered on an opaque white background and picks its wire encoding per frame: frames
-                that compress well losslessly (typical 3D scenes) are sent as losslessly compressed
-                pixels -- pixel-exact and much cheaper than JPEG on both ends -- while high-entropy
-                frames (dense colored point clouds, splats, photo textures, where lossless compression
-                is slow AND ineffective) fall back to JPEG. JPEG always returns a lossy (H, W, 3) RGB
-                array with a small payload on any content. The DEFLATE formats skip image codecs
-                unconditionally: DEFLATE_RGB returns a lossless (H, W, 3) RGB array on white and
-                DEFLATE_RGBA a lossless (H, W, 4) RGBA array on a transparent background, deflate-
-                compressed on the wire when the content compresses, shipped uncompressed (width *
-                height * 4 bytes) otherwise. PNG returns a lossless (H, W, 4) RGBA array with a
-                compressed payload, but can cause memory issues on the frontend if called too quickly
-                for higher-resolution images.
-
-                .. versionchanged::
-                    The default changed from ``"jpeg"`` to ``"auto"``: same (H, W, 3) shape and white
-                    background, never meaningfully slower, and frames are pixel-exact whenever the
-                    content compresses well losslessly. Pass ``transport_format="jpeg"`` to force JPEG.
+            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
+                array with a small payload on any content. PNG returns a lossless (H, W, 4) RGBA array
+                with a transparent background, but can cause memory issues on the frontend if called
+                too quickly for higher-resolution images.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
@@ -739,9 +722,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray,
         position: tuple[float, float, float] | np.ndarray,
         fov: float,
-        transport_format: Literal[
-            "auto", "png", "jpeg", "deflate_rgb", "deflate_rgba"
-        ] = "auto",
+        transport_format: Literal["png", "jpeg"] = "jpeg",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -751,9 +732,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         height: int,
         width: int,
         *,
-        transport_format: Literal[
-            "auto", "png", "jpeg", "deflate_rgb", "deflate_rgba"
-        ] = "auto",
+        transport_format: Literal["png", "jpeg"] = "jpeg",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -765,9 +744,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray | None = None,
         position: tuple[float, float, float] | np.ndarray | None = None,
         fov: float | None = None,
-        transport_format: Literal[
-            "auto", "png", "jpeg", "deflate_rgb", "deflate_rgba"
-        ] = "auto",
+        transport_format: Literal["png", "jpeg"] = "jpeg",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -783,24 +760,10 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 be used.
             fov: Vertical field of view of the camera, in radians. If not provided, the
                 current camera position will be used.
-            transport_format: Image transport format. AUTO (default) returns an (H, W, 3) RGB array
-                rendered on an opaque white background and picks its wire encoding per frame: frames
-                that compress well losslessly (typical 3D scenes) are sent as losslessly compressed
-                pixels -- pixel-exact and much cheaper than JPEG on both ends -- while high-entropy
-                frames (dense colored point clouds, splats, photo textures, where lossless compression
-                is slow AND ineffective) fall back to JPEG. JPEG always returns a lossy (H, W, 3) RGB
-                array with a small payload on any content. The DEFLATE formats skip image codecs
-                unconditionally: DEFLATE_RGB returns a lossless (H, W, 3) RGB array on white and
-                DEFLATE_RGBA a lossless (H, W, 4) RGBA array on a transparent background, deflate-
-                compressed on the wire when the content compresses, shipped uncompressed (width *
-                height * 4 bytes) otherwise. PNG returns a lossless (H, W, 4) RGBA array with a
-                compressed payload, but can cause memory issues on the frontend if called too quickly
-                for higher-resolution images.
-
-                .. versionchanged::
-                    The default changed from ``"jpeg"`` to ``"auto"``: same (H, W, 3) shape and white
-                    background, never meaningfully slower, and frames are pixel-exact whenever the
-                    content compresses well losslessly. Pass ``transport_format="jpeg"`` to force JPEG.
+            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
+                array with a small payload on any content. PNG returns a lossless (H, W, 4) RGBA array
+                with a transparent background, but can cause memory issues on the frontend if called
+                too quickly for higher-resolution images.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
@@ -891,10 +854,8 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         # Import the decoder while the client is busy rendering: on first use
         # this import is slow, and doing it here (request already in flight)
-        # overlaps it with the round trip instead of adding to it. The
-        # deflate transports need no decoder at all.
-        if transport_format in ("auto", "jpeg", "png"):
-            import imageio.v3 as iio
+        # overlaps it with the round trip instead of adding to it.
+        import imageio.v3 as iio
 
         # Poll rather than wait unbounded: a client that DISCONNECTS (tab
         # closed, network drop) never sends a response, so this raises as soon
@@ -931,73 +892,6 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         if payload is None or len(payload) == 0:
             raise RuntimeError(
                 "Render request failed: the client could not capture a frame."
-            )
-        if transport_format == "auto":
-            # 1-byte flag chosen by the client per frame: 1 = deflate-raw
-            # compressed RGBA (content compressed well losslessly), 2 = JPEG
-            # bytes (fallback for high-entropy content). Both decode to
-            # (H, W, 3) RGB on the white background the client rendered with.
-            flag = payload[0]
-            if flag == 1:
-                try:
-                    inflated = zlib.decompress(memoryview(payload)[1:], wbits=-15)
-                except zlib.error as e:
-                    raise RuntimeError(
-                        "Render request failed: the client returned a "
-                        "corrupt compressed frame."
-                    ) from e
-                if len(inflated) != height * width * 4:
-                    raise RuntimeError(
-                        "Render request failed: the client returned "
-                        f"{len(inflated)} bytes, expected {height * width * 4} "
-                        f"for a raw {height}x{width} RGBA frame."
-                    )
-                rgba = np.frombuffer(inflated, np.uint8).reshape(height, width, 4)
-                return rgba[:, :, :3].copy()
-            elif flag == 2:
-                try:
-                    return iio.imread(
-                        io.BytesIO(memoryview(payload)[1:]), extension=".jpeg"
-                    )
-                except Exception as e:
-                    raise RuntimeError(
-                        "Render request failed: the client could not capture a frame."
-                    ) from e
-            raise RuntimeError(f"Render request failed: unknown payload flag {flag}.")
-        if transport_format in ("deflate_rgb", "deflate_rgba"):
-            # RGBA bytes behind a 1-byte flag: 1 means the client
-            # deflate-compressed the pixels (typical renders compress
-            # 100-1000x for a few ms; the client sends flag 0, uncompressed,
-            # when a content sample shows compression isn't worth its CPU --
-            # see maybeDeflateRenderPayload in MessageHandler.tsx). Then just
-            # reshape, dropping the -- all-255, opaque-background -- alpha
-            # channel for deflate_rgb. The slice/copy also makes the returned
-            # array writable (np.frombuffer views of bytes are read-only).
-            flag = payload[0]
-            data: bytes | memoryview = memoryview(payload)[1:]
-            if flag == 1:
-                try:
-                    data = zlib.decompress(data, wbits=-15)
-                except zlib.error as e:
-                    raise RuntimeError(
-                        "Render request failed: the client returned a "
-                        "corrupt compressed frame."
-                    ) from e
-            elif flag != 0:
-                raise RuntimeError(
-                    f"Render request failed: unknown payload flag {flag}."
-                )
-            if len(data) != height * width * 4:
-                raise RuntimeError(
-                    "Render request failed: the client returned "
-                    f"{len(data)} bytes, expected {height * width * 4} "
-                    f"for a raw {height}x{width} RGBA frame."
-                )
-            rgba = np.frombuffer(data, np.uint8).reshape(height, width, 4)
-            return (
-                rgba[:, :, :3].copy()
-                if transport_format == "deflate_rgb"
-                else rgba.copy()
             )
         try:
             return iio.imread(

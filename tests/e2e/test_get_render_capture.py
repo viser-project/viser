@@ -3,11 +3,11 @@
 The client-side capture path is latency-optimized: a request that arrives
 alone captures in the same frame it is processed (after the SceneTree pose
 appliers), a request that arrives alongside scene updates waits exactly one
-frame for React to commit them, JPEG/PNG encoding happens off the
-message-handling critical path, and the deflate_rgb/deflate_rgba transports skip
-image encoding entirely. These tests pin the contract those optimizations must
-preserve: a frame returned by get_render() reflects every scene update made
-before the call, and every transport format returns sane pixels.
+frame for React to commit them, and JPEG/PNG encoding happens off the
+message-handling critical path. These tests pin the contract those
+optimizations must preserve: a frame returned by get_render() reflects every
+scene update made before the call, and both transport formats return sane
+pixels.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ def test_get_render_reflects_prior_scene_updates(
         for i, color in enumerate(colors):
             box.color = color
             img = client.get_render(
-                height=96, width=128, transport_format="deflate_rgba", timeout=30.0
+                height=96, width=128, transport_format="png", timeout=30.0
             )
             center = _center_mean(img)
             expected_channel = int(np.argmax(color))
@@ -131,9 +131,7 @@ def test_get_render_reflects_fresh_node_poses(
             )
             time.sleep(1.0)
             truth[x] = centroid_x(
-                client.get_render(
-                    height=h, width=w, transport_format="deflate_rgba", timeout=30
-                )
+                client.get_render(height=h, width=w, transport_format="png", timeout=30)
             )
         own_server.scene.remove_by_name("/truth")
         time.sleep(0.5)
@@ -155,7 +153,7 @@ def test_get_render_reflects_fresh_node_poses(
                 position=(x, 0, 0),
             )
             img = client.get_render(
-                height=h, width=w, transport_format="deflate_rgba", timeout=30.0
+                height=h, width=w, transport_format="png", timeout=30.0
             )
             cx = centroid_x(img)
             assert np.isfinite(cx) and (cx < mid) == (truth[x] < mid), (
@@ -171,11 +169,11 @@ def test_get_render_reflects_fresh_node_poses(
 def test_get_render_transport_formats_agree(
     own_server: viser.ViserServer, browser: Browser
 ) -> None:
-    """All transport formats return correctly-shaped arrays of the same
-    scene: JPEG and deflate_rgb (H, W, 3) on white; PNG and deflate_rgba (H, W, 4)
-    on transparent -- with the lossless formats agreeing on the center
-    pixels, corner pixels showing each format's background convention, and
-    repeated solo captures (the same-frame fast path) staying stable."""
+    """Both transport formats return correctly-shaped arrays of the same
+    scene: JPEG (H, W, 3) on white, PNG (H, W, 4) on transparent -- agreeing
+    on the center pixels, with corner pixels showing each format's
+    background convention, and repeated solo captures (the same-frame fast
+    path) staying stable. The default is JPEG."""
     client, page, context = _connect_client(own_server, browser)
     try:
         own_server.scene.add_box(
@@ -189,9 +187,7 @@ def test_get_render_transport_formats_agree(
         prev = None
         for _ in range(40):
             cur = _center_mean(
-                client.get_render(
-                    height=h, width=w, transport_format="deflate_rgba", timeout=30
-                )
+                client.get_render(height=h, width=w, transport_format="png", timeout=30)
             )
             if prev is not None and np.allclose(cur, prev, atol=2.0):
                 break
@@ -199,52 +195,31 @@ def test_get_render_transport_formats_agree(
             time.sleep(0.1)
         jpeg = client.get_render(height=h, width=w, transport_format="jpeg", timeout=30)
         png = client.get_render(height=h, width=w, transport_format="png", timeout=30)
-        raw = client.get_render(
-            height=h, width=w, transport_format="deflate_rgba", timeout=30
-        )
-        rgb = client.get_render(
-            height=h, width=w, transport_format="deflate_rgb", timeout=30
-        )
         assert jpeg.shape == (h, w, 3) and jpeg.dtype == np.uint8
         assert png.shape == (h, w, 4) and png.dtype == np.uint8
-        assert raw.shape == (h, w, 4) and raw.dtype == np.uint8
-        assert rgb.shape == (h, w, 3) and rgb.dtype == np.uint8
-        # Same-background formats agree on the full center region...
-        assert np.allclose(_center_mean(png), _center_mean(raw), atol=3.0), (
-            f"png center {_center_mean(png)} != raw center {_center_mean(raw)}"
-        )
-        assert np.allclose(_center_mean(jpeg), _center_mean(rgb), atol=12.0)
-        # ...while rgb-vs-rgba are compared only where the box is fully
-        # opaque: background pixels legitimately differ (white vs
-        # transparent), and the center window can catch some.
-        mask = raw[:, :, 3] == 255
+        # The formats agree where the box is fully opaque (background pixels
+        # legitimately differ: white for JPEG, transparent for PNG).
+        mask = png[:, :, 3] == 255
         assert mask.mean() > 0.02, "no opaque pixels to compare"
         assert np.allclose(
-            rgb[mask].mean(axis=0), raw[mask][:, :3].mean(axis=0), atol=3.0
-        ), f"rgb {rgb[mask].mean(axis=0)} != rgba {raw[mask][:, :3].mean(axis=0)}"
-        # The center is opaque in the alpha formats.
-        assert int(raw[h // 2, w // 2, 3]) == 255
-        assert int(png[h // 2, w // 2, 3]) == 255
-        # Background conventions: the corner is off-scene from the default
-        # camera -- transparent for the RGBA formats, white for the RGB ones.
-        assert int(raw[0, 0, 3]) == 0 and int(png[0, 0, 3]) == 0
-        assert np.all(rgb[0, 0] >= 250) and np.all(jpeg[0, 0] >= 245)
+            jpeg[mask].mean(axis=0), png[mask][:, :3].mean(axis=0), atol=12.0
+        ), f"jpeg {jpeg[mask].mean(axis=0)} != png {png[mask][:, :3].mean(axis=0)}"
+        # Background conventions at an off-scene corner.
+        assert int(png[0, 0, 3]) == 0
+        assert np.all(jpeg[0, 0] >= 245)
 
-        # The default ("auto") returns (H, W, 3) on white. On this simple
-        # scene the content compresses far beyond auto's lossless threshold,
-        # so the frame must be pixel-exact against deflate_rgb -- proof the
-        # lossless wire path engaged end to end.
+        # The default is JPEG: same shape and white background.
         default = client.get_render(height=h, width=w, timeout=30)
         assert default.shape == (h, w, 3) and default.dtype == np.uint8
-        assert np.all(default[0, 0] >= 250)
-        assert np.allclose(default[mask].mean(axis=0), rgb[mask].mean(axis=0), atol=2.0)
+        assert np.all(default[0, 0] >= 245)
+        assert np.allclose(
+            default[mask].mean(axis=0), jpeg[mask].mean(axis=0), atol=12.0
+        )
 
         # Back-to-back solo captures (no interleaved scene updates) take the
         # same-frame capture path; they must stay correct and identical-ish.
-        again = client.get_render(
-            height=h, width=w, transport_format="deflate_rgba", timeout=30
-        )
-        assert np.allclose(_center_mean(again), _center_mean(raw), atol=3.0)
+        again = client.get_render(height=h, width=w, transport_format="png", timeout=30)
+        assert np.allclose(_center_mean(again), _center_mean(png), atol=3.0)
     finally:
         page.close()  # type: ignore[attr-defined]
         context.close()  # type: ignore[attr-defined]

@@ -389,211 +389,23 @@ def _wait_for_request(
     raise AssertionError("get_render never registered/queued its request")
 
 
-def test_get_render_default_transport_is_auto() -> None:
-    """The default transport is "auto": lossless compressed pixels when the
-    frame compresses well (typical 3D scenes; much faster than JPEG on both
-    ends), JPEG otherwise. Measured on 720p frames, the fixed alternatives
-    each have a content class where they lose badly -- deflate grinds at
-    100-270ms on high-entropy frames (dense colored point clouds, splats,
-    photo textures) or ships them as multi-MB payloads, while JPEG wastes
-    30-45ms of codec work on frames that deflate 100x+ in ~13ms -- so only
-    the per-frame choice is never meaningfully slower than either."""
+def test_get_render_default_transport_is_jpeg() -> None:
+    """The transport lineup is deliberately just jpeg (default) and png.
+    Content-adaptive lossless transports (deflate-compressed raw pixels,
+    with or without a JPEG fallback) were built, measured, and removed:
+    every fixed lossless choice had a content class where it lost badly
+    (high-entropy frames deflate at ~2x for 100-270ms, or ship as multi-MB
+    payloads), and the per-frame adaptive variant's win over plain JPEG --
+    after the capture-path optimizations that benefit every format -- was
+    too small to justify two extra formats, a payload-flag protocol, and
+    sampling thresholds. See the branch history for the measurements."""
     import inspect
 
     from viser._viser import CameraHandle
 
     for fn in (ClientHandle.get_render, CameraHandle.get_render):
         default = inspect.signature(fn).parameters["transport_format"].default
-        assert default == "auto", f"{fn.__qualname__} default is {default!r}"
-
-
-def test_get_render_auto_transport_round_trip() -> None:
-    """The "auto" transport decodes both of its per-frame encodings to an
-    (H, W, 3) RGB array: flag 1 (deflate-compressed RGBA, alpha dropped,
-    lossless) and flag 2 (JPEG bytes). Unknown flags raise."""
-    import zlib
-
-    height, width = 4, 6
-    with _server() as server:
-        conn = _RecordingConn()
-        client = ClientHandle.__new__(ClientHandle)
-        client.client_id = 810_006
-        client._websock_connection = conn  # type: ignore[assignment]
-        client._viser_server = server
-        server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
-        try:
-            result: dict[str, object] = {}
-
-            def call() -> None:
-                try:
-                    # transport_format deliberately omitted: exercises the
-                    # "auto" default end to end.
-                    result["out"] = client.get_render(
-                        height=height,
-                        width=width,
-                        **_camera_kwargs(),
-                        timeout=5.0,
-                    )
-                except BaseException as e:  # noqa: BLE001
-                    result["err"] = e
-
-            def run_once(payload: bytes) -> object:
-                result.clear()
-                conn.sent.clear()
-                thread = threading.Thread(target=call)
-                thread.start()
-                cb, uuid = _wait_for_request(conn)
-                request = next(
-                    m
-                    for m in conn.sent
-                    if isinstance(m, _messages.GetRenderRequestMessage)
-                )
-                assert request.format == "auto"
-                cb(
-                    client.client_id,
-                    _messages.GetRenderResponseMessage(payload, uuid),
-                )
-                thread.join(timeout=8.0)
-                assert not thread.is_alive()
-                return result.get("out", result.get("err"))
-
-            pixels = np.arange(height * width * 4, dtype=np.uint8).reshape(
-                height, width, 4
-            )
-            compressor = zlib.compressobj(wbits=-15)
-            deflated = compressor.compress(pixels.tobytes()) + compressor.flush()
-            out = run_once(b"\x01" + deflated)
-            assert isinstance(out, np.ndarray), f"caller raised: {out!r}"
-            assert out.shape == (height, width, 3)
-            assert np.array_equal(out, pixels[:, :, :3])  # lossless
-
-            out = run_once(b"\x02" + _jpeg_payload(height, width))
-            assert isinstance(out, np.ndarray), f"caller raised: {out!r}"
-            assert out.shape == (height, width, 3)
-
-            err = run_once(b"\x07" + b"???")
-            assert isinstance(err, RuntimeError) and "unknown" in str(err)
-        finally:
-            server._connected_clients.pop(client.client_id, None)
-
-
-def test_get_render_deflate_transport_round_trip() -> None:
-    """transport_format="deflate_rgb" requests deflate_rgb on the wire and
-    returns the RGBA payload (1-byte flag + pixels, optionally
-    deflate-compressed) reshaped, alpha dropped, to a writable (H, W, 3)
-    array -- no image decode. deflate_rgba keeps all four channels.
-    Size-mismatched or corrupt payloads raise instead of returning
-    garbage."""
-    import zlib
-
-    height, width = 4, 6
-    with _server() as server:
-        conn = _RecordingConn()
-        client = ClientHandle.__new__(ClientHandle)
-        client.client_id = 810_004
-        client._websock_connection = conn  # type: ignore[assignment]
-        client._viser_server = server
-        server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
-        try:
-            result: dict[str, object] = {}
-
-            def call() -> None:
-                try:
-                    result["out"] = client.get_render(
-                        height=height,
-                        width=width,
-                        **_camera_kwargs(),
-                        transport_format="deflate_rgb",
-                        timeout=5.0,
-                    )
-                except BaseException as e:  # noqa: BLE001
-                    result["err"] = e
-
-            thread = threading.Thread(target=call)
-            thread.start()
-            cb, uuid = _wait_for_request(conn)
-            request = next(
-                m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
-            )
-            assert request.format == "deflate_rgb"
-            pixels = np.arange(height * width * 4, dtype=np.uint8).reshape(
-                height, width, 4
-            )
-            cb(
-                client.client_id,
-                _messages.GetRenderResponseMessage(b"\x00" + pixels.tobytes(), uuid),
-            )
-            thread.join(timeout=8.0)
-            assert not thread.is_alive()
-            assert "err" not in result, f"caller raised: {result.get('err')!r}"
-            out = cast(np.ndarray, result["out"])
-            assert out.shape == (height, width, 3)
-            assert out.dtype == np.uint8
-            assert np.array_equal(out, pixels[:, :, :3])
-            assert out.flags.writeable
-
-            # deflate_rgba keeps the alpha channel.
-            result.clear()
-            conn.sent.clear()
-
-            def call_rgba() -> None:
-                try:
-                    result["out"] = client.get_render(
-                        height=height,
-                        width=width,
-                        **_camera_kwargs(),
-                        transport_format="deflate_rgba",
-                        timeout=5.0,
-                    )
-                except BaseException as e:  # noqa: BLE001
-                    result["err"] = e
-
-            thread = threading.Thread(target=call_rgba)
-            thread.start()
-            cb, uuid = _wait_for_request(conn)
-            request = next(
-                m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
-            )
-            assert request.format == "deflate_rgba"
-            # Deliver deflate-compressed (flag 1), as the client does for
-            # compressible content.
-            compressor = zlib.compressobj(wbits=-15)
-            deflated = compressor.compress(pixels.tobytes()) + compressor.flush()
-            cb(
-                client.client_id,
-                _messages.GetRenderResponseMessage(b"\x01" + deflated, uuid),
-            )
-            thread.join(timeout=8.0)
-            assert not thread.is_alive()
-            assert "err" not in result, f"caller raised: {result.get('err')!r}"
-            out = cast(np.ndarray, result["out"])
-            assert out.shape == (height, width, 4)
-            assert np.array_equal(out, pixels)
-            assert out.flags.writeable
-
-            # Size-mismatched (flag 0) and corrupt-compressed (flag 1)
-            # payloads must raise, not reshape-crash or return garbage.
-            for bad_payload, match in [
-                (b"\x00" * 17, "expected"),
-                (b"\x01" + b"not deflate data", "corrupt"),
-            ]:
-                result.clear()
-                thread = threading.Thread(target=call)
-                conn.sent.clear()
-                thread.start()
-                cb, uuid = _wait_for_request(conn)
-                cb(
-                    client.client_id,
-                    _messages.GetRenderResponseMessage(bad_payload, uuid),
-                )
-                thread.join(timeout=8.0)
-                assert not thread.is_alive()
-                err = result.get("err")
-                assert isinstance(err, RuntimeError) and match in str(err), (
-                    f"payload {bad_payload[:8]!r}: got {err!r}"
-                )
-        finally:
-            server._connected_clients.pop(client.client_id, None)
+        assert default == "jpeg", f"{fn.__qualname__} default is {default!r}"
 
 
 def test_get_render_jpeg_quality_reaches_the_wire() -> None:
