@@ -942,12 +942,16 @@ function flagPrefixed(flag: number, data: Uint8Array): Uint8Array<ArrayBuffer> {
  * least `minRatio`; return null when it doesn't (or CompressionStream is
  * unavailable).
  *
- * Typical 3D renders (flat backgrounds, smooth shading) deflate 100-1000x
- * at a few milliseconds per megapixel. Incompressible content (photo
- * textures, dense splats) is the exception: deflate then costs tens of
- * milliseconds and saves nothing, so a small strided sample of the frame
- * decides first -- CompressionStream exposes no compression-level knob,
- * making a sample the only cheap way to bail out. */
+ * Measured on captured 720p frames: geometric scenes deflate 77-530x at
+ * 12-18ms, while high-entropy content (random-colored dense point clouds
+ * ~2.1x, photo/noise textures ~1.7x) costs 100-270ms -- deflate is slowest
+ * exactly where it saves least, and CompressionStream exposes no
+ * compression-level knob to cheapen it. A small strided sample therefore
+ * decides first, and the threshold below is deliberately well above
+ * break-even-on-bytes: in the low-ratio regime the CPU cost dwarfs the
+ * bandwidth saved on the local/LAN links these formats target. (A PNG-style
+ * per-row delta filter was also measured and does NOT improve any of these
+ * ratios; don't bother.) */
 async function deflateIfCompressible(
   pixels: Uint8Array<ArrayBuffer>,
   minRatio: number,
@@ -1355,7 +1359,7 @@ export function FrameSynchronizedMessageHandler() {
           );
           void (async () => {
             try {
-              const deflated = await deflateIfCompressible(pixels, 1.5);
+              const deflated = await deflateIfCompressible(pixels, 4.0);
               sendRenderResponse(
                 deflated === null
                   ? flagPrefixed(0, pixels)
