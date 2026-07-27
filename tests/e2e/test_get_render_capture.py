@@ -230,14 +230,12 @@ def test_get_render_transport_formats_agree(
         assert int(raw[0, 0, 3]) == 0 and int(png[0, 0, 3]) == 0
         assert np.all(rgb[0, 0] >= 250) and np.all(jpeg[0, 0] >= 245)
 
-        # The default ("auto") returns (H, W, 3) on white like jpeg/raw_rgb.
-        # On this simple scene the content compresses far beyond auto's
-        # lossless threshold, so the frame must be pixel-exact against
-        # raw_rgb -- proof the lossless wire path engaged end to end.
-        auto = client.get_render(height=h, width=w, timeout=30)
-        assert auto.shape == (h, w, 3) and auto.dtype == np.uint8
-        assert np.all(auto[0, 0] >= 250)
-        assert np.allclose(auto[mask].mean(axis=0), rgb[mask].mean(axis=0), atol=2.0)
+        # The default (raw_rgb) returns (H, W, 3) on white, pixel-exact
+        # against an explicit raw_rgb capture.
+        default = client.get_render(height=h, width=w, timeout=30)
+        assert default.shape == (h, w, 3) and default.dtype == np.uint8
+        assert np.all(default[0, 0] >= 250)
+        assert np.allclose(default[mask].mean(axis=0), rgb[mask].mean(axis=0), atol=2.0)
 
         # Back-to-back solo captures (no interleaved scene updates) take the
         # same-frame capture path; they must stay correct and identical-ish.

@@ -389,97 +389,29 @@ def _wait_for_request(
     raise AssertionError("get_render never registered/queued its request")
 
 
-def test_get_render_default_transport_is_auto() -> None:
-    """The default transport is "auto": lossless compressed pixels when the
-    content compresses at JPEG-competitive rates (typical 3D scenes; much
-    faster than JPEG), JPEG otherwise -- so unlike the raw formats, the
-    payload stays small on arbitrary content and connections, which is what
-    a default must guarantee."""
+def test_get_render_default_transport_is_raw_rgb() -> None:
+    """The default transport is "raw_rgb": lossless, no image codec on
+    either end, and adaptively deflate-compressed on the wire (typical 3D
+    scenes: 100x+), keeping bandwidth reasonable in the common case. The
+    worst case for incompressible content is uncompressed pixels; jpeg
+    stays available for slow links with such scenes."""
     import inspect
 
     from viser._viser import CameraHandle
 
     for fn in (ClientHandle.get_render, CameraHandle.get_render):
         default = inspect.signature(fn).parameters["transport_format"].default
-        assert default == "auto", f"{fn.__qualname__} default is {default!r}"
-
-
-def test_get_render_auto_transport_round_trip() -> None:
-    """The "auto" transport decodes both of its per-frame encodings to an
-    (H, W, 3) RGB array: flag 1 (deflate-compressed RGBA, alpha dropped,
-    lossless) and flag 2 (JPEG bytes). Unknown flags raise."""
-    import zlib
-
-    height, width = 4, 6
-    with _server() as server:
-        conn = _RecordingConn()
-        client = ClientHandle.__new__(ClientHandle)
-        client.client_id = 810_006
-        client._websock_connection = conn  # type: ignore[assignment]
-        client._viser_server = server
-        server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
-        try:
-            result: dict[str, object] = {}
-
-            def call() -> None:
-                try:
-                    # transport_format deliberately omitted: exercises the
-                    # "auto" default end to end.
-                    result["out"] = client.get_render(
-                        height=height,
-                        width=width,
-                        **_camera_kwargs(),
-                        timeout=5.0,
-                    )
-                except BaseException as e:  # noqa: BLE001
-                    result["err"] = e
-
-            def run_once(payload: bytes) -> object:
-                result.clear()
-                conn.sent.clear()
-                thread = threading.Thread(target=call)
-                thread.start()
-                cb, uuid = _wait_for_request(conn)
-                request = next(
-                    m
-                    for m in conn.sent
-                    if isinstance(m, _messages.GetRenderRequestMessage)
-                )
-                assert request.format == "auto"
-                cb(
-                    client.client_id,
-                    _messages.GetRenderResponseMessage(payload, uuid),
-                )
-                thread.join(timeout=8.0)
-                assert not thread.is_alive()
-                return result.get("out", result.get("err"))
-
-            pixels = np.arange(height * width * 4, dtype=np.uint8).reshape(
-                height, width, 4
-            )
-            compressor = zlib.compressobj(wbits=-15)
-            deflated = compressor.compress(pixels.tobytes()) + compressor.flush()
-            out = run_once(b"\x01" + deflated)
-            assert isinstance(out, np.ndarray), f"caller raised: {out!r}"
-            assert out.shape == (height, width, 3)
-            assert np.array_equal(out, pixels[:, :, :3])  # lossless
-
-            out = run_once(b"\x02" + _jpeg_payload(height, width))
-            assert isinstance(out, np.ndarray), f"caller raised: {out!r}"
-            assert out.shape == (height, width, 3)
-
-            err = run_once(b"\x07" + b"???")
-            assert isinstance(err, RuntimeError) and "unknown" in str(err)
-        finally:
-            server._connected_clients.pop(client.client_id, None)
+        assert default == "raw_rgb", f"{fn.__qualname__} default is {default!r}"
 
 
 def test_get_render_raw_transport_round_trip() -> None:
-    """transport_format="raw_rgb" requests raw_rgb on the wire and returns
-    the RGBA payload (1-byte flag + pixels, optionally deflate-compressed)
+    """The DEFAULT transport requests raw_rgb on the wire and returns the
+    RGBA payload (1-byte flag + pixels, optionally deflate-compressed)
     reshaped, alpha dropped, to a writable (H, W, 3) array -- no image
     decode. raw_rgba keeps all four channels. Size-mismatched or corrupt
-    payloads raise instead of returning garbage."""
+    payloads raise instead of returning garbage. (transport_format is
+    deliberately omitted in the first call: this also pins the default end
+    to end.)"""
     import zlib
 
     height, width = 4, 6
@@ -499,7 +431,6 @@ def test_get_render_raw_transport_round_trip() -> None:
                         height=height,
                         width=width,
                         **_camera_kwargs(),
-                        transport_format="raw_rgb",
                         timeout=5.0,
                     )
                 except BaseException as e:  # noqa: BLE001
