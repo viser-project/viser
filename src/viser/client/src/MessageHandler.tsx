@@ -1221,6 +1221,7 @@ export function FrameSynchronizedMessageHandler() {
       const targetWidth = viewerMutable.getRenderRequest!.width;
       const targetHeight = viewerMutable.getRenderRequest!.height;
       const format = viewerMutable.getRenderRequest!.format;
+      const quality = viewerMutable.getRenderRequest!.quality;
       // Captured now so the response can be correlated to its request even
       // after the async toBlob below.
       const renderUuid = viewerMutable.getRenderRequest!.render_uuid;
@@ -1375,23 +1376,30 @@ export function FrameSynchronizedMessageHandler() {
           // message handling can resume NOW: the async encode below overlaps
           // with whatever comes next, including the next capture.
           viewerMutable.getRenderRequestState = "ready";
-          bufferCanvas.toBlob((blob) => {
-            void (async () => {
-              try {
-                // `toBlob` can hand back null (e.g. canvas too large / OOM);
-                // fall back to an empty payload so the server's pending
-                // request resolves instead of hanging forever.
-                sendRenderResponse(
-                  blob === null
-                    ? new Uint8Array(0)
-                    : new Uint8Array(await blob.arrayBuffer()),
-                );
-              } catch (e) {
-                console.error("Failed to read rendered image:", e);
-                sendRenderResponse(new Uint8Array(0));
-              }
-            })();
-          }, format);
+          bufferCanvas.toBlob(
+            (blob) => {
+              void (async () => {
+                try {
+                  // `toBlob` can hand back null (e.g. canvas too large / OOM);
+                  // fall back to an empty payload so the server's pending
+                  // request resolves instead of hanging forever.
+                  sendRenderResponse(
+                    blob === null
+                      ? new Uint8Array(0)
+                      : new Uint8Array(await blob.arrayBuffer()),
+                  );
+                } catch (e) {
+                  console.error("Failed to read rendered image:", e);
+                  sendRenderResponse(new Uint8Array(0));
+                }
+              })();
+              // The quality argument applies to JPEG only (PNG's encoder has
+              // no knobs in the web API); omitting it would silently encode
+              // at Chrome's 0.92 default -- larger and no faster.
+            },
+            format,
+            format === "image/jpeg" ? quality / 100.0 : undefined,
+          );
         }
       } catch (e) {
         console.error("Render request failed:", e);

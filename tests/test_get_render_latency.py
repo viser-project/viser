@@ -523,6 +523,51 @@ def test_get_render_deflate_transport_round_trip() -> None:
             server._connected_clients.pop(client.client_id, None)
 
 
+def test_get_render_jpeg_quality_reaches_the_wire() -> None:
+    """jpeg_quality must land in the request's quality field (the client
+    passes it to toBlob; omitting it there silently encoded at Chrome's
+    0.92 default -- larger, no faster), and out-of-range values raise."""
+    with _server() as server:
+        conn = _RecordingConn()
+        client = ClientHandle.__new__(ClientHandle)
+        client.client_id = 810_007
+        client._websock_connection = conn  # type: ignore[assignment]
+        client._viser_server = server
+        server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
+        try:
+            with pytest.raises(ValueError, match="jpeg_quality"):
+                client.get_render(height=8, width=8, **_camera_kwargs(), jpeg_quality=0)
+
+            def call() -> None:
+                try:
+                    client.get_render(
+                        height=8,
+                        width=8,
+                        **_camera_kwargs(),
+                        transport_format="jpeg",
+                        jpeg_quality=55,
+                        timeout=2.0,
+                    )
+                except BaseException:  # noqa: BLE001
+                    pass
+
+            thread = threading.Thread(target=call)
+            thread.start()
+            cb, uuid = _wait_for_request(conn)
+            request = next(
+                m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
+            )
+            assert request.quality == 55
+            cb(
+                client.client_id,
+                _messages.GetRenderResponseMessage(_jpeg_payload(8, 8), uuid),
+            )
+            thread.join(timeout=5.0)
+            assert not thread.is_alive()
+        finally:
+            server._connected_clients.pop(client.client_id, None)
+
+
 def test_get_render_flushes_broadcast_buffer_first() -> None:
     """Scene updates made before get_render() ride the BROADCAST buffer while
     the render request rides the per-client buffer. get_render() must flush
