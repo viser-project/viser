@@ -129,6 +129,15 @@ export class CSM {
     this.lightMargin = data.lightMargin ?? 200;
 
     /**
+     * Normal-offset shadow bias, expressed in multiples of a cascade's
+     * world-space texel size (applied per cascade in _updateShadowBounds).
+     *
+     * @type {number}
+     * @default 1
+     */
+    this.normalBiasTexels = data.normalBiasTexels ?? 1;
+
+    /**
      * Custom split callback when using `mode='custom'`.
      *
      * @type {Function}
@@ -250,6 +259,13 @@ export class CSM {
       shadowCam.top = squaredBBWidth / 2;
       shadowCam.bottom = -squaredBBWidth / 2;
       shadowCam.updateProjectionMatrix();
+
+      // Each cascade's texels cover very different world-space extents, so a
+      // single depth bias can't suit them all; a normal-offset bias scaled to
+      // the cascade's texel size avoids acne in far cascades without
+      // detaching shadows in near ones.
+      light.shadow.normalBias =
+        (this.normalBiasTexels * squaredBBWidth) / this.shadowMapSize;
     }
   }
 
@@ -347,6 +363,17 @@ export class CSM {
         _bbox.expandByPoint(farVerts[j]);
       }
 
+      // Fit the shadow camera's depth range to what can actually cast into
+      // this cascade: lightMargin toward the light (off-screen casters) plus
+      // the cascade box's own depth. Geometry beyond that can only cast
+      // shadows past this cascade's receivers, and a tight range preserves
+      // depth-map precision that the lightFar default (2000) would waste.
+      shadowCam.far = Math.min(
+        this.lightFar,
+        this.lightMargin + (_bbox.max.z - _bbox.min.z),
+      );
+      shadowCam.updateProjectionMatrix();
+
       _bbox.getCenter(_center);
       _center.z = _bbox.max.z + this.lightMargin;
       _center.x = Math.floor(_center.x / texelWidth) * texelWidth;
@@ -410,4 +437,5 @@ export class CSM {
  * @property {number} [lightNear=1] - The light near value.
  * @property {number} [lightFar=2000] - The light far value.
  * @property {number} [lightMargin=200] - The light margin.
+ * @property {number} [normalBiasTexels=1] - Normal-offset bias in texels.
  **/

@@ -13,6 +13,7 @@ export interface CSMParameters {
   lightNear?: number;
   lightFar?: number;
   lightMargin?: number;
+  normalBiasTexels?: number;
   customSplitsCallback?: (
     cascades: number,
     near: number,
@@ -35,6 +36,7 @@ export class CSM {
   lightNear: number;
   lightFar: number;
   lightMargin: number;
+  normalBiasTexels: number;
   customSplitsCallback?: (
     cascades: number,
     near: number,
