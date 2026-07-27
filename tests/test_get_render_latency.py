@@ -524,9 +524,10 @@ def test_get_render_deflate_transport_round_trip() -> None:
 
 
 def test_get_render_jpeg_quality_reaches_the_wire() -> None:
-    """jpeg_quality must land in the request's quality field (the client
-    passes it to toBlob; omitting it there silently encoded at Chrome's
-    0.92 default -- larger, no faster), and out-of-range values raise."""
+    """The request's quality field carries the fixed JPEG quality (80); the
+    client passes it to toBlob, where omitting it silently encoded at
+    Chrome's 0.92 default -- measured strictly slower to encode AND decode,
+    and ~50% larger."""
     with _server() as server:
         conn = _RecordingConn()
         client = ClientHandle.__new__(ClientHandle)
@@ -535,8 +536,6 @@ def test_get_render_jpeg_quality_reaches_the_wire() -> None:
         client._viser_server = server
         server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
         try:
-            with pytest.raises(ValueError, match="jpeg_quality"):
-                client.get_render(height=8, width=8, **_camera_kwargs(), jpeg_quality=0)
 
             def call() -> None:
                 try:
@@ -545,7 +544,6 @@ def test_get_render_jpeg_quality_reaches_the_wire() -> None:
                         width=8,
                         **_camera_kwargs(),
                         transport_format="jpeg",
-                        jpeg_quality=55,
                         timeout=2.0,
                     )
                 except BaseException:  # noqa: BLE001
@@ -557,7 +555,7 @@ def test_get_render_jpeg_quality_reaches_the_wire() -> None:
             request = next(
                 m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
             )
-            assert request.quality == 55
+            assert request.quality == 80
             cb(
                 client.client_id,
                 _messages.GetRenderResponseMessage(_jpeg_payload(8, 8), uuid),

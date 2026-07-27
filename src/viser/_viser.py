@@ -505,7 +505,6 @@ class CameraHandle:
         transport_format: Literal[
             "png", "jpeg", "deflate_rgb", "deflate_rgba"
         ] = "deflate_rgb",
-        jpeg_quality: int = 80,
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -525,10 +524,6 @@ class CameraHandle:
                 compress (photo textures, dense splats). PNG returns a lossless (H, W, 4) RGBA array
                 with a compressed payload, but can cause memory issues on the frontend if called too
                 quickly for higher-resolution images.
-            jpeg_quality: JPEG encoding quality in [1, 100]; only used when
-                ``transport_format="jpeg"``. Lower values shrink the payload substantially (roughly
-                2x from 80 to 40) and speed up encoding somewhat; PNG and the deflate formats have no
-                equivalent knob (the browser exposes none for PNG).
 
                 .. versionchanged::
                     The default changed from ``"jpeg"`` to ``"deflate_rgb"``: same (H, W, 3) shape and
@@ -540,11 +535,7 @@ class CameraHandle:
                 never returns a frame.
         """
         return self._state.client.get_render(
-            height,
-            width,
-            transport_format=transport_format,
-            jpeg_quality=jpeg_quality,
-            timeout=timeout,
+            height, width, transport_format=transport_format, timeout=timeout
         )
 
 
@@ -749,7 +740,6 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         transport_format: Literal[
             "png", "jpeg", "deflate_rgb", "deflate_rgba"
         ] = "deflate_rgb",
-        jpeg_quality: int = 80,
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -762,7 +752,6 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         transport_format: Literal[
             "png", "jpeg", "deflate_rgb", "deflate_rgba"
         ] = "deflate_rgb",
-        jpeg_quality: int = 80,
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -777,7 +766,6 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         transport_format: Literal[
             "png", "jpeg", "deflate_rgb", "deflate_rgba"
         ] = "deflate_rgb",
-        jpeg_quality: int = 80,
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -804,10 +792,6 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 compress (photo textures, dense splats). PNG returns a lossless (H, W, 4) RGBA array
                 with a compressed payload, but can cause memory issues on the frontend if called too
                 quickly for higher-resolution images.
-            jpeg_quality: JPEG encoding quality in [1, 100]; only used when
-                ``transport_format="jpeg"``. Lower values shrink the payload substantially (roughly
-                2x from 80 to 40) and speed up encoding somewhat; PNG and the deflate formats have no
-                equivalent knob (the browser exposes none for PNG).
 
                 .. versionchanged::
                     The default changed from ``"jpeg"`` to ``"deflate_rgb"``: same (H, W, 3) shape and
@@ -818,9 +802,6 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 either way. Set this to bound a client that stays connected but
                 never returns a frame (raises ``TimeoutError``).
         """
-
-        if not 1 <= jpeg_quality <= 100:
-            raise ValueError(f"jpeg_quality must be in [1, 100], got {jpeg_quality}.")
 
         # Listen for a render reseponse message, which should contain the rendered
         # image.
@@ -885,8 +866,12 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 else ("image/png" if transport_format == "png" else transport_format),
                 height=height,
                 width=width,
-                # Only used for JPEG.
-                quality=jpeg_quality,
+                # Only used for JPEG. Measured: JPEG speed and size move
+                # together (lower quality = fewer surviving DCT coefficients
+                # = less entropy-coding work on both ends), and 80 sits near
+                # the speed plateau while staying fidelity-safe. Chrome's
+                # 0.92 toBlob default is strictly slower and larger.
+                quality=80,
                 position=cast_vector(
                     position if position is not None else self.camera.position, 3
                 ),
