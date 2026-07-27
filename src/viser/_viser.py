@@ -502,7 +502,9 @@ class CameraHandle:
         self,
         height: int,
         width: int,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
+        transport_format: Literal[
+            "png", "jpeg", "deflate_rgb", "deflate_rgba"
+        ] = "deflate_rgb",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -511,12 +513,12 @@ class CameraHandle:
         Args:
             height: Height of rendered image. Should be <= the browser height.
             width: Width of rendered image. Should be <= the browser width.
-            transport_format: Image transport format. The raw formats skip image encoding and decoding
+            transport_format: Image transport format. The deflate formats skip image encoding and decoding
                 entirely; frames are losslessly deflate-compressed on the wire whenever the content
                 compresses (typical 3D scenes: 100x or more, at a few milliseconds), with a worst case
                 of the full width * height * 4 bytes per frame (~8 MB at 1080p) for incompressible
-                content. RAW_RGB (default) returns a lossless (H, W, 3) RGB array on an opaque white
-                background; RAW_RGBA a lossless (H, W, 4) RGBA array on a transparent background. JPEG
+                content. DEFLATE_RGB (default) returns a lossless (H, W, 3) RGB array on an opaque white
+                background; DEFLATE_RGBA a lossless (H, W, 4) RGBA array on a transparent background. JPEG
                 returns a lossy (H, W, 3) RGB array whose payload stays small on ANY content; prefer it
                 when clients connect over slow or remote links (e.g. share URLs) and scenes may not
                 compress (photo textures, dense splats). PNG returns a lossless (H, W, 4) RGBA array
@@ -524,7 +526,7 @@ class CameraHandle:
                 quickly for higher-resolution images.
 
                 .. versionchanged::
-                    The default changed from ``"jpeg"`` to ``"raw_rgb"``: same (H, W, 3) shape and
+                    The default changed from ``"jpeg"`` to ``"deflate_rgb"``: same (H, W, 3) shape and
                     white background, but frames are now lossless and typically faster. Pass
                     ``transport_format="jpeg"`` to recover the previous behavior.
             timeout: Optional maximum seconds to wait for the frame. ``None``
@@ -735,7 +737,9 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray,
         position: tuple[float, float, float] | np.ndarray,
         fov: float,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
+        transport_format: Literal[
+            "png", "jpeg", "deflate_rgb", "deflate_rgba"
+        ] = "deflate_rgb",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -745,7 +749,9 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         height: int,
         width: int,
         *,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
+        transport_format: Literal[
+            "png", "jpeg", "deflate_rgb", "deflate_rgba"
+        ] = "deflate_rgb",
         timeout: float | None = None,
     ) -> np.ndarray: ...
 
@@ -757,7 +763,9 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         wxyz: tuple[float, float, float, float] | np.ndarray | None = None,
         position: tuple[float, float, float] | np.ndarray | None = None,
         fov: float | None = None,
-        transport_format: Literal["png", "jpeg", "raw_rgb", "raw_rgba"] = "raw_rgb",
+        transport_format: Literal[
+            "png", "jpeg", "deflate_rgb", "deflate_rgba"
+        ] = "deflate_rgb",
         timeout: float | None = None,
     ) -> np.ndarray:
         """Request a render from a client, block until it's done and received, then
@@ -773,12 +781,12 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 be used.
             fov: Vertical field of view of the camera, in radians. If not provided, the
                 current camera position will be used.
-            transport_format: Image transport format. The raw formats skip image encoding and decoding
+            transport_format: Image transport format. The deflate formats skip image encoding and decoding
                 entirely; frames are losslessly deflate-compressed on the wire whenever the content
                 compresses (typical 3D scenes: 100x or more, at a few milliseconds), with a worst case
                 of the full width * height * 4 bytes per frame (~8 MB at 1080p) for incompressible
-                content. RAW_RGB (default) returns a lossless (H, W, 3) RGB array on an opaque white
-                background; RAW_RGBA a lossless (H, W, 4) RGBA array on a transparent background. JPEG
+                content. DEFLATE_RGB (default) returns a lossless (H, W, 3) RGB array on an opaque white
+                background; DEFLATE_RGBA a lossless (H, W, 4) RGBA array on a transparent background. JPEG
                 returns a lossy (H, W, 3) RGB array whose payload stays small on ANY content; prefer it
                 when clients connect over slow or remote links (e.g. share URLs) and scenes may not
                 compress (photo textures, dense splats). PNG returns a lossless (H, W, 4) RGBA array
@@ -786,7 +794,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 quickly for higher-resolution images.
 
                 .. versionchanged::
-                    The default changed from ``"jpeg"`` to ``"raw_rgb"``: same (H, W, 3) shape and
+                    The default changed from ``"jpeg"`` to ``"deflate_rgb"``: same (H, W, 3) shape and
                     white background, but frames are now lossless and typically faster. Pass
                     ``transport_format="jpeg"`` to recover the previous behavior.
             timeout: Optional maximum seconds to wait for the frame. ``None``
@@ -877,8 +885,8 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         # Import the decoder while the client is busy rendering: on first use
         # this import is slow, and doing it here (request already in flight)
-        # overlaps it with the round trip instead of adding to it. The raw
-        # transports need no decoder at all.
+        # overlaps it with the round trip instead of adding to it. The
+        # deflate transports need no decoder at all.
         if transport_format in ("jpeg", "png"):
             import imageio.v3 as iio
 
@@ -918,14 +926,14 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             raise RuntimeError(
                 "Render request failed: the client could not capture a frame."
             )
-        if transport_format in ("raw_rgb", "raw_rgba"):
+        if transport_format in ("deflate_rgb", "deflate_rgba"):
             # RGBA bytes behind a 1-byte flag: 1 means the client
             # deflate-compressed the pixels (typical renders compress
             # 100-1000x for a few ms; the client sends flag 0, uncompressed,
             # when a content sample shows compression isn't worth its CPU --
             # see maybeDeflateRenderPayload in MessageHandler.tsx). Then just
             # reshape, dropping the -- all-255, opaque-background -- alpha
-            # channel for raw_rgb. The slice/copy also makes the returned
+            # channel for deflate_rgb. The slice/copy also makes the returned
             # array writable (np.frombuffer views of bytes are read-only).
             flag = payload[0]
             data: bytes | memoryview = memoryview(payload)[1:]
@@ -939,7 +947,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     ) from e
             elif flag != 0:
                 raise RuntimeError(
-                    f"Render request failed: unknown raw payload flag {flag}."
+                    f"Render request failed: unknown payload flag {flag}."
                 )
             if len(data) != height * width * 4:
                 raise RuntimeError(
@@ -949,7 +957,9 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 )
             rgba = np.frombuffer(data, np.uint8).reshape(height, width, 4)
             return (
-                rgba[:, :, :3].copy() if transport_format == "raw_rgb" else rgba.copy()
+                rgba[:, :, :3].copy()
+                if transport_format == "deflate_rgb"
+                else rgba.copy()
             )
         try:
             return iio.imread(

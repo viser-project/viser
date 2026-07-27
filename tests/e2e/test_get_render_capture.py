@@ -4,7 +4,7 @@ The client-side capture path is latency-optimized: a request that arrives
 alone captures in the same frame it is processed (after the SceneTree pose
 appliers), a request that arrives alongside scene updates waits exactly one
 frame for React to commit them, JPEG/PNG encoding happens off the
-message-handling critical path, and the raw_rgb/raw_rgba transports skip
+message-handling critical path, and the deflate_rgb/deflate_rgba transports skip
 image encoding entirely. These tests pin the contract those optimizations must
 preserve: a frame returned by get_render() reflects every scene update made
 before the call, and every transport format returns sane pixels.
@@ -91,7 +91,7 @@ def test_get_render_reflects_prior_scene_updates(
         for i, color in enumerate(colors):
             box.color = color
             img = client.get_render(
-                height=96, width=128, transport_format="raw_rgba", timeout=30.0
+                height=96, width=128, transport_format="deflate_rgba", timeout=30.0
             )
             center = _center_mean(img)
             expected_channel = int(np.argmax(color))
@@ -132,7 +132,7 @@ def test_get_render_reflects_fresh_node_poses(
             time.sleep(1.0)
             truth[x] = centroid_x(
                 client.get_render(
-                    height=h, width=w, transport_format="raw_rgba", timeout=30
+                    height=h, width=w, transport_format="deflate_rgba", timeout=30
                 )
             )
         own_server.scene.remove_by_name("/truth")
@@ -155,7 +155,7 @@ def test_get_render_reflects_fresh_node_poses(
                 position=(x, 0, 0),
             )
             img = client.get_render(
-                height=h, width=w, transport_format="raw_rgba", timeout=30.0
+                height=h, width=w, transport_format="deflate_rgba", timeout=30.0
             )
             cx = centroid_x(img)
             assert np.isfinite(cx) and (cx < mid) == (truth[x] < mid), (
@@ -172,7 +172,7 @@ def test_get_render_transport_formats_agree(
     own_server: viser.ViserServer, browser: Browser
 ) -> None:
     """All transport formats return correctly-shaped arrays of the same
-    scene: JPEG and raw_rgb (H, W, 3) on white; PNG and raw_rgba (H, W, 4)
+    scene: JPEG and deflate_rgb (H, W, 3) on white; PNG and deflate_rgba (H, W, 4)
     on transparent -- with the lossless formats agreeing on the center
     pixels, corner pixels showing each format's background convention, and
     repeated solo captures (the same-frame fast path) staying stable."""
@@ -190,7 +190,7 @@ def test_get_render_transport_formats_agree(
         for _ in range(40):
             cur = _center_mean(
                 client.get_render(
-                    height=h, width=w, transport_format="raw_rgba", timeout=30
+                    height=h, width=w, transport_format="deflate_rgba", timeout=30
                 )
             )
             if prev is not None and np.allclose(cur, prev, atol=2.0):
@@ -200,10 +200,10 @@ def test_get_render_transport_formats_agree(
         jpeg = client.get_render(height=h, width=w, transport_format="jpeg", timeout=30)
         png = client.get_render(height=h, width=w, transport_format="png", timeout=30)
         raw = client.get_render(
-            height=h, width=w, transport_format="raw_rgba", timeout=30
+            height=h, width=w, transport_format="deflate_rgba", timeout=30
         )
         rgb = client.get_render(
-            height=h, width=w, transport_format="raw_rgb", timeout=30
+            height=h, width=w, transport_format="deflate_rgb", timeout=30
         )
         assert jpeg.shape == (h, w, 3) and jpeg.dtype == np.uint8
         assert png.shape == (h, w, 4) and png.dtype == np.uint8
@@ -230,8 +230,8 @@ def test_get_render_transport_formats_agree(
         assert int(raw[0, 0, 3]) == 0 and int(png[0, 0, 3]) == 0
         assert np.all(rgb[0, 0] >= 250) and np.all(jpeg[0, 0] >= 245)
 
-        # The default (raw_rgb) returns (H, W, 3) on white, pixel-exact
-        # against an explicit raw_rgb capture.
+        # The default (deflate_rgb) returns (H, W, 3) on white, pixel-exact
+        # against an explicit deflate_rgb capture.
         default = client.get_render(height=h, width=w, timeout=30)
         assert default.shape == (h, w, 3) and default.dtype == np.uint8
         assert np.all(default[0, 0] >= 250)
@@ -240,7 +240,7 @@ def test_get_render_transport_formats_agree(
         # Back-to-back solo captures (no interleaved scene updates) take the
         # same-frame capture path; they must stay correct and identical-ish.
         again = client.get_render(
-            height=h, width=w, transport_format="raw_rgba", timeout=30
+            height=h, width=w, transport_format="deflate_rgba", timeout=30
         )
         assert np.allclose(_center_mean(again), _center_mean(raw), atol=3.0)
     finally:

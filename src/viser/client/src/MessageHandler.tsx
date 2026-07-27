@@ -1319,13 +1319,13 @@ export function FrameSynchronizedMessageHandler() {
             true,
           );
 
-        // Configure for capture. JPEG and raw_rgb are RGB results, rendered
-        // on an opaque white background; PNG and raw_rgba are RGBA with a
+        // Configure for capture. JPEG and deflate_rgb are RGB results, rendered
+        // on an opaque white background; PNG and deflate_rgba are RGBA with a
         // transparent background.
         gl.setSize(targetWidth, targetHeight);
         gl.setClearColor(0xffffff);
         gl.setClearAlpha(
-          format === "image/jpeg" || format === "raw_rgb" ? 1.0 : 0.0,
+          format === "image/jpeg" || format === "deflate_rgb" ? 1.0 : 0.0,
         );
 
         // Render the scene.
@@ -1341,11 +1341,11 @@ export function FrameSynchronizedMessageHandler() {
         const ctx = bufferCanvas.getContext("2d")!;
         ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
 
-        if (format === "raw_rgb" || format === "raw_rgba") {
-          // RGBA readback. The raw formats send pixels either as-is or
-          // deflate-compressed, decided from a content sample (see
+        if (format === "deflate_rgb" || format === "deflate_rgba") {
+          // RGBA readback. The deflate formats send pixels either
+          // deflate-compressed or as-is, decided from a content sample (see
           // deflateIfCompressible / flagPrefixed). The server drops the
-          // (uniformly opaque) alpha channel for raw_rgb.
+          // (uniformly opaque) alpha channel for deflate_rgb.
           const imageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
           viewerMutable.getRenderRequestState = "ready";
           const pixels = new Uint8Array(

@@ -389,8 +389,8 @@ def _wait_for_request(
     raise AssertionError("get_render never registered/queued its request")
 
 
-def test_get_render_default_transport_is_raw_rgb() -> None:
-    """The default transport is "raw_rgb": lossless, no image codec on
+def test_get_render_default_transport_is_deflate_rgb() -> None:
+    """The default transport is "deflate_rgb": lossless, no image codec on
     either end, and adaptively deflate-compressed on the wire (typical 3D
     scenes: 100x+), keeping bandwidth reasonable in the common case. The
     worst case for incompressible content is uncompressed pixels; jpeg
@@ -401,14 +401,14 @@ def test_get_render_default_transport_is_raw_rgb() -> None:
 
     for fn in (ClientHandle.get_render, CameraHandle.get_render):
         default = inspect.signature(fn).parameters["transport_format"].default
-        assert default == "raw_rgb", f"{fn.__qualname__} default is {default!r}"
+        assert default == "deflate_rgb", f"{fn.__qualname__} default is {default!r}"
 
 
-def test_get_render_raw_transport_round_trip() -> None:
-    """The DEFAULT transport requests raw_rgb on the wire and returns the
+def test_get_render_deflate_transport_round_trip() -> None:
+    """The DEFAULT transport requests deflate_rgb on the wire and returns the
     RGBA payload (1-byte flag + pixels, optionally deflate-compressed)
     reshaped, alpha dropped, to a writable (H, W, 3) array -- no image
-    decode. raw_rgba keeps all four channels. Size-mismatched or corrupt
+    decode. deflate_rgba keeps all four channels. Size-mismatched or corrupt
     payloads raise instead of returning garbage. (transport_format is
     deliberately omitted in the first call: this also pins the default end
     to end.)"""
@@ -442,7 +442,7 @@ def test_get_render_raw_transport_round_trip() -> None:
             request = next(
                 m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
             )
-            assert request.format == "raw_rgb"
+            assert request.format == "deflate_rgb"
             pixels = np.arange(height * width * 4, dtype=np.uint8).reshape(
                 height, width, 4
             )
@@ -459,7 +459,7 @@ def test_get_render_raw_transport_round_trip() -> None:
             assert np.array_equal(out, pixels[:, :, :3])
             assert out.flags.writeable
 
-            # raw_rgba keeps the alpha channel.
+            # deflate_rgba keeps the alpha channel.
             result.clear()
             conn.sent.clear()
 
@@ -469,7 +469,7 @@ def test_get_render_raw_transport_round_trip() -> None:
                         height=height,
                         width=width,
                         **_camera_kwargs(),
-                        transport_format="raw_rgba",
+                        transport_format="deflate_rgba",
                         timeout=5.0,
                     )
                 except BaseException as e:  # noqa: BLE001
@@ -481,7 +481,7 @@ def test_get_render_raw_transport_round_trip() -> None:
             request = next(
                 m for m in conn.sent if isinstance(m, _messages.GetRenderRequestMessage)
             )
-            assert request.format == "raw_rgba"
+            assert request.format == "deflate_rgba"
             # Deliver deflate-compressed (flag 1), as the client does for
             # compressible content.
             compressor = zlib.compressobj(wbits=-15)
