@@ -828,9 +828,7 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._viser_server.flush()
         self._websock_connection.queue_message(
             _messages.GetRenderRequestMessage(
-                "image/jpeg"
-                if transport_format == "jpeg"
-                else ("image/png" if transport_format == "png" else transport_format),
+                "image/jpeg" if transport_format == "jpeg" else "image/png",
                 height=height,
                 width=width,
                 # Only used for JPEG. Measured: JPEG speed and size move

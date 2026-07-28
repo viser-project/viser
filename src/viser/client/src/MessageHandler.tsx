@@ -1330,9 +1330,15 @@ export function FrameSynchronizedMessageHandler() {
         }
       }
     },
-    // After SceneTree's pose appliers (-1000), before the frame's regular
-    // render (0).
-    -1,
+    // Between SceneTree's pose appliers (-1000) and the Gaussian splat
+    // per-frame hook (-100): capture must see this frame's poses, and the
+    // splat hook must run AFTER capture so it re-applies interactive-camera
+    // splat state (uniforms, group transforms, async sort) that the
+    // capture's virtual-camera updateCamera(..., blockingSort=true) call
+    // mutates -- capture only restores the sorted-index attribute itself.
+    // At a later priority, the frame's visible render would draw the
+    // interactive viewport with the virtual camera's splat state.
+    -500,
   );
 
   return null;

@@ -223,3 +223,69 @@ def test_get_render_transport_formats_agree(
     finally:
         page.close()  # type: ignore[attr-defined]
         context.close()  # type: ignore[attr-defined]
+
+
+def test_get_render_does_not_leak_capture_state_into_splat_view(
+    own_server: viser.ViserServer, browser: Browser
+) -> None:
+    """Capturing must not corrupt the INTERACTIVE Gaussian splat view. The
+    capture path calls the splat updateCamera with its virtual camera
+    (uniforms, group transforms, blocking sort) and only restores the
+    sorted-index attribute itself; it relies on running BEFORE the splat
+    per-frame hook (priority -100), which re-applies interactive-camera
+    state in the same frame. At a later priority, the frame's visible
+    render draws the viewport with the capture's splat uniforms -- observed
+    here as the capture's viewport size leaking across a frame boundary
+    into the splat material (an in-page rAF probe can only ever see it if
+    the same-frame repair did not happen)."""
+    client, page, context = _connect_client(own_server, browser)
+    try:
+        rng = np.random.default_rng(0)
+        n = 2000
+        own_server.scene.add_gaussian_splats(
+            "/splats",
+            centers=rng.normal(size=(n, 3)).astype(np.float32),
+            covariances=np.tile(np.eye(3, dtype=np.float32) * 0.005, (n, 1, 1)),
+            rgbs=rng.integers(0, 255, (n, 3), dtype=np.uint8),
+            opacities=rng.uniform(0.5, 1.0, (n, 1)).astype(np.float32),
+        )
+        time.sleep(4.0)  # Splat sorter + WASM warmup.
+        page.evaluate(  # type: ignore[attr-defined]
+            """
+            () => {
+              window.__viewportSamples = new Set();
+              const sample = () => {
+                const scene = window.__viserMutable && window.__viserMutable.scene;
+                if (scene) {
+                  scene.traverse((obj) => {
+                    const u = obj.material && obj.material.uniforms;
+                    if (u && u.viewport && Array.isArray(u.viewport.value)) {
+                      window.__viewportSamples.add(u.viewport.value.join('x'));
+                    }
+                  });
+                }
+                requestAnimationFrame(sample);
+              };
+              requestAnimationFrame(sample);
+            }
+            """
+        )
+        for _ in range(10):
+            img = client.get_render(
+                height=96, width=128, transport_format="jpeg", timeout=60.0
+            )
+            assert img.shape == (96, 128, 3)
+        time.sleep(0.5)
+        samples = page.evaluate(  # type: ignore[attr-defined]
+            "() => Array.from(window.__viewportSamples)"
+        )
+        assert "128x96" not in samples, (
+            f"capture-sized splat viewport leaked into the interactive view "
+            f"(observed uniform values: {sorted(samples)})"
+        )
+        # Sanity: the probe did observe the interactive viewport (i.e., it
+        # actually sampled splat material state).
+        assert len(samples) > 0
+    finally:
+        page.close()  # type: ignore[attr-defined]
+        context.close()  # type: ignore[attr-defined]
