@@ -75,7 +75,17 @@ def _make_buffered_client(
     ``server._connected_clients`` / ``_client_state_from_id`` afterwards."""
     loop = server._websock_server._background_event_loop
     assert loop is not None
-    buffer = AsyncMessageBuffer(loop, persistent_messages=False)
+
+    # Construct the buffer ON the server's event loop: before Python 3.10,
+    # asyncio.Event() binds its loop at construction time, so building the
+    # buffer on the test thread attaches its events to the wrong loop and
+    # the window generator explodes with "attached to a different loop".
+    # (The real client path constructs buffers inside the ws handler, i.e.
+    # on the loop, so it never hits this.)
+    async def _make_buffer() -> AsyncMessageBuffer:
+        return AsyncMessageBuffer(loop, persistent_messages=False)
+
+    buffer = asyncio.run_coroutine_threadsafe(_make_buffer(), loop).result(timeout=5.0)
     client_state = _ClientHandleState(buffer, loop)
     conn = WebsockClientConnection(client_id, client_state)
     client = ClientHandle.__new__(ClientHandle)
