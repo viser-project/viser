@@ -768,6 +768,16 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
                 never returns a frame (raises ``TimeoutError``).
+
+        Note:
+            Captures reflect all scene *state* updates (poses, colors, visibility,
+            geometry props) made before the call. Content that the browser decodes
+            or loads asynchronously -- large background/image textures, GLB assets,
+            environment maps -- is not awaited: a capture issued immediately after
+            such an update may still show the previous content if the decode hasn't
+            finished (more likely on fast displays, where frames are short relative
+            to decode time). When that matters, capture after the asset has had a
+            moment to load.
         """
 
         # Listen for a render reseponse message, which should contain the rendered
