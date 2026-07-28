@@ -2,21 +2,21 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Color, Matrix4, Vector3, Vector3Tuple } from "three";
-import { CSM, CSMParameters } from "./csm/CSM";
+import { ShadowCascades, ShadowCascadesParams } from "./shadows/ShadowCascades";
 // @ts-ignore
-import { CSMHelper } from "./csm/CSMHelper";
+import { CascadeHelper } from "./shadows/CascadeHelper";
 
-interface CsmDirectionalLightProps extends Omit<
-  CSMParameters,
+interface CascadedDirectionalLightProps extends Omit<
+  ShadowCascadesParams,
   "lightDirection" | "camera" | "parent"
 > {
   position?: Vector3Tuple; // Position of the light
   color?: number;
   castShadow?: boolean;
-  debug?: boolean; // Show CSM cascade visualization
+  debug?: boolean; // Show cascade visualization
 }
 
-export function CsmDirectionalLight({
+export function CascadedDirectionalLight({
   maxFar = 20,
   shadowMapSize = 1024,
   lightIntensity = 0.25,
@@ -30,7 +30,7 @@ export function CsmDirectionalLight({
   color = 0xffffff,
   castShadow = true,
   debug = false,
-}: CsmDirectionalLightProps) {
+}: CascadedDirectionalLightProps) {
   // Standard directional light for the non-shadow case.
   if (!castShadow) {
     return (
@@ -42,14 +42,15 @@ export function CsmDirectionalLight({
     );
   }
 
-  // Shadow-casting implementation with CSM.
+  // Shadow-casting implementation with approximate cascaded shadows; see
+  // the note in shadows/ShadowCascades.js for what this is and isn't.
   return (
-    <ShadowCsmLight
-      key="csm-shadow" // Force unmount/remount when toggling.
+    <CascadedShadowLight
+      key="cascaded-shadow" // Force unmount/remount when toggling.
       maxFar={maxFar}
       shadowMapSize={shadowMapSize}
       // One light is made for each cascade. All cascade lights illuminate
-      // every fragment (see the note in csm/CSM.js), so we split the
+      // every fragment (see the note in shadows/ShadowCascades.js), so we split the
       // intensity between them to keep the total unchanged.
       lightIntensity={lightIntensity / cascades}
       cascades={cascades}
@@ -66,7 +67,7 @@ export function CsmDirectionalLight({
 }
 
 // Separate component for the shadow-casting implementation to avoid hook conditionals.
-function ShadowCsmLight({
+function CascadedShadowLight({
   maxFar,
   shadowMapSize,
   lightIntensity,
@@ -79,7 +80,7 @@ function ShadowCsmLight({
   mode,
   color,
   debug = false,
-}: Omit<CsmDirectionalLightProps, "castShadow">) {
+}: Omit<CascadedDirectionalLightProps, "castShadow">) {
   const camera = useThree((three) => three.camera);
   const gl = useThree((three) => three.gl);
   const reversedDepth = gl.capabilities.reversedDepthBuffer;
@@ -96,7 +97,7 @@ function ShadowCsmLight({
     throw new Error("Could not find scene object in r3f context!");
   }, [scene_]);
 
-  const csmRef = useRef<CSM | null>(null);
+  const shadowCascadesRef = useRef<ShadowCascades | null>(null);
   const dummyGroupRef = useRef<THREE.Group>(null);
   const helperRef = useRef<any | null>(null);
 
@@ -117,7 +118,7 @@ function ShadowCsmLight({
   // typically a new identity on every render.
   const [positionX, positionY, positionZ] = position;
 
-  // Create the CSM instance.
+  // Create the ShadowCascades instance.
   useEffect(() => {
     const lightDirection = new Vector3(-positionX, -positionY, -positionZ);
     // A light at the world origin has no defined "toward origin" direction;
@@ -125,7 +126,7 @@ function ShadowCsmLight({
     if (lightDirection.lengthSq() === 0.0) lightDirection.y = -1;
     lightDirection.normalize();
 
-    const csm = new CSM({
+    const shadowCascades = new ShadowCascades({
       camera,
       cascades,
       lightDirection,
@@ -140,15 +141,15 @@ function ShadowCsmLight({
       shadowMapSize,
       reversedDepth,
     });
-    csm.lights.forEach((light) => {
+    shadowCascades.lights.forEach((light) => {
       light.color = colorRef.current;
     });
     prevProjection.copy(camera.projectionMatrix);
-    csmRef.current = csm;
+    shadowCascadesRef.current = shadowCascades;
 
     // Create debug helper if debug mode is enabled.
     if (debug) {
-      const helper = new CSMHelper(csm);
+      const helper = new CascadeHelper(shadowCascades);
       helper.displayFrustum = true;
       helper.displayPlanes = true;
       helper.displayShadowBounds = true;
@@ -163,9 +164,9 @@ function ShadowCsmLight({
         helperRef.current.dispose();
         helperRef.current = null;
       }
-      csm.remove();
-      csm.dispose();
-      csmRef.current = null;
+      shadowCascades.remove();
+      shadowCascades.dispose();
+      shadowCascadesRef.current = null;
     };
   }, [
     camera,
@@ -187,20 +188,21 @@ function ShadowCsmLight({
     prevProjection,
   ]);
 
-  // Update light color when the color changes, without recreating the CSM
-  // instance. Runs after the creation effect above, so the instance exists.
+  // Update light color when the color changes, without recreating the
+  // ShadowCascades instance. Runs after the creation effect above, so the
+  // instance exists.
   useEffect(() => {
-    if (csmRef.current) {
-      csmRef.current.lights.forEach((light) => {
+    if (shadowCascadesRef.current) {
+      shadowCascadesRef.current.lights.forEach((light) => {
         light.color = threeColor;
       });
     }
   }, [threeColor]);
 
-  // Update CSM on each frame and handle light direction changes.
+  // Update the cascades on each frame and handle light direction changes.
   useFrame(() => {
-    const csm = csmRef.current;
-    if (csm === null || dummyGroupRef.current === null) return;
+    const shadowCascades = shadowCascadesRef.current;
+    if (shadowCascades === null || dummyGroupRef.current === null) return;
 
     // Get the world position of the dummy group; the light points from there
     // toward the origin.
@@ -208,18 +210,17 @@ function ShadowCsmLight({
     direction.subVectors(origin, worldPosition);
     if (direction.lengthSq() === 0.0) direction.y = -1;
     direction.normalize();
-    csm.lightDirection.copy(direction);
+    shadowCascades.lightDirection.copy(direction);
 
     // Cascade splits and shadow bounds are derived from the camera's
     // projection; refresh them when it changes (window resize, fov/near/far
     // updates).
     if (!prevProjection.equals(camera.projectionMatrix)) {
       prevProjection.copy(camera.projectionMatrix);
-      csm.updateFrustums();
+      shadowCascades.updateFrustums();
     }
 
-    // Update CSM.
-    csm.update();
+    shadowCascades.update();
 
     // Update helper visualization if it exists.
     if (helperRef.current) {

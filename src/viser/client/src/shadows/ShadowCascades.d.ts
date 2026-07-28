@@ -1,6 +1,6 @@
 import { Camera, DirectionalLight, Object3D, Vector3 } from "three";
 
-export interface CSMParameters {
+export interface ShadowCascadesParams {
   camera: Camera;
   parent: Object3D;
   cascades?: number;
@@ -22,7 +22,7 @@ export interface CSMParameters {
   reversedDepth?: boolean;
 }
 
-export class CSM {
+export class ShadowCascades {
   camera: Camera;
   parent: Object3D;
   cascades: number;
@@ -43,7 +43,7 @@ export class CSM {
   ) => void;
   lights: DirectionalLight[];
 
-  constructor(data: CSMParameters);
+  constructor(data: ShadowCascadesParams);
 
   update(): void;
   updateFrustums(): void;

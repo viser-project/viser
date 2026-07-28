@@ -1,8 +1,8 @@
 import { Vector3, DirectionalLight, MathUtils, Matrix4, Box3 } from "three";
-import { CSMFrustum } from "./CSMFrustum.js";
+import { CascadeFrustum } from "./CascadeFrustum.js";
 
 const _cameraToLightMatrix = new Matrix4();
-const _lightSpaceFrustum = new CSMFrustum({ webGL: true });
+const _lightSpaceFrustum = new CascadeFrustum({ webGL: true });
 const _center = new Vector3();
 const _origin = new Vector3();
 const _bbox = new Box3();
@@ -13,23 +13,27 @@ const _lightOrientationMatrixInverse = new Matrix4();
 const _up = new Vector3(0, 1, 0);
 
 /**
- * Cascade-fitting math for cascaded shadow maps, trimmed down from three.js's
- * CSM addon (three/addons/csm/CSM.js).
+ * Approximate cascaded shadows for a directional light. Derived from
+ * three.js's CSM addon (three/addons/csm/CSM.js), keeping only the
+ * cascade-fitting math; the shader-injection half (setupMaterial/CSMShader)
+ * is removed.
  *
- * Unlike upstream, this class does NOT patch material shaders
- * (setupMaterial/CSMShader are removed). viser renders each cascade as an
- * ordinary shadow-casting DirectionalLight at intensity/cascades: every
- * fragment is lit by all cascade lights, and cascade "selection" happens
- * implicitly because fragments outside a cascade's shadow-camera bounds are
- * simply unshadowed by that cascade's light. This composes with any material
- * (streamed meshes, GLB imports, instanced meshes) without per-material
- * setup, at the cost of softer far shadows than true CSM.
+ * This is NOT cascaded shadow mapping in the standard sense: nothing selects
+ * a cascade per fragment. Each cascade is an ordinary shadow-casting
+ * DirectionalLight (at intensity/cascades) whose shadow camera is fitted to
+ * a slice of the view frustum. Every fragment is lit by all cascade lights,
+ * and a fragment only receives a cascade's shadow when it lands inside that
+ * cascade's shadow-camera bounds. The upside is that this composes with any
+ * material (streamed meshes, GLB imports, instanced meshes) with no
+ * per-material setup; the cost is that fully occluded points outside the
+ * nearer cascades' bounds keep part of their direct light, so distant
+ * shadows render lighter than true CSM would.
  */
-export class CSM {
+export class ShadowCascades {
   /**
-   * Constructs a new CSM instance.
+   * Constructs a new ShadowCascades instance.
    *
-   * @param {CSM~Data} data - The CSM data.
+   * @param {ShadowCascades~Data} data - The ShadowCascades data.
    */
   constructor(data) {
     /**
@@ -146,9 +150,9 @@ export class CSM {
     /**
      * The main frustum.
      *
-     * @type {CSMFrustum}
+     * @type {CascadeFrustum}
      */
-    this.mainFrustum = new CSMFrustum({
+    this.mainFrustum = new CascadeFrustum({
       webGL: true,
       reversedDepth: this.reversedDepth,
     });
@@ -156,13 +160,13 @@ export class CSM {
     /**
      * An array of frustums representing the cascades.
      *
-     * @type {Array<CSMFrustum>}
+     * @type {Array<CascadeFrustum>}
      */
     this.frustums = [];
 
     /**
      * An array of numbers in the range `[0,1]` the defines how the
-     * mainCSM frustum should be split up.
+     * main frustum should be split up.
      *
      * @type {Array<number>}
      */
@@ -182,7 +186,7 @@ export class CSM {
   }
 
   /**
-   * Creates the directional lights of this CSM instance.
+   * Creates the directional lights of this ShadowCascades instance.
    *
    * @private
    */
@@ -219,7 +223,7 @@ export class CSM {
   }
 
   /**
-   * Updates the shadow bounds of this CSM instance.
+   * Updates the shadow bounds of this ShadowCascades instance.
    *
    * @private
    */
@@ -254,7 +258,7 @@ export class CSM {
   }
 
   /**
-   * Computes the breaks of this CSM instance based on the scene's camera, number of cascades
+   * Computes the breaks of this ShadowCascades instance based on the scene's camera, number of cascades
    * and the selected split mode.
    *
    * @private
@@ -276,7 +280,9 @@ export class CSM {
         break;
       case "custom":
         if (this.customSplitsCallback === undefined)
-          console.error("CSM: Custom split scheme callback not defined.");
+          console.error(
+            "ShadowCascades: Custom split scheme callback not defined.",
+          );
         this.customSplitsCallback(this.cascades, camera.near, far, this.breaks);
         break;
     }
@@ -314,7 +320,7 @@ export class CSM {
   }
 
   /**
-   * Updates the CSM. This method must be called in your animation loop before
+   * Updates the ShadowCascades. This method must be called in your animation loop before
    * calling `renderer.render()`.
    */
   update() {
@@ -363,7 +369,7 @@ export class CSM {
   }
 
   /**
-   * Applications must call this method every time they change camera or CSM settings.
+   * Applications must call this method every time they change camera or ShadowCascades settings.
    */
   updateFrustums() {
     this._getBreaks();
@@ -372,7 +378,7 @@ export class CSM {
   }
 
   /**
-   * Applications must call this method when they remove the CSM usage from their scene.
+   * Applications must call this method when they remove the ShadowCascades usage from their scene.
    */
   remove() {
     for (let i = 0; i < this.lights.length; i++) {
@@ -394,9 +400,9 @@ export class CSM {
 }
 
 /**
- * Constructor data of `CSM`.
+ * Constructor data of `ShadowCascades`.
  *
- * @typedef {Object} CSM~Data
+ * @typedef {Object} ShadowCascades~Data
  * @property {Camera} camera - The scene's camera.
  * @property {Object3D} parent - The parent object, usually the scene.
  * @property {number} [cascades=3] - The number of cascades.

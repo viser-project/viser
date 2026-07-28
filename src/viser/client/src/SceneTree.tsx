@@ -42,7 +42,7 @@ import GeneratedGuiContainer from "./ControlPanel/Generated";
 import { LineSegments } from "./Line";
 import { Arrows } from "./Arrows";
 import { shadowArgs } from "./ShadowArgs";
-import { CsmDirectionalLight } from "./CsmDirectionalLight";
+import { CascadedDirectionalLight } from "./CascadedDirectionalLight";
 import { BasicMesh } from "./mesh/BasicMesh";
 import { BoxMesh } from "./mesh/BoxMesh";
 import { IcosphereMesh } from "./mesh/IcosphereMesh";
@@ -608,7 +608,7 @@ function createObjectFactory(
       return {
         makeObject: (ref, children) => (
           <group ref={ref}>
-            <CsmDirectionalLight
+            <CascadedDirectionalLight
               lightIntensity={message.props.intensity}
               color={rgbToInt(message.props.color)}
               castShadow={message.props.cast_shadow}
@@ -616,7 +616,7 @@ function createObjectFactory(
             {children}
           </group>
         ),
-        // CsmDirectionalLight is not influenced by visibility, since the
+        // CascadedDirectionalLight is not influenced by visibility, since the
         // lights it adds are portaled to the scene root.
         unmountWhenInvisible: true,
       };

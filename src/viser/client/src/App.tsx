@@ -59,7 +59,7 @@ import { PlaybackFromFile, PlaybackFromEmbedData } from "./FilePlayback";
 import { SplatRenderContext } from "./Splatting/GaussianSplats";
 import { BrowserWarning } from "./BrowserWarning";
 import { MacWindowWrapper } from "./MacWindowWrapper";
-import { CsmDirectionalLight } from "./CsmDirectionalLight";
+import { CascadedDirectionalLight } from "./CascadedDirectionalLight";
 import { VISER_VERSION, GITHUB_CONTRIBUTORS, Contributor } from "./VersionInfo";
 import { BatchedLabelManager } from "./BatchedLabelManager";
 
@@ -941,13 +941,13 @@ function DefaultLights() {
   // Return lights and environment map.
   return (
     <>
-      <CsmDirectionalLight
+      <CascadedDirectionalLight
         lightIntensity={3.0}
         position={[-0.2, 1.0, -0.2]}
         cascades={3}
         castShadow={enableDefaultLightsShadows}
       />
-      <CsmDirectionalLight
+      <CascadedDirectionalLight
         lightIntensity={0.4}
         position={[0, -1, 0]}
         castShadow={false}

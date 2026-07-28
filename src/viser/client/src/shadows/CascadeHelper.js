@@ -13,29 +13,29 @@ import {
 } from "three";
 
 /**
- * A helper for visualizing the cascades of a CSM instance.
+ * A helper for visualizing the cascades of a ShadowCascades instance.
+ * Derived from three.js's CSM addon (three/addons/csm/CSMHelper.js).
  *
  * @augments Group
- * @three_import import { CSMHelper } from 'three/addons/csm/CSMHelper.js';
  */
-class CSMHelper extends Group {
+class CascadeHelper extends Group {
   /**
-   * Constructs a new CSM helper.
+   * Constructs a new cascade helper.
    *
-   * @param {CSM|CSMShadowNode} csm - The CSM instance to visualize.
+   * @param {ShadowCascades} shadowCascades - The instance to visualize.
    */
-  constructor(csm) {
+  constructor(shadowCascades) {
     super();
 
     /**
-     * The CSM instance to visualize.
+     * The ShadowCascades instance to visualize.
      *
-     * @type {CSM|CSMShadowNode}
+     * @type {ShadowCascades}
      */
-    this.csm = csm;
+    this.shadowCascades = shadowCascades;
 
     /**
-     * Whether to display the CSM frustum or not.
+     * Whether to display the camera frustum or not.
      *
      * @type {boolean}
      * @default true
@@ -109,12 +109,12 @@ class CSMHelper extends Group {
    * Updates the helper. This method should be called in the app's animation loop.
    */
   update() {
-    const csm = this.csm;
-    const camera = csm.camera;
-    const cascades = csm.cascades;
-    const mainFrustum = csm.mainFrustum;
-    const frustums = csm.frustums;
-    const lights = csm.lights;
+    const shadowCascades = this.shadowCascades;
+    const camera = shadowCascades.camera;
+    const cascades = shadowCascades.cascades;
+    const mainFrustum = shadowCascades.mainFrustum;
+    const frustums = shadowCascades.frustums;
+    const lights = shadowCascades.lights;
 
     const frustumLines = this.frustumLines;
     const frustumLinePositions = frustumLines.geometry.getAttribute("position");
@@ -235,7 +235,7 @@ class CSMHelper extends Group {
     frustumLines.geometry.dispose();
     frustumLines.material.dispose();
 
-    const cascades = this.csm.cascades;
+    const cascades = this.shadowCascades.cascades;
 
     for (let i = 0; i < cascades; i++) {
       const cascadeLine = cascadeLines[i];
@@ -253,4 +253,4 @@ class CSMHelper extends Group {
   }
 }
 
-export { CSMHelper };
+export { CascadeHelper };
