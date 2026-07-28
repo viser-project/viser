@@ -289,3 +289,30 @@ def test_get_render_does_not_leak_capture_state_into_splat_view(
     finally:
         page.close()  # type: ignore[attr-defined]
         context.close()  # type: ignore[attr-defined]
+
+
+def test_get_render_survives_hidden_unmounted_node_pose_update(
+    own_server: viser.ViserServer, browser: Browser
+) -> None:
+    """A pose update to a HIDDEN unmountWhenInvisible node (transform
+    controls, 3D GUI, ...) must not break capture. When such a node is
+    hidden, React unmounts it and its ref callback writes null into
+    nodeRefFromName (whose type only admits undefined); a later pose update
+    marks the pose "needsUpdate", which SceneTree's own applier skips while
+    the ref is null. The capture hook's defensive pose sweep must skip it
+    too -- an undefined-only guard let the null through to a TypeError,
+    failing the whole capture with a spurious "could not capture a frame"
+    RuntimeError on a healthy client."""
+    client, page, context = _connect_client(own_server, browser)
+    try:
+        tc = own_server.scene.add_transform_controls("/gizmo")
+        time.sleep(1.0)  # Mount.
+        tc.visible = False
+        time.sleep(0.8)  # Unmount; ref callback nulls the map entry.
+        tc.position = (1.0, 0.0, 0.0)  # Pose pending while the ref is null.
+        time.sleep(0.3)
+        img = client.get_render(height=64, width=64, timeout=30.0)
+        assert img.shape == (64, 64, 3)
+    finally:
+        page.close()  # type: ignore[attr-defined]
+        context.close()  # type: ignore[attr-defined]

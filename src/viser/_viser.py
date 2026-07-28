@@ -823,8 +823,12 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         connection.register_handler(_messages.GetRenderResponseMessage, got_render_cb)
         # Kick any windowed BROADCAST messages (server.scene updates, which
         # ride a different buffer than this request) toward the wire before
-        # the request: a capture should reflect scene updates made before the
-        # get_render() call, and the request must not overtake them.
+        # queueing the request: a capture should reflect scene updates made
+        # before the get_render() call. Best-effort, not a guarantee -- the
+        # two buffers are drained by independent producer tasks, so a
+        # backlogged broadcast producer can still lose the race -- but
+        # flushing first makes the request overtaking a scene update rare
+        # instead of routine (~one windowing delay of exposure).
         self._viser_server.flush()
         self._websock_connection.queue_message(
             _messages.GetRenderRequestMessage(

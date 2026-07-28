@@ -454,8 +454,10 @@ def test_get_render_jpeg_quality_reaches_the_wire() -> None:
 def test_get_render_flushes_broadcast_buffer_first() -> None:
     """Scene updates made before get_render() ride the BROADCAST buffer while
     the render request rides the per-client buffer. get_render() must flush
-    the broadcast buffer (before its own request) so a still-windowed scene
-    update can't be overtaken by the request and captured stale."""
+    the broadcast buffer BEFORE queueing its own request, so a still-windowed
+    scene update is (best-effort) on the wire ahead of the request instead of
+    being overtaken and captured stale. The ordering is pinned in-band: the
+    flush call is recorded into the same log as the queued request."""
     with _server() as server:
         broadcast = server._websock_server._broadcast_buffer
         conn = _RecordingConn()
@@ -464,6 +466,13 @@ def test_get_render_flushes_broadcast_buffer_first() -> None:
         client._websock_connection = conn  # type: ignore[assignment]
         client._viser_server = server
         server._connected_clients[client.client_id] = cast(viser.ClientHandle, client)
+        orig_flush = server.flush
+
+        def recording_flush() -> None:
+            conn.sent.append("broadcast-flush")
+            orig_flush()
+
+        server.flush = recording_flush  # type: ignore[method-assign]
         try:
             # A scene update sits in the (windowed) broadcast buffer.
             server.scene.add_frame("/pending")
@@ -480,16 +489,26 @@ def test_get_render_flushes_broadcast_buffer_first() -> None:
             thread = threading.Thread(target=call)
             thread.start()
             _wait_for_request(conn)
-            # The flush signal must have been raised on the broadcast buffer
-            # no later than the request was queued.
+            # ORDERING: the broadcast flush must be recorded before the
+            # request in the same in-band log. (A flush anywhere later in
+            # the call would not protect a still-windowed scene update.)
+            flush_index = conn.sent.index("broadcast-flush")
+            request_index = next(
+                i
+                for i, m in enumerate(conn.sent)
+                if isinstance(m, _messages.GetRenderRequestMessage)
+            )
+            assert flush_index < request_index, (
+                "get_render() must flush the broadcast buffer BEFORE queueing "
+                f"its request (flush at {flush_index}, request at {request_index})"
+            )
+            # And the signal actually reaches the broadcast buffer.
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline and not broadcast.flush_event.is_set():
                 time.sleep(0.002)
-            assert broadcast.flush_event.is_set(), (
-                "get_render() must flush the broadcast buffer so pending "
-                "scene updates aren't overtaken by the render request"
-            )
+            assert broadcast.flush_event.is_set()
             thread.join(timeout=5.0)
             assert not thread.is_alive()
         finally:
+            server.flush = orig_flush  # type: ignore[method-assign]
             server._connected_clients.pop(client.client_id, None)
