@@ -186,6 +186,31 @@ Your visualization will be available at: ``https://user.github.io/repo/viser-cli
 You can embed this into other webpages using an HTML ``<iframe />`` tag.
 
 
+The Scene Tree Panel
+--------------------
+
+During offline playback, the client shows a collapsible "Scene tree" panel in
+the top-right corner. Like the scene tree in the regular control panel, it can
+be used to inspect the scene hierarchy, toggle visibility of individual nodes,
+and edit scene node properties. Changes are local to the browser; they don't
+persist and are overwritten by property updates in the recording.
+
+The panel is shown by default. To hide it, you can opt out in two ways:
+
+* When hosting a ``.viser`` file, add a ``hideSceneTree`` parameter to the URL:
+
+  * ``http://localhost:8000/viser-client/?playbackPath=http://localhost:8000/recordings/recording.viser&hideSceneTree``
+
+* When exporting standalone HTML from Python, pass ``show_scene_tree=False`` to
+  :meth:`viser.SceneApi.as_html`, :meth:`viser.SceneApi.show`,
+  :meth:`viser.infra.StateSerializer.as_html`, or
+  :meth:`viser.infra.StateSerializer.show`:
+
+  .. code-block:: python
+
+     html = server.scene.as_html(show_scene_tree=False)
+
+
 Step 4: Setting the initial camera pose
 -----------------------------------------------
 

@@ -3387,7 +3387,7 @@ class SceneApi:
         if handle is not None:
             handle.remove()
 
-    def as_html(self, dark_mode: bool = False) -> str:
+    def as_html(self, dark_mode: bool = False, show_scene_tree: bool = True) -> str:
         """Get a standalone HTML string for the current scene.
 
         Returns a self-contained HTML document that can be saved to a file
@@ -3400,6 +3400,8 @@ class SceneApi:
 
         Args:
             dark_mode: Use dark color scheme.
+            show_scene_tree: Show a collapsible scene tree panel, which can be
+                used to toggle visibilities and edit properties of scene nodes.
 
         Returns:
             A complete HTML document as a string.
@@ -3413,9 +3415,16 @@ class SceneApi:
         # Clear any previous recording state to allow multiple calls.
         self._owner._websock_server._record_handles.clear()
 
-        return self._owner.get_scene_serializer().as_html(dark_mode)
+        return self._owner.get_scene_serializer().as_html(
+            dark_mode, show_scene_tree=show_scene_tree
+        )
 
-    def show(self, height: int = 400, dark_mode: bool = False) -> None:
+    def show(
+        self,
+        height: int = 400,
+        dark_mode: bool = False,
+        show_scene_tree: bool = True,
+    ) -> None:
         """Display the scene in a Jupyter notebook or web browser.
 
         In Jupyter notebooks/labs, displays an inline IFrame with the embedded
@@ -3431,6 +3440,8 @@ class SceneApi:
         Args:
             height: Height of the embedded viewer in pixels.
             dark_mode: Use dark color scheme.
+            show_scene_tree: Show a collapsible scene tree panel, which can be
+                used to toggle visibilities and edit properties of scene nodes.
         """
         from ._viser import ViserServer
 
@@ -3441,4 +3452,6 @@ class SceneApi:
         # Clear any previous recording state to allow multiple show() calls.
         self._owner._websock_server._record_handles.clear()
 
-        self._owner.get_scene_serializer().show(height, dark_mode)
+        self._owner.get_scene_serializer().show(
+            height, dark_mode, show_scene_tree=show_scene_tree
+        )

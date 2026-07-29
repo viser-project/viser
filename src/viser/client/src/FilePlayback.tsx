@@ -22,6 +22,8 @@ import {
 import { ViewerContext } from "./ViewerContext";
 import { defaultEnvironmentState } from "./EnvironmentState";
 import { isFormElement } from "./utils/isFormElement";
+import { PlaybackScenePanel } from "./PlaybackScenePanel";
+import { shouldShowPlaybackScenePanel } from "./SearchParamsUtils";
 
 /** Toggle `paused` on spacebar, unless a form control is focused -- so typing a
  * space in the playback time/speed inputs doesn't toggle playback. */
@@ -347,83 +349,92 @@ function PlaybackInterface({
       </div>
     );
   } else {
+    // The scene tree panel mounts only once the recording is loaded, so it
+    // never floats above the download progress screen.
+    const showScenePanel = shouldShowPlaybackScenePanel(
+      window.location.search,
+      (window as any).__VISER_EMBED_CONFIG__,
+    );
     return (
-      <Paper
-        radius="xs"
-        shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
-        style={{
-          position: "fixed",
-          bottom: "1em",
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "25em",
-          maxWidth: "95%",
-          zIndex: 1,
-          padding: "0.5em",
-          display: recording.durationSeconds === 0.0 ? "none" : "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "0.375em",
-        }}
-      >
-        <ActionIcon
-          size="md"
-          variant="subtle"
-          onClick={() => setPaused(!paused)}
-        >
-          {paused ? (
-            <IconPlayerPlayFilled height="1.125em" width="1.125em" />
-          ) : (
-            <IconPlayerPauseFilled height="1.125em" width="1.125em" />
-          )}
-        </ActionIcon>
-        <NumberInput
-          size="xs"
-          hideControls
-          value={currentTime.toFixed(1)}
-          step={0.01}
-          styles={{
-            wrapper: {
-              width: "3.1em",
-            },
-            input: {
-              padding: "0.2em",
-              fontFamily: theme.fontFamilyMonospace,
-              textAlign: "center",
-            },
-          }}
-          onChange={(value) => {
-            // Ignore the transient empty/NaN value while the field is cleared;
-            // committing NaN would freeze playback at NaN.
-            const t = typeof value === "number" ? value : parseFloat(value);
-            if (Number.isFinite(t)) updateCurrentTime(t);
-          }}
-        />
-        <Slider
-          thumbSize={0}
+      <>
+        {showScenePanel && <PlaybackScenePanel />}
+        <Paper
           radius="xs"
-          step={1e-4}
-          style={{ flexGrow: 1 }}
-          min={0}
-          max={recording.durationSeconds}
-          value={currentTime}
-          onChange={updateCurrentTime}
-          styles={{ thumb: { display: "none" } }}
-        />
-        <Tooltip zIndex={10} label={"Playback speed"} withinPortal>
-          <Select
+          shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
+          style={{
+            position: "fixed",
+            bottom: "1em",
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "25em",
+            maxWidth: "95%",
+            zIndex: 1,
+            padding: "0.5em",
+            display: recording.durationSeconds === 0.0 ? "none" : "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.375em",
+          }}
+        >
+          <ActionIcon
+            size="md"
+            variant="subtle"
+            onClick={() => setPaused(!paused)}
+          >
+            {paused ? (
+              <IconPlayerPlayFilled height="1.125em" width="1.125em" />
+            ) : (
+              <IconPlayerPauseFilled height="1.125em" width="1.125em" />
+            )}
+          </ActionIcon>
+          <NumberInput
             size="xs"
-            value={playbackSpeed}
-            onChange={(val) => (val === null ? null : setPlaybackSpeed(val))}
-            radius="xs"
-            data={["0.5x", "1x", "2x", "4x", "8x"]}
+            hideControls
+            value={currentTime.toFixed(1)}
+            step={0.01}
             styles={{
-              wrapper: { width: "3.25em" },
+              wrapper: {
+                width: "3.1em",
+              },
+              input: {
+                padding: "0.2em",
+                fontFamily: theme.fontFamilyMonospace,
+                textAlign: "center",
+              },
             }}
-            comboboxProps={{ zIndex: 5, width: "5.25em" }}
+            onChange={(value) => {
+              // Ignore the transient empty/NaN value while the field is
+              // cleared; committing NaN would freeze playback at NaN.
+              const t = typeof value === "number" ? value : parseFloat(value);
+              if (Number.isFinite(t)) updateCurrentTime(t);
+            }}
           />
-        </Tooltip>
-      </Paper>
+          <Slider
+            thumbSize={0}
+            radius="xs"
+            step={1e-4}
+            style={{ flexGrow: 1 }}
+            min={0}
+            max={recording.durationSeconds}
+            value={currentTime}
+            onChange={updateCurrentTime}
+            styles={{ thumb: { display: "none" } }}
+          />
+          <Tooltip zIndex={10} label={"Playback speed"} withinPortal>
+            <Select
+              size="xs"
+              value={playbackSpeed}
+              onChange={(val) => (val === null ? null : setPlaybackSpeed(val))}
+              radius="xs"
+              data={["0.5x", "1x", "2x", "4x", "8x"]}
+              styles={{
+                wrapper: { width: "3.25em" },
+              }}
+              comboboxProps={{ zIndex: 5, width: "5.25em" }}
+            />
+          </Tooltip>
+        </Paper>
+      </>
     );
   }
 }
