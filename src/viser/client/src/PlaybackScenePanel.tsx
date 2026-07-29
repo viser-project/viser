@@ -1,6 +1,12 @@
-import { Box, Collapse, Paper, ScrollArea } from "@mantine/core";
+import {
+  Box,
+  Collapse,
+  Paper,
+  ScrollArea,
+  useMantineTheme,
+} from "@mantine/core";
 import { IconChevronRight } from "@tabler/icons-react";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import React from "react";
 import SceneTreeTable from "./ControlPanel/SceneTreeTable";
 
@@ -9,7 +15,18 @@ import SceneTreeTable from "./ControlPanel/SceneTreeTable";
  * websocket connection, so this is what makes the scene tree table -- local
  * visibility overrides and property editing -- accessible offline. */
 export function PlaybackScenePanel() {
-  const [expanded, { toggle }] = useDisclosure(true);
+  // Start collapsed on the mobile breakpoint, matching the control panel's
+  // bottom sheet convention: on a small screen the panel is wayfinding
+  // chrome, and one tap opens it. Same query AppLayout uses for mobile
+  // detection; read synchronously so the very first paint is correct.
+  // Mount-time default only -- a later viewport resize doesn't override the
+  // user's toggle.
+  const theme = useMantineTheme();
+  const useMobileView =
+    useMediaQuery(`(max-width: ${theme.breakpoints.xs})`, false, {
+      getInitialValueInEffect: false,
+    }) ?? false;
+  const [expanded, { toggle }] = useDisclosure(!useMobileView);
   return (
     <Paper
       radius="xs"

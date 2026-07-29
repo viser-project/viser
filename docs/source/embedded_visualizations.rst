@@ -195,7 +195,8 @@ be used to inspect the scene hierarchy, toggle visibility of individual nodes,
 and edit scene node properties. Changes are local to the browser; they don't
 persist and are overwritten by property updates in the recording.
 
-The panel is shown by default. To hide it, you can opt out in two ways:
+The panel is shown by default, starting expanded on desktop and collapsed on
+small screens. To hide it entirely, you can opt out in two ways:
 
 * When hosting a ``.viser`` file, add a ``hideSceneTree`` parameter to the URL:
 
