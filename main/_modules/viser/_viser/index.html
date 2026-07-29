@@ -947,8 +947,9 @@
 <span class="sd">        Args:</span>
 <span class="sd">            height: Height of rendered image. Should be &lt;= the browser height.</span>
 <span class="sd">            width: Width of rendered image. Should be &lt;= the browser width.</span>
-<span class="sd">            transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will</span>
-<span class="sd">                return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called</span>
+<span class="sd">            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB</span>
+<span class="sd">                array with a small payload on any content. PNG returns a lossless (H, W, 4) RGBA array</span>
+<span class="sd">                with a transparent background, but can cause memory issues on the frontend if called</span>
 <span class="sd">                too quickly for higher-resolution images.</span>
 <span class="sd">            timeout: Optional maximum seconds to wait for the frame. ``None``</span>
 <span class="sd">                (default) waits indefinitely; a disconnect still raises promptly</span>
@@ -1214,19 +1215,30 @@
 <span class="sd">                be used.</span>
 <span class="sd">            fov: Vertical field of view of the camera, in radians. If not provided, the</span>
 <span class="sd">                current camera position will be used.</span>
-<span class="sd">            transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will</span>
-<span class="sd">                return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called</span>
+<span class="sd">            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB</span>
+<span class="sd">                array with a small payload on any content. PNG returns a lossless (H, W, 4) RGBA array</span>
+<span class="sd">                with a transparent background, but can cause memory issues on the frontend if called</span>
 <span class="sd">                too quickly for higher-resolution images.</span>
 <span class="sd">            timeout: Optional maximum seconds to wait for the frame. ``None``</span>
 <span class="sd">                (default) waits indefinitely; a disconnect still raises promptly</span>
 <span class="sd">                either way. Set this to bound a client that stays connected but</span>
 <span class="sd">                never returns a frame (raises ``TimeoutError``).</span>
+
+<span class="sd">        Note:</span>
+<span class="sd">            Captures reflect all scene *state* updates (poses, colors, visibility,</span>
+<span class="sd">            geometry props) made before the call. Content that the browser decodes</span>
+<span class="sd">            or loads asynchronously -- large background/image textures, GLB assets,</span>
+<span class="sd">            environment maps -- is not awaited: a capture issued immediately after</span>
+<span class="sd">            such an update may still show the previous content if the decode hasn&#39;t</span>
+<span class="sd">            finished (more likely on fast displays, where frames are short relative</span>
+<span class="sd">            to decode time). When that matters, capture after the asset has had a</span>
+<span class="sd">            moment to load.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
         <span class="c1"># Listen for a render reseponse message, which should contain the rendered</span>
         <span class="c1"># image.</span>
         <span class="n">render_ready_event</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
-        <span class="n">out</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">payload</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="n">connection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_connection</span>
 
@@ -1265,32 +1277,34 @@
                 <span class="c1"># dispatch loop snapshotted the handler list before the</span>
                 <span class="c1"># removal. The caller is gone -- drop the frame.</span>
                 <span class="k">return</span>
-            <span class="k">nonlocal</span> <span class="n">out</span>
-            <span class="c1"># An empty payload is the client&#39;s failure sentinel (capture threw,</span>
-            <span class="c1"># or toBlob() returned null). Leave `out` as None and let the</span>
-            <span class="c1"># waiter raise, rather than crashing the decode here (which would</span>
-            <span class="c1"># never set the event and hang get_render() forever).</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">payload</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="kn">import</span><span class="w"> </span><span class="nn">imageio.v3</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">iio</span>
-
-                <span class="k">try</span><span class="p">:</span>
-                    <span class="n">out</span> <span class="o">=</span> <span class="n">iio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span>
-                        <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">payload</span><span class="p">),</span>
-                        <span class="n">extension</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">transport_format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-                    <span class="p">)</span>
-                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                    <span class="n">out</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">nonlocal</span> <span class="n">payload</span>
+            <span class="c1"># Store the raw payload only; decoding happens on the caller&#39;s</span>
+            <span class="c1"># thread below. This callback runs on the server&#39;s event loop,</span>
+            <span class="c1"># where a large PNG/JPEG decode (or imageio&#39;s slow first import)</span>
+            <span class="c1"># would block message handling for EVERY client.</span>
+            <span class="n">payload</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">payload</span>
             <span class="n">render_ready_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
 
         <span class="n">connection</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderResponseMessage</span><span class="p">,</span> <span class="n">got_render_cb</span><span class="p">)</span>
+        <span class="c1"># Kick any windowed BROADCAST messages (server.scene updates, which</span>
+        <span class="c1"># ride a different buffer than this request) toward the wire before</span>
+        <span class="c1"># queueing the request: a capture should reflect scene updates made</span>
+        <span class="c1"># before the get_render() call. Best-effort, not a guarantee -- the</span>
+        <span class="c1"># two buffers are drained by independent producer tasks, so a</span>
+        <span class="c1"># backlogged broadcast producer can still lose the race -- but</span>
+        <span class="c1"># flushing first makes the request overtaking a scene update rare</span>
+        <span class="c1"># instead of routine (~one windowing delay of exposure).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_viser_server</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderRequestMessage</span><span class="p">(</span>
                 <span class="s2">&quot;image/jpeg&quot;</span> <span class="k">if</span> <span class="n">transport_format</span> <span class="o">==</span> <span class="s2">&quot;jpeg&quot;</span> <span class="k">else</span> <span class="s2">&quot;image/png&quot;</span><span class="p">,</span>
                 <span class="n">height</span><span class="o">=</span><span class="n">height</span><span class="p">,</span>
                 <span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">,</span>
-                <span class="c1"># Only used for JPEG. The main reason to use a lower quality version</span>
-                <span class="c1"># value is (unfortunately) to make life easier for the Javascript</span>
-                <span class="c1"># garbage collector.</span>
+                <span class="c1"># Only used for JPEG. Measured: JPEG speed and size move</span>
+                <span class="c1"># together (lower quality = fewer surviving DCT coefficients</span>
+                <span class="c1"># = less entropy-coding work on both ends), and 80 sits near</span>
+                <span class="c1"># the speed plateau while staying fidelity-safe. Chrome&#39;s</span>
+                <span class="c1"># 0.92 toBlob default is strictly slower and larger.</span>
                 <span class="n">quality</span><span class="o">=</span><span class="mi">80</span><span class="p">,</span>
                 <span class="n">position</span><span class="o">=</span><span class="n">cast_vector</span><span class="p">(</span>
                     <span class="n">position</span> <span class="k">if</span> <span class="n">position</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">camera</span><span class="o">.</span><span class="n">position</span><span class="p">,</span> <span class="mi">3</span>
@@ -1300,6 +1314,16 @@
                 <span class="n">render_uuid</span><span class="o">=</span><span class="n">render_uuid</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">)</span>
+        <span class="c1"># Outgoing messages are windowed by default (up to ~1/60s of batching</span>
+        <span class="c1"># delay before they hit the wire). For a blocking round trip that</span>
+        <span class="c1"># delay is pure added latency, so flush the request out immediately.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+
+        <span class="c1"># Import the decoder while the client is busy rendering: on first use</span>
+        <span class="c1"># this import is slow, and doing it here (request already in flight)</span>
+        <span class="c1"># overlaps it with the round trip instead of adding to it.</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">imageio.v3</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">iio</span>
+
         <span class="c1"># Poll rather than wait unbounded: a client that DISCONNECTS (tab</span>
         <span class="c1"># closed, network drop) never sends a response, so this raises as soon</span>
         <span class="c1"># as it leaves _connected_clients instead of hanging the caller (and,</span>
@@ -1330,11 +1354,21 @@
                     <span class="sa">f</span><span class="s2">&quot;Render request timed out after </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s: the client &quot;</span>
                     <span class="s2">&quot;did not return a frame.&quot;</span>
                 <span class="p">)</span>
-        <span class="k">if</span> <span class="n">out</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># An empty payload is the client&#39;s failure sentinel (capture threw, or</span>
+        <span class="c1"># toBlob() returned null).</span>
+        <span class="k">if</span> <span class="n">payload</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
                 <span class="s2">&quot;Render request failed: the client could not capture a frame.&quot;</span>
             <span class="p">)</span>
-        <span class="k">return</span> <span class="n">out</span></div>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">iio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span>
+                <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                <span class="n">extension</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">transport_format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;Render request failed: the client could not capture a frame.&quot;</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span></div>
 </div>
 
 

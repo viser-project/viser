@@ -567,8 +567,9 @@ position will be used.</p></li>
 be used.</p></li>
 <li><p><strong>fov</strong> – Vertical field of view of the camera, in radians. If not provided, the
 current camera position will be used.</p></li>
-<li><p><strong>transport_format</strong> – Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
-return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
+<li><p><strong>transport_format</strong> – Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
+array with a small payload on any content. PNG returns a lossless (H, W, 4) RGBA array
+with a transparent background, but can cause memory issues on the frontend if called
 too quickly for higher-resolution images.</p></li>
 <li><p><strong>timeout</strong> – Optional maximum seconds to wait for the frame. <code class="docutils literal notranslate"><span class="pre">None</span></code>
 (default) waits indefinitely; a disconnect still raises promptly
@@ -577,6 +578,17 @@ never returns a frame (raises <code class="docutils literal notranslate"><span c
 </ul>
 </dd>
 </dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Captures reflect all scene <em>state</em> updates (poses, colors, visibility,
+geometry props) made before the call. Content that the browser decodes
+or loads asynchronously – large background/image textures, GLB assets,
+environment maps – is not awaited: a capture issued immediately after
+such an update may still show the previous content if the decode hasn’t
+finished (more likely on fast displays, where frames are short relative
+to decode time). When that matters, capture after the asset has had a
+moment to load.</p>
+</div>
 </dd></dl>
 
 </dd></dl>

@@ -565,8 +565,9 @@ return it as a numpy array. This is an alias for <a class="reference internal" h
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>height</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Height of rendered image. Should be &lt;= the browser height.</p></li>
 <li><p><strong>width</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Width of rendered image. Should be &lt;= the browser width.</p></li>
-<li><p><strong>transport_format</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'png'</em><em>, </em><em>'jpeg'</em><em>]</em>) – Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
-return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
+<li><p><strong>transport_format</strong> (<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><em>Literal</em></a><em>[</em><em>'png'</em><em>, </em><em>'jpeg'</em><em>]</em>) – Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
+array with a small payload on any content. PNG returns a lossless (H, W, 4) RGBA array
+with a transparent background, but can cause memory issues on the frontend if called
 too quickly for higher-resolution images.</p></li>
 <li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>) – Optional maximum seconds to wait for the frame. <code class="docutils literal notranslate"><span class="pre">None</span></code>
 (default) waits indefinitely; a disconnect still raises promptly

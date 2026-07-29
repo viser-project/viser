@@ -691,9 +691,11 @@
         <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">TMessage</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a handler for a particular message type.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">message_cls</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">[</span><span class="n">message_cls</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">[</span><span class="n">message_cls</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">callback</span><span class="p">)</span>  <span class="c1"># type: ignore</span></div>
+        <span class="c1"># setdefault: registration is reachable from multiple threads (e.g.</span>
+        <span class="c1"># concurrent get_render() calls), and an unsynchronized</span>
+        <span class="c1"># check-then-create could discard a list another thread just</span>
+        <span class="c1"># created+appended to, silently dropping its handler.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">message_cls</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">callback</span><span class="p">)</span>  <span class="c1"># type: ignore</span></div>
 
 
 <div class="viewcode-block" id="WebsockMessageHandler.unregister_handler">
