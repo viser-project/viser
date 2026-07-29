@@ -358,22 +358,21 @@ function PlaybackInterface({
     return (
       <>
         {showScenePanel && <PlaybackScenePanel />}
+        {/* Docked, full-width playback bar: a normal row at the bottom of the
+        layout column (see AppLayout's messageProducer slot), so the canvas
+        ends above it instead of being covered by a floating bar. Hidden
+        entirely for static scenes. */}
         <Paper
-          radius="xs"
-          shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
+          radius={0}
           style={{
-            position: "fixed",
-            bottom: "1em",
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: "25em",
-            maxWidth: "95%",
-            zIndex: 1,
-            padding: "0.5em",
+            width: "100%",
+            flexShrink: 0,
+            borderTop: "1px solid var(--mantine-color-default-border)",
+            padding: "0.375em 0.625em",
             display: recording.durationSeconds === 0.0 ? "none" : "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: "0.375em",
+            gap: "0.5em",
           }}
         >
           <ActionIcon
