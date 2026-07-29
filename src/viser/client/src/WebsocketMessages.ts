@@ -20,6 +20,7 @@ export interface CameraFrustumMessage {
     receive_shadow: boolean | number;
     variant: "wireframe" | "filled";
     scale: number | [number, number, number];
+    line_width_units: "screen" | "world";
   };
 }
 /** GlTF message.
@@ -441,6 +442,7 @@ export interface LineSegmentsMessage {
     line_width: number;
     colors: Uint8Array<ArrayBuffer>;
     scale: number | [number, number, number];
+    line_width_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying arrow information.
@@ -476,6 +478,7 @@ export interface CatmullRomSplineMessage {
     color: [number, number, number];
     segments: number | null;
     scale: number | [number, number, number];
+    line_width_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying Cubic Bezier spline information.
@@ -492,6 +495,7 @@ export interface CubicBezierSplineMessage {
     color: [number, number, number];
     segments: number | null;
     scale: number | [number, number, number];
+    line_width_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying splattable Gaussians.
@@ -2331,6 +2335,11 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "(number | [number, number, number])",
     },
+    line_width_units: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'world'",
+      options: ["screen", "world"],
+    },
   },
   GlbMessage: {
     glb_data: {
@@ -3121,6 +3130,11 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "(number | [number, number, number])",
     },
+    line_width_units: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'world'",
+      options: ["screen", "world"],
+    },
   },
   ArrowMessage: {
     points: {
@@ -3186,6 +3200,11 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "(number | [number, number, number])",
     },
+    line_width_units: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'world'",
+      options: ["screen", "world"],
+    },
   },
   CubicBezierSplineMessage: {
     points: {
@@ -3211,6 +3230,11 @@ export const SceneNodePropsSchema: {
     scale: {
       kind: "default",
       tsType: "(number | [number, number, number])",
+    },
+    line_width_units: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'world'",
+      options: ["screen", "world"],
     },
   },
   GaussianSplatsMessage: {

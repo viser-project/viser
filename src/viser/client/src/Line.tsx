@@ -43,6 +43,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         lineWidth,
         segments,
         dashed,
+        worldUnits,
         ...rest
       },
       ref,
@@ -91,6 +92,15 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         mat.needsUpdate = true;
       }, [dashed]);
 
+      // worldUnits toggles a shader define (WORLD_UNITS); the three-stdlib
+      // setter doesn't bump the material version, so recompile explicitly.
+      React.useLayoutEffect(() => {
+        const mat = matRef.current;
+        if (!mat) return;
+        mat.worldUnits = worldUnits ?? false;
+        mat.needsUpdate = true;
+      }, [worldUnits]);
+
       const effectiveColor = vertexColors ? 0xffffff : color;
 
       // Merge forwarded ref with internal ref.
@@ -118,6 +128,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
           vertexColors={Boolean(vertexColors)}
           resolution={[size.width, size.height]}
           linewidth={linewidth ?? lineWidth ?? 1}
+          worldUnits={worldUnits ?? false}
           dashed={dashed ?? false}
           transparent={false}
           fog={true}
@@ -174,6 +185,7 @@ export const LineSegments = React.forwardRef<
         <Line
           points={pointsArray}
           lineWidth={props.line_width}
+          worldUnits={props.line_width_units === "world"}
           color={color}
           vertexColors={vertexColors}
           segments={true}

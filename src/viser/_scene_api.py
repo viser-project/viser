@@ -936,7 +936,8 @@ class SceneApi:
         points: np.ndarray,
         colors: np.ndarray | RgbTupleOrArray,
         *,
-        line_width: float = 1,
+        line_width: float = 0.01,
+        line_width_units: Literal["screen", "world"] = "world",
         scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
@@ -952,7 +953,13 @@ class SceneApi:
             colors: Colors of the line segments. Can be a single color as an RGB tuple or
                 np.ndarray of shape (3,) to apply to all segments, or an np.ndarray of
                 shape (N, 2, 3) to specify colors for each point of each segment.
-            line_width: Width of the lines.
+            line_width: Width of the lines, in the units chosen via
+                ``line_width_units``. Defaults to `0.01` world units.
+            line_width_units: Units for ``line_width``. `"world"` (default)
+                keeps lines a fixed width in scene units, so they get thinner
+                with distance like real geometry. `"screen"` keeps a fixed
+                pixel width regardless of distance; this was the old behavior,
+                where the old default width was `1.0`.
             scale: Scale of the line segments. A single float for uniform
                 scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
@@ -982,6 +989,7 @@ class SceneApi:
                 points=points_array,
                 colors=colors_array,
                 line_width=line_width,
+                line_width_units=line_width_units,
                 scale=scale,
             ),
         )
@@ -1066,7 +1074,8 @@ class SceneApi:
         curve_type: Literal["centripetal", "chordal", "catmullrom"] = "centripetal",
         tension: float = 0.5,
         closed: bool = False,
-        line_width: float = 1,
+        line_width: float = 0.01,
+        line_width_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1085,7 +1094,8 @@ class SceneApi:
         curve_type: Literal["centripetal", "chordal", "catmullrom"] = "centripetal",
         tension: float = 0.5,
         closed: bool = False,
-        line_width: float = 1,
+        line_width: float = 0.01,
+        line_width_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1103,7 +1113,8 @@ class SceneApi:
         curve_type: Literal["centripetal", "chordal", "catmullrom"] = "centripetal",
         tension: float = 0.5,
         closed: bool = False,
-        line_width: float = 1,
+        line_width: float = 0.01,
+        line_width_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1133,7 +1144,13 @@ class SceneApi:
             curve_type: Type of the curve ('centripetal', 'chordal', 'catmullrom').
             tension: Tension of the curve. Affects the tightness of the curve.
             closed: Boolean indicating if the spline is closed (forms a loop).
-            line_width: Width of the spline line.
+            line_width: Width of the spline line, in the units chosen via
+                ``line_width_units``. Defaults to `0.01` world units.
+            line_width_units: Units for ``line_width``. `"world"` (default)
+                keeps the line a fixed width in scene units, so it gets
+                thinner with distance like real geometry. `"screen"` keeps a
+                fixed pixel width regardless of distance; this was the old
+                behavior, where the old default width was `1.0`.
             color: Color of the spline as an RGB tuple.
             segments: Number of segments to divide the spline into.
             scale: Scale of the spline. A single float for uniform scaling or a
@@ -1173,6 +1190,7 @@ class SceneApi:
                 tension=tension,
                 closed=closed,
                 line_width=line_width,
+                line_width_units=line_width_units,
                 color=_encode_rgb(color),
                 segments=segments,
                 scale=scale,
@@ -1195,7 +1213,8 @@ class SceneApi:
         points: np.ndarray,
         control_points: np.ndarray,
         *,
-        line_width: float = 1.0,
+        line_width: float = 0.01,
+        line_width_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1214,7 +1233,8 @@ class SceneApi:
         positions: tuple[tuple[float, float, float], ...],
         control_points: tuple[tuple[float, float, float], ...],
         *,
-        line_width: float = 1.0,
+        line_width: float = 0.01,
+        line_width_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1236,7 +1256,8 @@ class SceneApi:
         | np.ndarray
         | MISSING_SENTINEL_TYPE = MISSING_SENTINEL,
         *,
-        line_width: float = 1.0,
+        line_width: float = 0.01,
+        line_width_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1268,7 +1289,13 @@ class SceneApi:
                 exactly `2 * len(points) - 2` control points. For a cubic Bezier with N
                 points, the curve passes through points[0], points[1], ..., points[N-1],
                 with two control points between each consecutive pair of points.
-            line_width: Width of the spline line.
+            line_width: Width of the spline line, in the units chosen via
+                ``line_width_units``. Defaults to `0.01` world units.
+            line_width_units: Units for ``line_width``. `"world"` (default)
+                keeps the line a fixed width in scene units, so it gets
+                thinner with distance like real geometry. `"screen"` keeps a
+                fixed pixel width regardless of distance; this was the old
+                behavior, where the old default width was `1.0`.
             color: Color of the spline as an RGB tuple.
             segments: Number of segments to divide the spline into.
             scale: Scale of the spline. A single float for uniform scaling or a
@@ -1307,6 +1334,7 @@ class SceneApi:
                 points=np.asarray(points, dtype=np.float32),
                 control_points=np.asarray(control_points, dtype=np.float32),
                 line_width=line_width,
+                line_width_units=line_width_units,
                 color=_encode_rgb(color),
                 segments=segments,
                 scale=scale,
@@ -1324,7 +1352,8 @@ class SceneApi:
         aspect: float,
         *,
         scale: float | tuple[float, float, float] = 0.3,
-        line_width: float = 2.0,
+        line_width: float = 0.02,
+        line_width_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         image: np.ndarray | None = None,
         format: Literal["auto", "png", "jpeg"] = "auto",
@@ -1352,7 +1381,13 @@ class SceneApi:
             aspect: Aspect ratio of the camera (width over height).
             scale: Scale factor for the size of the frustum. A single float
                 for uniform scaling or a tuple of (x, y, z) for per-axis scaling.
-            line_width: Width of the frustum lines, in screen space. Defaults to `2.0`.
+            line_width: Width of the frustum lines, in the units chosen via
+                ``line_width_units``. Defaults to `0.02` world units.
+            line_width_units: Units for ``line_width``. `"world"` (default)
+                keeps the lines a fixed width in scene units, so they get
+                thinner with distance like real geometry. `"screen"` keeps a
+                fixed pixel width regardless of distance; this was the old
+                behavior, where the old default width was `2.0`.
             color: Color of the frustum as an RGB tuple.
             image: Optional image to be displayed on the frustum.
             format: Format to transport and display the image using. 'auto' will use PNG for RGBA images and JPEG for RGB.
@@ -1385,6 +1420,7 @@ class SceneApi:
                 aspect=aspect,
                 scale=scale,
                 line_width=line_width,
+                line_width_units=line_width_units,
                 color=_encode_rgb(color),
                 _format=resolved_format,
                 _image_data=binary,

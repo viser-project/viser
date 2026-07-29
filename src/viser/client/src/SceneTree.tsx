@@ -539,11 +539,16 @@ function createObjectFactory(
             <group ref={ref}>
               <group scale={normalizeScale(message.props.scale)}>
                 <CatmullRomLine
+                  // Remount on units change: drei's Line applies worldUnits
+                  // via prop spread, which toggles a shader define without
+                  // bumping the material version.
+                  key={message.props.line_width_units}
                   points={tripletListFromFloat32Array(message.props.points)}
                   closed={message.props.closed}
                   curveType={message.props.curve_type}
                   tension={message.props.tension}
                   lineWidth={message.props.line_width}
+                  worldUnits={message.props.line_width_units === "world"}
                   color={rgbToInt(message.props.color)}
                   // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
                   segments={(message.props.segments ?? undefined) as undefined}
@@ -567,12 +572,16 @@ function createObjectFactory(
               <group scale={normalizeScale(message.props.scale)}>
                 {[...Array(points.length - 1).keys()].map((i) => (
                   <CubicBezierLine
-                    key={i}
+                    // Units in the key: remount on change, since drei's Line
+                    // applies worldUnits via prop spread, which toggles a
+                    // shader define without bumping the material version.
+                    key={`${i}-${message.props.line_width_units}`}
                     start={points[i]}
                     end={points[i + 1]}
                     midA={controlPoints[2 * i]}
                     midB={controlPoints[2 * i + 1]}
                     lineWidth={message.props.line_width}
+                    worldUnits={message.props.line_width_units === "world"}
                     color={rgbToInt(message.props.color)}
                     // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
                     segments={

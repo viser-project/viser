@@ -501,6 +501,8 @@ class CameraFrustumProps:
     scale: Union[float, Tuple[float, float, float]] = 0.3
     """Scale factor for the size of the frustum. A single float for uniform
     scaling or a tuple of (x, y, z) for per-axis scaling."""
+    line_width_units: Literal["screen", "world"] = "world"
+    """Units for line_width: 'world' for scene units, 'screen' for pixels."""
 
 
 @dataclasses.dataclass
@@ -2229,6 +2231,8 @@ class LineSegmentsProps:
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the line segments. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
+    line_width_units: Literal["screen", "world"] = "world"
+    """Units for line_width: 'world' for scene units, 'screen' for pixels."""
 
 
 @dataclasses.dataclass
@@ -2284,6 +2288,8 @@ class CatmullRomSplineProps:
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the spline. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
+    line_width_units: Literal["screen", "world"] = "world"
+    """Units for line_width: 'world' for scene units, 'screen' for pixels."""
 
 
 @dataclasses.dataclass
@@ -2308,6 +2314,8 @@ class CubicBezierSplineProps:
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the spline. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
+    line_width_units: Literal["screen", "world"] = "world"
+    """Units for line_width: 'world' for scene units, 'screen' for pixels."""
 
 
 @dataclasses.dataclass

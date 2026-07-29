@@ -138,11 +138,16 @@ export const CameraFrustumComponent = React.forwardRef<
     <group ref={ref}>
       {/* Wireframe lines - always visible */}
       <Line
+        // Remount on units change: drei's Line applies worldUnits via prop
+        // spread, which toggles a shader define without bumping the material
+        // version.
+        key={message.props.line_width_units}
         points={frustumPoints}
         color={isHovered ? 0xfbff00 : rgbToInt(message.props.color)}
         lineWidth={
           isHovered ? 1.5 * message.props.line_width : message.props.line_width
         }
+        worldUnits={message.props.line_width_units === "world"}
         segments
       />
 

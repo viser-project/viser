@@ -39,6 +39,7 @@ def test_spline_passing_camera_renders(
         ),
         color=(255, 0, 0),
         line_width=6.0,
+        line_width_units="screen",
     )
     viser_server.scene.world_axes.visible = False
     wait_for_scene_node(viser_page, "/spline")
