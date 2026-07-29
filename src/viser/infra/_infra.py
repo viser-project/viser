@@ -242,9 +242,11 @@ class WebsockMessageHandler:
         callback: Callable[[ClientId, TMessage], None | Coroutine],
     ) -> None:
         """Register a handler for a particular message type."""
-        if message_cls not in self._incoming_handlers:
-            self._incoming_handlers[message_cls] = []
-        self._incoming_handlers[message_cls].append(callback)  # type: ignore
+        # setdefault: registration is reachable from multiple threads (e.g.
+        # concurrent get_render() calls), and an unsynchronized
+        # check-then-create could discard a list another thread just
+        # created+appended to, silently dropping its handler.
+        self._incoming_handlers.setdefault(message_cls, []).append(callback)  # type: ignore
 
     def unregister_handler(
         self,
