@@ -42,7 +42,7 @@ def test_get_render_raises_promptly_on_disconnect(
     own_server: viser.ViserServer, browser: Browser
 ) -> None:
     captured: list[viser.ClientHandle] = []
-    own_server.on_client_connect(lambda client: captured.append(client))
+    own_server.on_client_connect(captured.append)
 
     context = browser.new_context()
     page = context.new_page()

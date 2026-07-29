@@ -123,6 +123,7 @@ lint.ignore = [
     "PLR0915",  # Too many statements.
     "PLR0913",  # Too many arguments.
     "PLR0917",  # Too many positional arguments. (stabilized in newer ruff; same intent as PLR0913 above)
+    "PLW0108",  # Lambda may be unnecessary. (stabilized in newer ruff; flags pre-existing callback-style lambdas)
     "PLC0414",  # Import alias does not rename variable. (this is used for exporting names)
     "PLC0415",  # Import should be at the top-level of a file.
     "PLC1901",  # Use falsey strings.

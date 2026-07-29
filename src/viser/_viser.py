@@ -510,8 +510,9 @@ class CameraHandle:
         Args:
             height: Height of rendered image. Should be <= the browser height.
             width: Width of rendered image. Should be <= the browser width.
-            transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
-                return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
+            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
+                array with a small payload on any content. PNG returns a lossless (H, W, 4) RGBA array
+                with a transparent background, but can cause memory issues on the frontend if called
                 too quickly for higher-resolution images.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
@@ -759,19 +760,30 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 be used.
             fov: Vertical field of view of the camera, in radians. If not provided, the
                 current camera position will be used.
-            transport_format: Image transport format. JPEG will return a lossy (H, W, 3) RGB array. PNG will
-                return a lossless (H, W, 4) RGBA array, but can cause memory issues on the frontend if called
+            transport_format: Image transport format. JPEG (default) returns a lossy (H, W, 3) RGB
+                array with a small payload on any content. PNG returns a lossless (H, W, 4) RGBA array
+                with a transparent background, but can cause memory issues on the frontend if called
                 too quickly for higher-resolution images.
             timeout: Optional maximum seconds to wait for the frame. ``None``
                 (default) waits indefinitely; a disconnect still raises promptly
                 either way. Set this to bound a client that stays connected but
                 never returns a frame (raises ``TimeoutError``).
+
+        Note:
+            Captures reflect all scene *state* updates (poses, colors, visibility,
+            geometry props) made before the call. Content that the browser decodes
+            or loads asynchronously -- large background/image textures, GLB assets,
+            environment maps -- is not awaited: a capture issued immediately after
+            such an update may still show the previous content if the decode hasn't
+            finished (more likely on fast displays, where frames are short relative
+            to decode time). When that matters, capture after the asset has had a
+            moment to load.
         """
 
         # Listen for a render reseponse message, which should contain the rendered
         # image.
         render_ready_event = threading.Event()
-        out: np.ndarray | None = None
+        payload: bytes | None = None
 
         connection = self._websock_connection
 
@@ -810,32 +822,34 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 # dispatch loop snapshotted the handler list before the
                 # removal. The caller is gone -- drop the frame.
                 return
-            nonlocal out
-            # An empty payload is the client's failure sentinel (capture threw,
-            # or toBlob() returned null). Leave `out` as None and let the
-            # waiter raise, rather than crashing the decode here (which would
-            # never set the event and hang get_render() forever).
-            if len(message.payload) > 0:
-                import imageio.v3 as iio
-
-                try:
-                    out = iio.imread(
-                        io.BytesIO(message.payload),
-                        extension=f".{transport_format}",
-                    )
-                except Exception:
-                    out = None
+            nonlocal payload
+            # Store the raw payload only; decoding happens on the caller's
+            # thread below. This callback runs on the server's event loop,
+            # where a large PNG/JPEG decode (or imageio's slow first import)
+            # would block message handling for EVERY client.
+            payload = message.payload
             render_ready_event.set()
 
         connection.register_handler(_messages.GetRenderResponseMessage, got_render_cb)
+        # Kick any windowed BROADCAST messages (server.scene updates, which
+        # ride a different buffer than this request) toward the wire before
+        # queueing the request: a capture should reflect scene updates made
+        # before the get_render() call. Best-effort, not a guarantee -- the
+        # two buffers are drained by independent producer tasks, so a
+        # backlogged broadcast producer can still lose the race -- but
+        # flushing first makes the request overtaking a scene update rare
+        # instead of routine (~one windowing delay of exposure).
+        self._viser_server.flush()
         self._websock_connection.queue_message(
             _messages.GetRenderRequestMessage(
                 "image/jpeg" if transport_format == "jpeg" else "image/png",
                 height=height,
                 width=width,
-                # Only used for JPEG. The main reason to use a lower quality version
-                # value is (unfortunately) to make life easier for the Javascript
-                # garbage collector.
+                # Only used for JPEG. Measured: JPEG speed and size move
+                # together (lower quality = fewer surviving DCT coefficients
+                # = less entropy-coding work on both ends), and 80 sits near
+                # the speed plateau while staying fidelity-safe. Chrome's
+                # 0.92 toBlob default is strictly slower and larger.
                 quality=80,
                 position=cast_vector(
                     position if position is not None else self.camera.position, 3
@@ -845,6 +859,16 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                 render_uuid=render_uuid,
             )
         )
+        # Outgoing messages are windowed by default (up to ~1/60s of batching
+        # delay before they hit the wire). For a blocking round trip that
+        # delay is pure added latency, so flush the request out immediately.
+        self.flush()
+
+        # Import the decoder while the client is busy rendering: on first use
+        # this import is slow, and doing it here (request already in flight)
+        # overlaps it with the round trip instead of adding to it.
+        import imageio.v3 as iio
+
         # Poll rather than wait unbounded: a client that DISCONNECTS (tab
         # closed, network drop) never sends a response, so this raises as soon
         # as it leaves _connected_clients instead of hanging the caller (and,
@@ -875,11 +899,21 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     f"Render request timed out after {timeout}s: the client "
                     "did not return a frame."
                 )
-        if out is None:
+        # An empty payload is the client's failure sentinel (capture threw, or
+        # toBlob() returned null).
+        if payload is None or len(payload) == 0:
             raise RuntimeError(
                 "Render request failed: the client could not capture a frame."
             )
-        return out
+        try:
+            return iio.imread(
+                io.BytesIO(payload),
+                extension=f".{transport_format}",
+            )
+        except Exception as e:
+            raise RuntimeError(
+                "Render request failed: the client could not capture a frame."
+            ) from e
 
 
 class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):

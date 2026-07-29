@@ -253,10 +253,13 @@ function useMessageHandler() {
         setShareUrl(message.share_url);
         return;
       }
-      // Request a render.
+      // Request a render. "commit_wait" gives React one frame to commit any
+      // scene updates processed in the same batch; the message-processing
+      // loop upgrades this to "capture" directly when the request arrived
+      // with no preceding messages (nothing pending a commit).
       case "GetRenderRequestMessage": {
         viewerMutable.getRenderRequest = message;
-        viewerMutable.getRenderRequestState = "triggered";
+        viewerMutable.getRenderRequestState = "commit_wait";
         return;
       }
       // Set the GUI panel label.
@@ -935,153 +938,9 @@ export function FrameSynchronizedMessageHandler() {
 
   useFrame(
     () => {
-      // Send a render along if it was requested!
-      if (viewerMutable.getRenderRequestState === "triggered") {
-        viewerMutable.getRenderRequestState = "pause";
-      } else if (viewerMutable.getRenderRequestState === "pause") {
-        const targetWidth = viewerMutable.getRenderRequest!.width;
-        const targetHeight = viewerMutable.getRenderRequest!.height;
-        const format = viewerMutable.getRenderRequest!.format;
-        // Captured now so the response can be correlated to its request even
-        // after the async toBlob below.
-        const renderUuid = viewerMutable.getRenderRequest!.render_uuid;
-
-        // Snapshot renderer state up front so the `finally` below can always
-        // restore it, even if rendering throws partway through.
-        const originalSize = gl.getSize(new THREE.Vector2());
-        const originalClearColor = gl.getClearColor(new THREE.Color());
-        const originalClearAlpha = gl.getClearAlpha();
-
-        // Splat sorted-index backup, restored in `finally`.
-        const splatMeshProps = splatContext.meshPropsRef.current;
-        const sortedIndicesOrig =
-          splatMeshProps !== null
-            ? splatMeshProps.sortedIndexAttribute.array.slice()
-            : null;
-
-        // An empty payload is the failure sentinel: it lets the server's
-        // pending get_render() resolve instead of blocking forever.
-        const sendRenderResponse = (payload: Uint8Array<ArrayBuffer>) =>
-          viewerMutable.sendMessage({
-            type: "GetRenderResponseMessage",
-            payload,
-            render_uuid: renderUuid,
-          });
-
-        // Once we enter capture we must always return to "ready" -- otherwise
-        // an exception (or a null toBlob) would wedge the render state machine
-        // and block all further message handling, which is gated on "ready".
-        try {
-          const cameraPosition = viewerMutable.getRenderRequest!.position;
-          const cameraWxyz = viewerMutable.getRenderRequest!.wxyz;
-          const cameraFov = viewerMutable.getRenderRequest!.fov;
-
-          // Render the scene using the virtual camera.
-          const T_threeworld_world = computeT_threeworld_world(viewer);
-
-          // Create a new perspective camera.
-          const camera = new THREE.PerspectiveCamera(
-            THREE.MathUtils.radToDeg(cameraFov),
-            targetWidth / targetHeight,
-            0.01, // Near.
-            1000.0, // Far.
-          );
-
-          // Set camera pose.
-          camera.position
-            .set(...cameraPosition)
-            .applyMatrix4(T_threeworld_world);
-          camera.setRotationFromQuaternion(
-            new THREE.Quaternion(
-              cameraWxyz[1],
-              cameraWxyz[2],
-              cameraWxyz[3],
-              cameraWxyz[0],
-            )
-              .premultiply(
-                new THREE.Quaternion().setFromRotationMatrix(
-                  T_threeworld_world,
-                ),
-              )
-              .multiply(
-                // OpenCV => OpenGL coordinate system conversion.
-                new THREE.Quaternion().setFromAxisAngle(
-                  new THREE.Vector3(1, 0, 0),
-                  Math.PI,
-                ),
-              ),
-          );
-
-          // Update splatting camera if needed.
-          if (splatContext.updateCamera.current !== null)
-            splatContext.updateCamera.current!(
-              camera,
-              targetWidth,
-              targetHeight,
-              true,
-            );
-
-          // Configure for capture.
-          gl.setSize(targetWidth, targetHeight);
-          gl.setClearColor(0xffffff);
-          gl.setClearAlpha(format == "image/png" ? 0.0 : 1.0);
-
-          // Render the scene.
-          gl.render(viewerMutable.scene!, camera);
-
-          // Temporary canvas for saving the rendered image. This is needed to
-          // prevent flickers: we need context from the original canvas for
-          // rendering, but we want to revert the renderer state immediately.
-          const canvas = gl.domElement;
-          const bufferCanvas = document.createElement("canvas");
-          bufferCanvas.width = targetWidth;
-          bufferCanvas.height = targetHeight;
-          const ctx = bufferCanvas.getContext("2d")!;
-          ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
-
-          // Get the rendered image from our temp canvas.
-          viewerMutable.getRenderRequestState = "in_progress";
-          bufferCanvas.toBlob((blob) => {
-            void (async () => {
-              try {
-                // `toBlob` can hand back null (e.g. canvas too large / OOM);
-                // fall back to an empty payload so the server's pending
-                // request resolves instead of hanging forever.
-                sendRenderResponse(
-                  blob === null
-                    ? new Uint8Array(0)
-                    : new Uint8Array(await blob.arrayBuffer()),
-                );
-              } catch (e) {
-                console.error("Failed to read rendered image:", e);
-                sendRenderResponse(new Uint8Array(0));
-              } finally {
-                viewerMutable.getRenderRequestState = "ready";
-              }
-            })();
-          }, format);
-        } catch (e) {
-          console.error("Render request failed:", e);
-          // The toBlob callback won't run, so send the failure sentinel now --
-          // otherwise the server's get_render() blocks forever waiting for a
-          // response. Then resume message handling.
-          sendRenderResponse(new Uint8Array(0));
-          viewerMutable.getRenderRequestState = "ready";
-        } finally {
-          // Restore the original renderer state.
-          gl.setSize(originalSize.x, originalSize.y);
-          gl.setClearColor(originalClearColor);
-          gl.setClearAlpha(originalClearAlpha);
-
-          // Restore splatting indices.
-          if (sortedIndicesOrig !== null && splatMeshProps !== null) {
-            splatMeshProps.sortedIndexAttribute.array = sortedIndicesOrig;
-            splatMeshProps.sortedIndexAttribute.needsUpdate = true;
-          }
-        }
-      }
-
       // Handle messages, but only if we're not trying to render something.
+      // (Render capture itself lives in the second useFrame below, which runs
+      // later in the same frame -- after SceneTree's pose appliers.)
       if (
         viewerMutable.getRenderRequestState === "ready" &&
         messageQueue.length > 0
@@ -1262,6 +1121,16 @@ export function FrameSynchronizedMessageHandler() {
             viewer.sceneTreeActions.computeEffectiveVisibility(nodeName);
           }
         }
+
+        // A render request that arrived with no messages in front of it has
+        // nothing waiting on a React commit: skip "commit_wait" so the
+        // capture hook below fires this same frame, after the SceneTree pose
+        // appliers. This is the common case for tight get_render() loops.
+        // (requestRenderIndex === 0 means the processed batch was exactly the
+        // request, whose handler just set the state to "commit_wait".)
+        if (requestRenderIndex === 0) {
+          viewerMutable.getRenderRequestState = "capture";
+        }
       }
     },
     // We should handle messages before doing anything else!!
@@ -1269,6 +1138,211 @@ export function FrameSynchronizedMessageHandler() {
     // Importantly, this priority should be *lower* than the useFrame priority
     // used to update scene node transforms in SceneTree.tsx.
     -100000,
+  );
+
+  // Render capture for get_render() requests, in its own hook so it can run
+  // at a priority AFTER SceneTree's per-node pose appliers (-1000) and the
+  // message handler above (-100000). Captures therefore see the poses applied
+  // earlier in the SAME frame, which is what lets a request skip idle frames:
+  // an implementation that captures before pose application (the old one ran
+  // at -100000) has to idle extra frames to compensate.
+  useFrame(
+    () => {
+      if (viewerMutable.getRenderRequestState === "commit_wait") {
+        // The batch that carried this request also carried scene updates.
+        // React flushes those commits (sync lane) before the next frame;
+        // capture on the next pass.
+        viewerMutable.getRenderRequestState = "capture";
+        return;
+      }
+      if (viewerMutable.getRenderRequestState !== "capture") return;
+
+      const targetWidth = viewerMutable.getRenderRequest!.width;
+      const targetHeight = viewerMutable.getRenderRequest!.height;
+      const format = viewerMutable.getRenderRequest!.format;
+      const quality = viewerMutable.getRenderRequest!.quality;
+      // Captured now so the response can be correlated to its request even
+      // after the async toBlob below.
+      const renderUuid = viewerMutable.getRenderRequest!.render_uuid;
+
+      // Snapshot renderer state up front so the `finally` below can always
+      // restore it, even if rendering throws partway through.
+      const originalSize = gl.getSize(new THREE.Vector2());
+      const originalClearColor = gl.getClearColor(new THREE.Color());
+      const originalClearAlpha = gl.getClearAlpha();
+
+      // Splat sorted-index backup, restored in `finally`.
+      const splatMeshProps = splatContext.meshPropsRef.current;
+      const sortedIndicesOrig =
+        splatMeshProps !== null
+          ? splatMeshProps.sortedIndexAttribute.array.slice()
+          : null;
+
+      // An empty payload is the failure sentinel: it lets the server's
+      // pending get_render() resolve instead of blocking forever.
+      const sendRenderResponse = (payload: Uint8Array<ArrayBuffer>) =>
+        viewerMutable.sendMessage({
+          type: "GetRenderResponseMessage",
+          payload,
+          render_uuid: renderUuid,
+        });
+
+      // Once we enter capture we must always return to "ready" -- otherwise
+      // an exception (or a null toBlob) would wedge the render state machine
+      // and block all further message handling, which is gated on "ready".
+      try {
+        // Defensively apply node poses still marked "needsUpdate": a pose
+        // marked by a React effect that ran after this frame's SceneTree
+        // applier pass (e.g. a node that just [re]mounted) would otherwise
+        // be captured stale.
+        for (const [name, pose] of Object.entries(viewerMutable.nodePoseData)) {
+          if (pose === undefined || pose.poseUpdateState !== "needsUpdate")
+            continue;
+          const obj = viewerMutable.nodeRefFromName[name];
+          // == null: the map's type says undefined, but React ref callbacks
+          // write null on detach (e.g. unmountWhenInvisible nodes that are
+          // currently hidden), and a TypeError here would fail the whole
+          // capture with the pose still pending.
+          if (obj == null) continue;
+          pose.poseUpdateState = "updated";
+          if (viewer.useSceneTree.get(name)?.message.type !== "LabelMessage") {
+            obj.quaternion.set(
+              pose.wxyz[1],
+              pose.wxyz[2],
+              pose.wxyz[3],
+              pose.wxyz[0],
+            );
+          }
+          obj.position.set(
+            pose.position[0],
+            pose.position[1],
+            pose.position[2],
+          );
+          if (!obj.matrixAutoUpdate) obj.updateMatrix();
+          if (!obj.matrixWorldAutoUpdate) obj.updateMatrixWorld();
+        }
+
+        const cameraPosition = viewerMutable.getRenderRequest!.position;
+        const cameraWxyz = viewerMutable.getRenderRequest!.wxyz;
+        const cameraFov = viewerMutable.getRenderRequest!.fov;
+
+        // Render the scene using the virtual camera.
+        const T_threeworld_world = computeT_threeworld_world(viewer);
+
+        // Create a new perspective camera.
+        const camera = new THREE.PerspectiveCamera(
+          THREE.MathUtils.radToDeg(cameraFov),
+          targetWidth / targetHeight,
+          0.01, // Near.
+          1000.0, // Far.
+        );
+
+        // Set camera pose.
+        camera.position.set(...cameraPosition).applyMatrix4(T_threeworld_world);
+        camera.setRotationFromQuaternion(
+          new THREE.Quaternion(
+            cameraWxyz[1],
+            cameraWxyz[2],
+            cameraWxyz[3],
+            cameraWxyz[0],
+          )
+            .premultiply(
+              new THREE.Quaternion().setFromRotationMatrix(T_threeworld_world),
+            )
+            .multiply(
+              // OpenCV => OpenGL coordinate system conversion.
+              new THREE.Quaternion().setFromAxisAngle(
+                new THREE.Vector3(1, 0, 0),
+                Math.PI,
+              ),
+            ),
+        );
+
+        // Update splatting camera if needed.
+        if (splatContext.updateCamera.current !== null)
+          splatContext.updateCamera.current!(
+            camera,
+            targetWidth,
+            targetHeight,
+            true,
+          );
+
+        // Configure for capture. JPEG is an RGB result rendered on an opaque
+        // white background; PNG is RGBA with a transparent background.
+        gl.setSize(targetWidth, targetHeight);
+        gl.setClearColor(0xffffff);
+        gl.setClearAlpha(format === "image/jpeg" ? 1.0 : 0.0);
+
+        // Render the scene.
+        gl.render(viewerMutable.scene!, camera);
+
+        // Temporary canvas for saving the rendered image. This is needed to
+        // prevent flickers: we need context from the original canvas for
+        // rendering, but we want to revert the renderer state immediately.
+        const canvas = gl.domElement;
+        const bufferCanvas = document.createElement("canvas");
+        bufferCanvas.width = targetWidth;
+        bufferCanvas.height = targetHeight;
+        const ctx = bufferCanvas.getContext("2d")!;
+        ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+        // The pixels are copied out of the renderer at this point, so
+        // message handling can resume NOW: the async encode below overlaps
+        // with whatever comes next, including the next capture.
+        viewerMutable.getRenderRequestState = "ready";
+        bufferCanvas.toBlob(
+          (blob) => {
+            void (async () => {
+              try {
+                // `toBlob` can hand back null (e.g. canvas too large / OOM);
+                // fall back to an empty payload so the server's pending
+                // request resolves instead of hanging forever.
+                sendRenderResponse(
+                  blob === null
+                    ? new Uint8Array(0)
+                    : new Uint8Array(await blob.arrayBuffer()),
+                );
+              } catch (e) {
+                console.error("Failed to read rendered image:", e);
+                sendRenderResponse(new Uint8Array(0));
+              }
+            })();
+            // The quality argument applies to JPEG only (PNG's encoder has
+            // no knobs in the web API); omitting it would silently encode
+            // at Chrome's 0.92 default -- larger and no faster.
+          },
+          format,
+          format === "image/jpeg" ? quality / 100.0 : undefined,
+        );
+      } catch (e) {
+        console.error("Render request failed:", e);
+        // The response wasn't sent above, so send the failure sentinel now --
+        // otherwise the server's get_render() blocks forever waiting for a
+        // response. Then resume message handling.
+        sendRenderResponse(new Uint8Array(0));
+        viewerMutable.getRenderRequestState = "ready";
+      } finally {
+        // Restore the original renderer state.
+        gl.setSize(originalSize.x, originalSize.y);
+        gl.setClearColor(originalClearColor);
+        gl.setClearAlpha(originalClearAlpha);
+
+        // Restore splatting indices.
+        if (sortedIndicesOrig !== null && splatMeshProps !== null) {
+          splatMeshProps.sortedIndexAttribute.array = sortedIndicesOrig;
+          splatMeshProps.sortedIndexAttribute.needsUpdate = true;
+        }
+      }
+    },
+    // Between SceneTree's pose appliers (-1000) and the Gaussian splat
+    // per-frame hook (-100): capture must see this frame's poses, and the
+    // splat hook must run AFTER capture so it re-applies interactive-camera
+    // splat state (uniforms, group transforms, async sort) that the
+    // capture's virtual-camera updateCamera(..., blockingSort=true) call
+    // mutates -- capture only restores the sorted-index attribute itself.
+    // At a later priority, the frame's visible render would draw the
+    // interactive viewport with the virtual camera's splat state.
+    -500,
   );
 
   return null;

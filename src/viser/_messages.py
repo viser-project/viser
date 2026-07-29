@@ -2356,6 +2356,14 @@ class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     # calls on the same client can be matched to their responses.
     render_uuid: str
 
+    @override
+    def redundancy_key(self) -> str:
+        # Every in-flight request must survive independently in the outgoing
+        # buffer. Under the class-name default key, a second concurrent
+        # get_render() on the same client evicted the first caller's
+        # still-unsent request, hanging that caller until timeout.
+        return type(self).__name__ + "-" + self.render_uuid
+
 
 @dataclasses.dataclass
 class GetRenderResponseMessage(Message, include_in_scene_serialization=False):
