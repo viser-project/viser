@@ -1,5 +1,5 @@
 import { Box, Collapse, Paper, ScrollArea } from "@mantine/core";
-import { IconCaretDown, IconCaretRight } from "@tabler/icons-react";
+import { IconChevronRight } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import React from "react";
 import SceneTreeTable from "./ControlPanel/SceneTreeTable";
@@ -41,25 +41,28 @@ export function PlaybackScenePanel() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "0.25em",
-          padding: "0.375em 0.5em",
+          gap: "0.5em",
+          padding: "0.375em 0.625em",
           fontWeight: 500,
           cursor: "pointer",
           userSelect: "none",
         }}
       >
-        {expanded ? (
-          <IconCaretDown
-            aria-hidden
-            style={{ height: "1em", width: "1em", opacity: 0.7 }}
-          />
-        ) : (
-          <IconCaretRight
-            aria-hidden
-            style={{ height: "1em", width: "1em", opacity: 0.7 }}
-          />
-        )}
-        Scene tree
+        {/* Label left + chevron at the right end (rotating down when
+        expanded), matching the mobile panel sections -- a leading caret here
+        would sit at the same visual level as the tree rows' expand carets
+        below, making the header read as just another row. */}
+        <Box style={{ flexGrow: 1 }}>Scene tree</Box>
+        <IconChevronRight
+          size="1em"
+          aria-hidden
+          style={{
+            opacity: 0.55,
+            flexShrink: 0,
+            transform: expanded ? "rotate(90deg)" : "none",
+            transition: "transform 160ms",
+          }}
+        />
       </Box>
       <Collapse in={expanded}>
         {/* Bounded height with the panel's own scrollbars: unlike the control
@@ -69,6 +72,9 @@ export function PlaybackScenePanel() {
           mah="max(10em, calc(100vh - 8em))"
           scrollbarSize={6}
           type="auto"
+          style={{
+            borderTop: "1px solid var(--mantine-color-default-border)",
+          }}
         >
           <SceneTreeTable />
         </ScrollArea.Autosize>
