@@ -1404,10 +1404,14 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
             rich.print("[bold](viser)[/bold] Disconnected from share URL")
             with self._share_tunnel_lock:
-                # Only clear the slot if it still points at OUR tunnel (a
-                # newer request may have replaced it).
-                if self._share_tunnel is tunnel:
-                    self._share_tunnel = None
+                # Only clear the slot (and broadcast the loss) if it still
+                # points at OUR tunnel. A newer request may have replaced it:
+                # broadcasting None here would clobber the replacement's URL
+                # for every client -- and, since the message persists in the
+                # broadcast buffer, for every late joiner too.
+                if self._share_tunnel is not tunnel:
+                    return
+                self._share_tunnel = None
             self._websock_server.queue_message(_messages.ShareUrlUpdated(None))
 
         @tunnel.on_connect

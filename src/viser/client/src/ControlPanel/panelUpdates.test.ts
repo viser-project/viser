@@ -10,6 +10,8 @@ import {
   shallowObjectKeysEqual,
 } from "../utils/shallowObjectKeysEqual";
 import { createStore } from "../store";
+import { panelsSelectorEquality } from "./panelsEquality";
+import controlPanelSource from "./ControlPanel.tsx?raw";
 
 describe("panels selector equality", () => {
   it("shallowObjectKeysEqual misses same-key value changes (the old bug)", () => {
@@ -60,5 +62,23 @@ describe("panels selector equality", () => {
     expect(seenByKeys).toHaveLength(0); // the old bug: update invisible
     expect(seenByValues).toHaveLength(1);
     expect(seenByValues[0].a.props.visible).toBe(false);
+  });
+
+  // The tests above pin the UTILITIES; these two pin the WIRING. Without
+  // them, reverting the component to the keys-only comparator would leave
+  // this whole suite green while the mobile-sheet regression returns.
+  it("panelsSelectorEquality is the value-level comparator", () => {
+    expect(panelsSelectorEquality).toBe(shallowObjectEqual);
+  });
+
+  it("PanelsFallback's panels selector subscribes with panelsSelectorEquality", () => {
+    // Source-level pin (the component renders a Mantine tree, so a render
+    // test would drag in far more than this assertion needs): the selector
+    // must pass the pinned comparator, and the component must not import a
+    // comparator directly.
+    expect(controlPanelSource).toMatch(
+      /useGui\(\s*\(state\) => state\.panels,\s*panelsSelectorEquality,?\s*\)/,
+    );
+    expect(controlPanelSource).not.toContain("shallowObjectKeysEqual");
   });
 });

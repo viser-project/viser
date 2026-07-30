@@ -51,11 +51,20 @@ def open_playground(dock_context, port: int, w: int = 1280, h: int = 800) -> Pag
     """
     last_err: Exception | None = None
     for attempt in range(3):
-        if attempt == 2 and not restart_for_port(port):
+        if attempt == 2:
             # Third attempt exists only to run against a freshly restarted
             # server; without a managed server to restart it would just
-            # repeat the same failure against the same wedged process.
-            break
+            # repeat the same failure against the same wedged process. If the
+            # restart itself fails, surface the PAGE symptom (the diagnostic
+            # that matters) with the restart failure chained as context,
+            # rather than letting the restart error replace it.
+            try:
+                restarted = restart_for_port(port)
+            except Exception as restart_err:
+                assert last_err is not None
+                raise last_err from restart_err
+            if not restarted:
+                break
         pg = dock_context.new_page()
         pg.set_viewport_size({"width": w, "height": h})
         try:

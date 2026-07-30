@@ -9,10 +9,14 @@ forever.
 
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 from unittest.mock import patch
 
 import viser
 import viser._client_autobuild
+import viser._tunnel
 import viser._viser
 
 
@@ -75,3 +79,58 @@ def test_request_share_url_recovers_after_failure() -> None:
             assert server._share_tunnel is _FakeTunnel.instances[1]
     finally:
         server.stop()
+
+
+def _fake_failing_connect_job(
+    connect_event,
+    disconnect_event,
+    close_event,
+    share_domain,
+    local_port,
+    shared_state,
+    event_loop_target,
+) -> None:
+    """Mimic _connect_job's failure path: publish the loop, exit with status
+    "failed" and the loop closed -- WITHOUT ever setting connect_event."""
+    del connect_event, disconnect_event, close_event, share_domain, local_port
+    loop = asyncio.new_event_loop()
+    if event_loop_target is not None:
+        event_loop_target._event_loop = loop
+    shared_state["status"] = "failed"
+    loop.close()
+
+
+def test_close_of_failed_tunnel_releases_watcher_thread() -> None:
+    """close() must release the on_connect watcher (wait_job) of a tunnel
+    that never connected. Pre-fix, wait_job blocked on _connect_event forever;
+    in multiprocess mode that pinned the mp.Manager proxies, leaking the
+    SyncManager child process on every failed-tunnel replacement (one per
+    request_share_url retry while the share backend is unreachable)."""
+    callback_ran = threading.Event()
+    # Single-line double context manager (not the parenthesized 3.10+ form):
+    # this suite runs on 3.8+.
+    with patch.object(
+        viser._tunnel, "_is_multiprocess_ok", lambda: False
+    ), patch.object(viser._tunnel, "_connect_job", _fake_failing_connect_job):
+        tunnel = viser._tunnel.ViserTunnel("fake.example", 0)
+        threads_before = set(threading.enumerate())
+        tunnel.on_connect(lambda _max: callback_ran.set())
+        spawned = [t for t in threading.enumerate() if t not in threads_before]
+        assert spawned, "on_connect should spawn the watcher + job threads"
+
+        deadline = time.monotonic() + 5
+        while tunnel.get_status() != "failed" and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert tunnel.get_status() == "failed"
+
+        tunnel.close()
+
+        for thread in spawned:
+            thread.join(timeout=5)
+        assert not any(t.is_alive() for t in spawned), (
+            "close() left the never-connected tunnel's watcher thread parked "
+            "on _connect_event -- in multiprocess mode this pins the manager "
+            "and leaks its child process on every failed-tunnel replacement"
+        )
+        # Releasing the watcher must not fire the connect callback.
+        assert not callback_ran.is_set()

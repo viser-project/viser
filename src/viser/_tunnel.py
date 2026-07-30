@@ -84,6 +84,15 @@ class ViserTunnel:
         def wait_job() -> None:
             try:
                 self._connect_event.wait()
+                # close() sets _connect_event to release this thread for
+                # tunnels that never connected (a "failed" tunnel otherwise
+                # parks it forever, pinning the mp.Manager and leaking its
+                # child process on every failed-tunnel replacement). Only a
+                # real connection runs the callback: _connect_job stores
+                # "connected" BEFORE setting the event, so this read is
+                # race-free.
+                if self._shared_state["status"] != "connected":
+                    return
             except EOFError:
                 return
             callback(self._shared_state["max_conn_count"])
@@ -156,6 +165,19 @@ class ViserTunnel:
 
             self._thread.join()
             self._disconnect_event.set()
+
+        # Release the on_connect watcher thread. For a tunnel that never
+        # connected, _connect_event was never set, so wait_job would block
+        # forever -- keeping the mp.Manager proxies (and therefore the
+        # SyncManager child process) alive long after close(). wait_job's
+        # status guard keeps this from firing the connect callback. The
+        # process/thread teardown above already happened, so a late
+        # _connect_job can no longer flip the status to "connected".
+        try:
+            self._connect_event.set()
+        except (EOFError, BrokenPipeError, ConnectionResetError):
+            # Manager already gone; its threads died with it.
+            pass
 
 
 def _connect_job(

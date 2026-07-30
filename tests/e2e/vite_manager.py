@@ -136,8 +136,12 @@ class ViteServerManager:
         if proc is None:
             return
         self._proc = None
+        # Process groups are POSIX-only; on Windows (no os.getpgid/killpg,
+        # start_new_session silently ignored) fall back to the direct-child
+        # terminate below, matching the pre-manager fixture's behavior for
+        # devs running the e2e suite locally. CI runs Linux.
         try:
-            pgid = os.getpgid(proc.pid)
+            pgid = os.getpgid(proc.pid) if hasattr(os, "getpgid") else None
         except ProcessLookupError:
             pgid = None
         if pgid is None:
