@@ -365,8 +365,6 @@ InstancedMesh2.prototype.frustumCullingLOD = function (
   if (sortObjects) {
     const customSort = this.customSort;
     const list = _renderList.array;
-    let levelIndex = 0;
-    let levelDistance = levels[1].distance;
 
     if (customSort === null) {
       list.sort(
@@ -378,16 +376,45 @@ InstancedMesh2.prototype.frustumCullingLOD = function (
       customSort(list);
     }
 
-    for (let i = 0, l = list.length; i < l; i++) {
-      const item = list[i];
+    // === VISER LOCAL PATCH ===
+    // The original level-assignment walk assumed `list` was sorted in
+    // ascending depth order, which only holds for opaque materials.
+    // Transparent materials sort back-to-front (descending depth), which
+    // made the walk assign the farthest instances to the finest LOD level
+    // and scramble the rest. Detect the actual ordering and walk the level
+    // thresholds in the matching direction, preserving the sorted draw
+    // order within each level.
+    const descending =
+      list.length > 1 && list[0].depth > list[list.length - 1].depth;
 
-      if (item.depth > levelDistance) {
-        levelIndex++;
-        levelDistance = levels[levelIndex + 1]?.distance ?? Infinity; // improve this condition and use for of instead
+    if (descending) {
+      let levelIndex = levels.length - 1;
+
+      for (let i = 0, l = list.length; i < l; i++) {
+        const item = list[i];
+
+        while (levelIndex > 0 && item.depth <= levels[levelIndex].distance) {
+          levelIndex--;
+        }
+
+        indexes[levelIndex][count[levelIndex]++] = item.index;
       }
+    } else {
+      let levelIndex = 0;
+      let levelDistance = levels[1].distance;
 
-      indexes[levelIndex][count[levelIndex]++] = item.index;
+      for (let i = 0, l = list.length; i < l; i++) {
+        const item = list[i];
+
+        if (item.depth > levelDistance) {
+          levelIndex++;
+          levelDistance = levels[levelIndex + 1]?.distance ?? Infinity; // improve this condition and use for of instead
+        }
+
+        indexes[levelIndex][count[levelIndex]++] = item.index;
+      }
     }
+    // === END VISER LOCAL PATCH ===
 
     _renderList.reset();
   }

@@ -31,3 +31,21 @@ lists every divergence from upstream.
 - **Re-apply check:** confirm upstream still creates `instanceIndex` as a raw
   `GLInstancedBufferAttribute` (untracked by three). If upstream adds its own
   disposal for it, this patch may become redundant -- verify before dropping.
+
+### 2. Direction-aware LOD level assignment when `sortObjects` is enabled
+
+- **File:** `core/feature/FrustumCulling.ts` (`frustumCullingLOD`)
+- **What:** the walk that splits the sorted render list into per-LOD-level
+  index arrays assumed the list was sorted in ascending depth order. That only
+  holds for opaque materials; transparent materials sort back-to-front
+  (descending depth), which assigned the farthest instances to the finest LOD
+  level and scrambled the rest. The patch detects the actual ordering (by
+  comparing the first and last depths) and walks the level thresholds in the
+  matching direction, preserving draw order within each level.
+- **Why:** Viser enables `sortObjects` for transparent batched meshes so that
+  instances alpha-blend back-to-front (issue #752); without this patch,
+  transparent meshes that also have LODs would render with wrong LOD levels.
+  Covered by `core/FrustumCulling.sorting.test.ts`.
+- **Re-apply check:** if upstream has made the sorted LOD-splitting loop
+  order-aware (or sorts ascending and draws in reverse), this patch may be
+  redundant -- run the sorting test against the re-vendored copy to verify.
