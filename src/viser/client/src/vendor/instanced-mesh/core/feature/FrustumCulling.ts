@@ -246,6 +246,24 @@ InstancedMesh2.prototype.BVHCulling = function (camera: Camera) {
   const onFrustumEnter = this.onFrustumEnter;
   let count = 0;
 
+  // === VISER LOCAL PATCH ===
+  // Sort by the instance-transformed geometry bounding-sphere center, like
+  // linearCulling, instead of the raw instance origin. For off-center
+  // geometry the origin can order instances differently depending on their
+  // rotations, so the BVH and linear paths disagreed on draw order.
+  let sphereCenter: Vector3 = null;
+  let sphereRadius = 0;
+  let geometryCentered = true;
+  if (sortObjects) {
+    if (!this.geometry.boundingSphere) this.geometry.computeBoundingSphere();
+    const bSphere = this._geometry.boundingSphere;
+    sphereCenter = bSphere.center;
+    sphereRadius = bSphere.radius;
+    geometryCentered =
+      sphereCenter.x === 0 && sphereCenter.y === 0 && sphereCenter.z === 0;
+  }
+  // === END VISER LOCAL PATCH ===
+
   this.bvh.frustumCulling(
     _projScreenMatrix,
     (node: BVHNode<{}, number>) => {
@@ -260,7 +278,22 @@ InstancedMesh2.prototype.BVHCulling = function (camera: Camera) {
         (!onFrustumEnter || onFrustumEnter(index, camera))
       ) {
         if (sortObjects) {
-          const depth = this.getPositionAt(index).sub(_cameraPos).dot(_forward);
+          // === VISER LOCAL PATCH ===
+          let depth: number;
+          if (geometryCentered) {
+            depth = this.getPositionAt(index).sub(_cameraPos).dot(_forward);
+          } else {
+            this.applyMatrixAtToSphere(
+              index,
+              _sphere,
+              sphereCenter,
+              sphereRadius,
+            );
+            depth = _position
+              .subVectors(_sphere.center, _cameraPos)
+              .dot(_forward);
+          }
+          // === END VISER LOCAL PATCH ===
           _renderList.push(depth, index);
         } else {
           array[count++] = index;
@@ -442,6 +475,17 @@ InstancedMesh2.prototype.BVHCullingLOD = function (
   const onFrustumEnter = this.onFrustumEnter;
 
   if (sortObjects) {
+    // === VISER LOCAL PATCH ===
+    // Sort by the instance-transformed geometry bounding-sphere center, like
+    // linearCullingLOD, instead of the raw instance origin (see BVHCulling).
+    if (!this.geometry.boundingSphere) this.geometry.computeBoundingSphere();
+    const bSphere = this._geometry.boundingSphere;
+    const sphereCenter = bSphere.center;
+    const sphereRadius = bSphere.radius;
+    const geometryCentered =
+      sphereCenter.x === 0 && sphereCenter.y === 0 && sphereCenter.z === 0;
+    // === END VISER LOCAL PATCH ===
+
     this.bvh.frustumCulling(
       _projScreenMatrix,
       (node: BVHNode<{}, number>) => {
@@ -452,8 +496,21 @@ InstancedMesh2.prototype.BVHCullingLOD = function (
           this.getVisibilityAt(index) &&
           (!onFrustumEnter || onFrustumEnter(index, camera, cameraLOD))
         ) {
-          const distance =
-            this.getPositionAt(index).distanceToSquared(_cameraLODPos);
+          // === VISER LOCAL PATCH ===
+          let distance: number;
+          if (geometryCentered) {
+            distance =
+              this.getPositionAt(index).distanceToSquared(_cameraLODPos);
+          } else {
+            this.applyMatrixAtToSphere(
+              index,
+              _sphere,
+              sphereCenter,
+              sphereRadius,
+            );
+            distance = _sphere.center.distanceToSquared(_cameraLODPos);
+          }
+          // === END VISER LOCAL PATCH ===
           _renderList.push(distance, index);
         }
       },

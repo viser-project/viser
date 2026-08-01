@@ -53,3 +53,23 @@ lists every divergence from upstream.
 - **Re-apply check:** if upstream has made the sorted LOD-splitting loop
   order-aware (or sorts ascending and draws in reverse), this patch may be
   redundant -- run the sorting test against the re-vendored copy to verify.
+
+### 3. BVH culling paths sort by transformed bounding-sphere center
+
+- **File:** `core/feature/FrustumCulling.ts` (`BVHCulling`, `BVHCullingLOD`)
+- **What:** when `sortObjects` is enabled, the BVH culling paths computed
+  sort depth (and, in the LOD path, the LOD-selection distance) from the raw
+  instance origin (`getPositionAt`), while the linear culling paths use the
+  geometry bounding-sphere center transformed by the instance matrix. For
+  off-center geometry the origin orders instances differently depending on
+  their rotations, so BVH-enabled meshes (clickable/draggable/large) could
+  draw transparent instances in a different order than the same mesh without
+  a BVH. The patch mirrors linearCulling's sphere-center logic, keeping the
+  cheap origin fast path when the geometry is centered.
+- **Why:** viser enables `sortObjects` for transparent batched meshes
+  (issue #752); sort order should not depend on whether a BVH happens to be
+  built. Covered by `core/FrustumCulling.sorting.test.ts` (off-center
+  geometry tests).
+- **Re-apply check:** if upstream's BVH culling paths sort by the
+  transformed bounding sphere (matching their linear paths), this patch is
+  redundant -- the off-center geometry tests verify either way.

@@ -120,6 +120,86 @@ describe("InstancedMesh2 per-instance depth sorting", () => {
   });
 });
 
+describe("InstancedMesh2 sorting with off-center geometry (BVH path)", () => {
+  // A box whose bounding-sphere center sits at local (0, 0, +4). Instance 0
+  // is rotated 180 degrees about X, flipping the offset to world -Z, so its
+  // rendered geometry is *farther* than instance 1's even though its origin
+  // is *closer*. Sorting by origin and by transformed center give opposite
+  // orders.
+  function makeOffCenterMesh(material: THREE.Material): InstancedMesh2 {
+    const geometry = new THREE.BoxGeometry();
+    geometry.translate(0, 0, 4);
+    const mesh = new InstancedMesh2(geometry, material, {
+      capacity: 2,
+      renderer: makeRenderer(),
+    });
+    mesh.addInstances(2, (obj, index) => {
+      if (index === 0) {
+        obj.position.set(0, 0, -10); // Center lands at z = -14.
+        obj.quaternion.set(1, 0, 0, 0); // 180 degrees about X.
+      } else {
+        obj.position.set(0, 0, -12); // Center lands at z = -8.
+      }
+    });
+    mesh.updateMatrixWorld();
+    return mesh;
+  }
+
+  it("sorts by transformed bounding-sphere center, not instance origin", () => {
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeOffCenterMesh(material);
+    mesh.computeBVH();
+    mesh.sortObjects = true;
+
+    mesh.performFrustumCulling(makeCamera());
+
+    // Back-to-front by center depth (14, 8) is [0, 1]; sorting by origin
+    // depth (10, 12) would wrongly give [1, 0].
+    expect(renderedOrder(mesh)).toEqual([0, 1]);
+  });
+
+  it("matches the linear (non-BVH) path's order", () => {
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeOffCenterMesh(material);
+    mesh.sortObjects = true;
+
+    mesh.performFrustumCulling(makeCamera());
+
+    expect(renderedOrder(mesh)).toEqual([0, 1]);
+  });
+
+  it("selects LOD levels by transformed center under the BVH path", () => {
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const geometry = new THREE.BoxGeometry();
+    geometry.translate(0, 0, 4);
+    const mesh = new InstancedMesh2(geometry, material, {
+      capacity: 2,
+      renderer: makeRenderer(),
+    });
+    mesh.addInstances(2, (obj, index) => {
+      if (index === 0) {
+        obj.position.set(0, 0, -9); // Center at z = -13: past the threshold.
+        obj.quaternion.set(1, 0, 0, 0);
+      } else {
+        obj.position.set(0, 0, -12); // Center at z = -8: inside it.
+      }
+    });
+    mesh.updateMatrixWorld();
+    mesh.addLOD(new THREE.BoxGeometry(), material.clone(), 10);
+    mesh.computeBVH();
+    mesh.sortObjects = true;
+
+    mesh.performFrustumCulling(makeCamera());
+
+    // By center distance, instance 0 (13) is coarse and instance 1 (8) is
+    // fine; origin distances (9, 12) would assign the exact opposite.
+    const orders = mesh.LODinfo!.render!.levels.map((level) =>
+      Array.from(level.object.instanceIndex.array.slice(0, level.object.count)),
+    );
+    expect(orders).toEqual([[1], [0]]);
+  });
+});
+
 describe("InstancedMesh2 sorting with LODs", () => {
   // Near instances (z = -2, -3, -1) belong to LOD level 0; far instances
   // (z = -20, -30, -15) are past the level-1 threshold at distance 10.
