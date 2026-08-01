@@ -40,13 +40,15 @@ export const BatchedMesh = React.forwardRef<
       side: message.props.side,
     });
 
-    // Set transparent flag if any transparency is involved.
-    if (
+    // Set the transparent flag explicitly in both directions:
+    // createStandardMaterial marks the material transparent whenever opacity
+    // is non-null, including opacity=1.0, which would needlessly put fully
+    // opaque meshes in the transparent render pass and (since transparency
+    // now enables per-frame instance depth sorting) pay a sort cost for no
+    // visual difference.
+    mat.transparent =
       (message.props.opacity !== null && message.props.opacity < 1.0) ||
-      message.props.batched_opacities !== null
-    ) {
-      mat.transparent = true;
-    }
+      message.props.batched_opacities !== null;
 
     return mat;
   }, [

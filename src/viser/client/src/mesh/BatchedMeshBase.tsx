@@ -1,9 +1,7 @@
 import React, { useMemo, useEffect } from "react";
 import * as THREE from "three";
-import {
-  InstancedMesh2,
-  createRadixSort,
-} from "../vendor/instanced-mesh/index.js";
+import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
+import { createBackToFrontRadixSort } from "./backToFrontRadixSort";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { BatchedMeshHoverOutlines } from "./BatchedMeshHoverOutlines";
 import { useThree } from "@react-three/fiber";
@@ -179,18 +177,17 @@ export const BatchedMeshBase = React.forwardRef<
     // instances can blend over closer ones. Sorting costs a per-frame pass
     // over the instances, so it stays off for opaque materials, where draw
     // order doesn't affect correctness.
+    //
+    // Known limits: multi-material meshes draw one pass per geometry group,
+    // so blending is only sorted within each group, not across groups; with
+    // LODs, three.js's object-level sort decides order *between* LOD levels
+    // arbitrarily, so only instances within a level are ordered.
     const materialList = Array.isArray(props.material)
       ? props.material
       : [props.material];
     if (materialList.some((material) => material.transparent)) {
       newMesh.sortObjects = true;
-      newMesh.customSort = Array.isArray(props.material)
-        ? // createRadixSort() reads sort direction from `.transparent` on a
-          // single material, and considers material arrays opaque
-          // (front-to-back). Multi-material meshes (batched GLBs) need
-          // back-to-front ordering too, so sort with a comparator instead.
-          (list) => void list.sort((a, b) => b.depth - a.depth)
-        : createRadixSort(newMesh);
+      newMesh.customSort = createBackToFrontRadixSort();
     }
 
     // Create LODs if needed.

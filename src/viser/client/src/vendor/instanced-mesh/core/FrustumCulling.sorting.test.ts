@@ -3,6 +3,7 @@ import * as THREE from "three";
 // Import via the package index so the prototype-augmentation feature modules
 // (Instances.ts, FrustumCulling.ts, LOD.ts, ...) are registered.
 import { InstancedMesh2, createRadixSort } from "../index.js";
+import { createBackToFrontRadixSort } from "../../../mesh/backToFrontRadixSort";
 
 // Minimal WebGL2 mock covering the buffer calls GLInstancedBufferAttribute
 // touches. Frustum culling and sorting are CPU-side, so nothing else is
@@ -81,6 +82,33 @@ describe("InstancedMesh2 per-instance depth sorting", () => {
     expect(renderedOrder(mesh)).toEqual([2, 4, 0, 3, 1]);
   });
 
+  it("sorts back-to-front with createBackToFrontRadixSort", () => {
+    // The sort BatchedMeshBase actually installs: direction is fixed to
+    // back-to-front rather than read from the material, so it also covers
+    // material arrays (batched GLBs).
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeMesh(depths, material, makeRenderer());
+    mesh.sortObjects = true;
+    mesh.customSort = createBackToFrontRadixSort();
+
+    mesh.performFrustumCulling(makeCamera());
+
+    expect(renderedOrder(mesh)).toEqual([2, 4, 0, 3, 1]);
+  });
+
+  it("handles a single instance (zero depth range) in the radix sort", () => {
+    // With one instance, depthDelta is 0; the sort must not produce NaN keys
+    // or drop the instance.
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeMesh([3], material, makeRenderer());
+    mesh.sortObjects = true;
+    mesh.customSort = createBackToFrontRadixSort();
+
+    mesh.performFrustumCulling(makeCamera());
+
+    expect(renderedOrder(mesh)).toEqual([0]);
+  });
+
   it("sorts opaque instances front-to-back", () => {
     const material = new THREE.MeshBasicMaterial();
     const mesh = makeMesh(depths, material, makeRenderer());
@@ -120,6 +148,22 @@ describe("InstancedMesh2 sorting with LODs", () => {
     // level. Before the direction-aware level assignment patch, the
     // descending list was split as if ascending: the farthest instances
     // landed in level 0 and the counts were wrong.
+    expect(levelOrders(mesh)).toEqual([
+      [2, 0, 4], // Near: z = -3, -2, -1.
+      [3, 1, 5], // Far: z = -30, -20, -15.
+    ]);
+  });
+
+  it("assigns LOD levels correctly with createBackToFrontRadixSort", () => {
+    // Radix-sorted descending lists must split into levels the same way the
+    // comparator-sorted ones do.
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeLODMesh(material);
+    mesh.sortObjects = true;
+    mesh.customSort = createBackToFrontRadixSort();
+
+    mesh.performFrustumCulling(makeCamera());
+
     expect(levelOrders(mesh)).toEqual([
       [2, 0, 4], // Near: z = -3, -2, -1.
       [3, 1, 5], // Far: z = -30, -20, -15.
