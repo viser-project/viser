@@ -126,6 +126,36 @@ describe("InstancedMesh2 sorting with LODs", () => {
     ]);
   });
 
+  it("assigns a single instance to the right level when it skips bands", () => {
+    // A one-item list can't be direction-detected, so it takes the ascending
+    // walk. With three levels (thresholds at distances 10 and 20), a lone
+    // instance at distance 25 must skip two bands to land in level 2;
+    // upstream's walk advanced at most one level per item.
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeMesh([25], material, makeRenderer());
+    mesh.addLOD(new THREE.BoxGeometry(), material.clone(), 10);
+    mesh.addLOD(new THREE.BoxGeometry(), material.clone(), 20);
+    mesh.sortObjects = true;
+
+    mesh.performFrustumCulling(makeCamera());
+
+    expect(levelOrders(mesh)).toEqual([[], [], [0]]);
+  });
+
+  it("assigns equidistant instances to the right level", () => {
+    // All-equal depths also fail direction detection and take the ascending
+    // walk; every instance sits past both thresholds.
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeMesh([25, 25, 25], material, makeRenderer());
+    mesh.addLOD(new THREE.BoxGeometry(), material.clone(), 10);
+    mesh.addLOD(new THREE.BoxGeometry(), material.clone(), 20);
+    mesh.sortObjects = true;
+
+    mesh.performFrustumCulling(makeCamera());
+
+    expect(levelOrders(mesh)).toEqual([[], [], [0, 1, 2]]);
+  });
+
   it("assigns LOD levels correctly for front-to-back (opaque) lists", () => {
     const material = new THREE.MeshBasicMaterial();
     const mesh = makeLODMesh(material);

@@ -400,15 +400,20 @@ InstancedMesh2.prototype.frustumCullingLOD = function (
         indexes[levelIndex][count[levelIndex]++] = item.index;
       }
     } else {
+      // `while` instead of upstream's `if`: an item whose depth skips more
+      // than one level band (e.g. a single instance, or several equidistant
+      // instances, far from the camera) must advance multiple levels for one
+      // item. Ties and single-item lists also take this branch, so it can't
+      // assume depths increase gradually.
       let levelIndex = 0;
       let levelDistance = levels[1].distance;
 
       for (let i = 0, l = list.length; i < l; i++) {
         const item = list[i];
 
-        if (item.depth > levelDistance) {
+        while (item.depth > levelDistance) {
           levelIndex++;
-          levelDistance = levels[levelIndex + 1]?.distance ?? Infinity; // improve this condition and use for of instead
+          levelDistance = levels[levelIndex + 1]?.distance ?? Infinity;
         }
 
         indexes[levelIndex][count[levelIndex]++] = item.index;

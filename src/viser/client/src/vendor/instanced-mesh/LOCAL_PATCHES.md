@@ -41,7 +41,11 @@ lists every divergence from upstream.
   (descending depth), which assigned the farthest instances to the finest LOD
   level and scrambled the rest. The patch detects the actual ordering (by
   comparing the first and last depths) and walks the level thresholds in the
-  matching direction, preserving draw order within each level.
+  matching direction, preserving draw order within each level. The ascending
+  walk also advances with `while` where upstream used `if`: single-item and
+  all-equal-depth lists (which the direction check routes to the ascending
+  branch) can skip more than one level band per item, and upstream's `if`
+  assigned them one level too fine.
 - **Why:** Viser enables `sortObjects` for transparent batched meshes so that
   instances alpha-blend back-to-front (issue #752); without this patch,
   transparent meshes that also have LODs would render with wrong LOD levels.
