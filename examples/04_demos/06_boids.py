@@ -1,7 +1,7 @@
 """Boids flocking simulation
 
-Hundreds of birds flock in 3D using Craig Reynolds' classic boids rules, with a
-draggable predator to scatter them.
+Hundreds of birds — or a school of fish — flock in 3D using Craig Reynolds'
+classic boids rules, with a draggable predator to scatter them.
 
 **Features:**
 
@@ -10,6 +10,9 @@ draggable predator to scatter them.
 * Vectorized separation, alignment, and cohesion rules with NumPy
 * A predator controlled with :meth:`viser.SceneApi.add_transform_controls`
   that the flock flees from
+* A bird / fish species toggle that swaps the instanced mesh geometry
+  in-place and restyles the scene with :meth:`viser.SceneApi.configure_fog`
+  and :meth:`viser.SceneApi.set_background_image`
 * GUI sliders for live-tuning the flocking behavior
 """
 
@@ -48,6 +51,40 @@ def make_bird_mesh() -> tuple[np.ndarray, np.ndarray]:
     return vertices, faces
 
 
+def make_fish_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """Build a small fish pointing along +X: a diamond body with a vertical tail fin."""
+    vertices = np.array(
+        [
+            [0.30, 0.0, 0.0],  # Nose.
+            [0.02, 0.0, 0.10],  # Back.
+            [0.02, 0.07, 0.0],  # Left flank.
+            [0.02, 0.0, -0.08],  # Belly.
+            [0.02, -0.07, 0.0],  # Right flank.
+            [-0.18, 0.0, 0.0],  # Tail root.
+            [-0.34, 0.0, 0.12],  # Tail fin, top.
+            [-0.30, 0.0, 0.0],  # Tail fin, notch.
+            [-0.34, 0.0, -0.10],  # Tail fin, bottom.
+        ],
+        dtype=np.float32,
+    )
+    faces = np.array(
+        [
+            [0, 2, 1],  # Front upper-left.
+            [0, 3, 2],  # Front lower-left.
+            [0, 4, 3],  # Front lower-right.
+            [0, 1, 4],  # Front upper-right.
+            [5, 1, 2],  # Rear upper-left.
+            [5, 2, 3],  # Rear lower-left.
+            [5, 3, 4],  # Rear lower-right.
+            [5, 4, 1],  # Rear upper-right.
+            [5, 6, 7],  # Tail fin, upper lobe.
+            [5, 7, 8],  # Tail fin, lower lobe.
+        ],
+        dtype=np.uint32,
+    )
+    return vertices, faces
+
+
 def headings_to_wxyzs(directions: np.ndarray) -> np.ndarray:
     """Compute quaternions rotating +X to each (unit) direction. Shape (N, 3) -> (N, 4)."""
     n = directions.shape[0]
@@ -64,9 +101,18 @@ def headings_to_wxyzs(directions: np.ndarray) -> np.ndarray:
     return wxyzs
 
 
-def headings_to_colors(directions: np.ndarray) -> np.ndarray:
-    """Color each boid by its heading: hue from yaw, brightness from pitch."""
-    hue = (np.arctan2(directions[:, 1], directions[:, 0]) / (2.0 * np.pi)) % 1.0
+def headings_to_colors(
+    directions: np.ndarray, hue_start: float = 0.0, hue_span: float = 1.0
+) -> np.ndarray:
+    """Color each boid by its heading: hue from yaw, brightness from pitch.
+
+    Birds use the full rainbow (`hue_span=1.0`); fish compress the hues into a
+    silvery blue-green band.
+    """
+    yaw_fraction = (
+        np.arctan2(directions[:, 1], directions[:, 0]) / (2.0 * np.pi)
+    ) % 1.0
+    hue = (hue_start + hue_span * yaw_fraction) % 1.0
     value = 0.75 + 0.25 * directions[:, 2]
 
     # Vectorized HSV -> RGB with full saturation.
@@ -89,6 +135,14 @@ def headings_to_colors(directions: np.ndarray) -> np.ndarray:
     return (rgb * 255).astype(np.uint8)
 
 
+def make_underwater_gradient() -> np.ndarray:
+    """A vertical gradient from sunlit teal down to deep blue."""
+    top = np.array([40.0, 110.0, 140.0])
+    bottom = np.array([4.0, 18.0, 42.0])
+    t = np.linspace(0.0, 1.0, 256)[:, None, None]
+    return (top * (1.0 - t) + bottom * t).astype(np.uint8)  # (256, 1, 3)
+
+
 def main() -> None:
     server = viser.ViserServer()
     server.scene.configure_default_lights()
@@ -97,6 +151,9 @@ def main() -> None:
     server.initial_camera.look_at = (0.0, 0.0, 5.0)
 
     # Flocking controls.
+    species_dropdown = server.gui.add_dropdown(
+        "Species", options=("Birds", "Fish"), initial_value="Birds"
+    )
     num_boids_slider = server.gui.add_slider(
         "# of boids", min=10, max=1000, step=10, initial_value=400
     )
@@ -140,31 +197,66 @@ def main() -> None:
             velocities, axis=1, keepdims=True
         )
 
-    # The predator: drag it into the flock to scare the boids.
+    # The predator: drag it into the flock to scare the boids. It plays a hawk
+    # for birds and a shark for fish.
     predator = server.scene.add_transform_controls(
         "/predator",
         position=(0.0, -12.0, 5.0),
         scale=1.5,
         disable_rotations=True,
     )
-    server.scene.add_icosphere(
+    predator_body = server.scene.add_icosphere(
         "/predator/body", radius=0.4, color=(220, 30, 30), subdivisions=2
     )
 
-    vertices, faces = make_bird_mesh()
+    bird_vertices, bird_faces = make_bird_mesh()
+    fish_vertices, fish_faces = make_fish_mesh()
+    underwater_gradient = make_underwater_gradient()
+
     directions = velocities / np.linalg.norm(velocities, axis=1, keepdims=True)
     flock = server.scene.add_batched_meshes_simple(
         "/flock",
-        vertices=vertices,
-        faces=faces,
+        vertices=bird_vertices,
+        faces=bird_faces,
         batched_positions=positions.astype(np.float32),
         batched_wxyzs=headings_to_wxyzs(directions),
         batched_colors=headings_to_colors(directions),
         side="double",
     )
 
+    def apply_species(species: str) -> None:
+        """Swap the instanced mesh and restyle the scene for the chosen species."""
+        with server.atomic():
+            if species == "Fish":
+                flock.vertices = fish_vertices
+                flock.faces = fish_faces
+                predator_body.color = (90, 100, 110)  # Shark gray.
+                server.scene.configure_fog(near=6.0, far=45.0, color=(10, 40, 70))
+                server.scene.set_background_image(underwater_gradient)
+                # Fish school tighter and slower than birds fly.
+                alignment_slider.value = 1.4
+                cohesion_slider.value = 1.4
+                max_speed_slider.value = 4.0
+            else:
+                flock.vertices = bird_vertices
+                flock.faces = bird_faces
+                predator_body.color = (220, 30, 30)  # Hawk red.
+                server.scene.configure_fog(near=0.0, far=1.0, enabled=False)
+                server.scene.set_background_image(None)
+                alignment_slider.value = 1.0
+                cohesion_slider.value = 0.8
+                max_speed_slider.value = 6.0
+
+    prev_species = species_dropdown.value
+
     while True:
         start = time.perf_counter()
+
+        species = species_dropdown.value
+        if species != prev_species:
+            apply_species(species)
+            prev_species = species
+
         n = num_boids_slider.value
         if positions.shape[0] != n:
             positions, velocities = spawn(n)
@@ -222,16 +314,24 @@ def main() -> None:
             )
             velocities = velocities + dt * acceleration
 
+            # Fish keep to flatter, more horizontal schools.
+            if species == "Fish":
+                velocities[:, 2] *= 1.0 - 0.8 * dt
+
             # Clamp speeds to [min_speed, max_speed].
             speeds = np.linalg.norm(velocities, axis=1, keepdims=True)
             velocities *= np.clip(speeds, min_speed, max_speed) / (speeds + 1e-9)
             positions = positions + dt * velocities
 
             directions = velocities / np.linalg.norm(velocities, axis=1, keepdims=True)
+            if species == "Fish":
+                colors = headings_to_colors(directions, hue_start=0.42, hue_span=0.22)
+            else:
+                colors = headings_to_colors(directions)
             with server.atomic():
                 flock.batched_positions = positions.astype(np.float32)
                 flock.batched_wxyzs = headings_to_wxyzs(directions)
-                flock.batched_colors = headings_to_colors(directions)
+                flock.batched_colors = colors
 
         # Aim for 60 fps, minus however long the update took.
         time.sleep(max(1.0 / 60.0 - (time.perf_counter() - start), 0.0))
