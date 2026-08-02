@@ -135,6 +135,43 @@ def headings_to_colors(
     return (rgb * 255).astype(np.uint8)
 
 
+def flocking_accelerations(
+    positions: np.ndarray,
+    velocities: np.ndarray,
+    separation_radius: float,
+    neighbor_radius: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute per-boid separation, alignment, and cohesion steering terms.
+
+    Each rule is a sum over neighbors, so all three can be phrased as
+    (N, N) @ (N, 3) matrix products instead of broadcasted (N, N, 3)
+    arrays; BLAS evaluates these with far less memory traffic.
+    """
+    # Pairwise squared distances from the Gram matrix:
+    # |pi - pj|^2 = |pi|^2 + |pj|^2 - 2 pi.pj. Clamp tiny float32 negatives.
+    sq_norms = np.einsum("ij,ij->i", positions, positions)
+    sq_dists = sq_norms[:, None] + sq_norms[None, :] - 2.0 * (positions @ positions.T)
+    sq_dists = np.maximum(sq_dists, 0.0)
+    np.fill_diagonal(sq_dists, np.inf)
+
+    # Separation: sum_j -(pj - pi) / (dij^2 + eps) over close neighbors. With
+    # weights W_ij = close_ij / (dij^2 + eps), this is rowsum(W) pi - W @ P.
+    weights = np.where(
+        sq_dists < separation_radius**2, 1.0 / (sq_dists + 1e-6), 0.0
+    ).astype(np.float32)
+    push = weights.sum(axis=1, keepdims=True) * positions - weights @ positions
+
+    # Alignment and cohesion: steer toward the mean velocity and mean position
+    # of neighbors within the (larger) neighbor radius.
+    near = (sq_dists < neighbor_radius**2).astype(np.float32)
+    num_near = near.sum(axis=1, keepdims=True)
+    has_neighbors = num_near > 0.0
+    safe_num = np.maximum(num_near, 1.0)
+    align = np.where(has_neighbors, (near @ velocities) / safe_num - velocities, 0.0)
+    cohere = np.where(has_neighbors, (near @ positions) / safe_num - positions, 0.0)
+    return push, align, cohere
+
+
 def make_underwater_gradient() -> np.ndarray:
     """A vertical gradient from sunlit teal down to deep blue."""
     top = np.array([40.0, 110.0, 140.0])
@@ -172,8 +209,10 @@ def main() -> None:
     paused_checkbox = server.gui.add_checkbox("Pause", initial_value=False)
     scatter_button = server.gui.add_button("Scatter!")
 
-    # Simulation constants.
-    home = np.array([0.0, 0.0, 5.0])  # Center of the flock's territory.
+    # Simulation constants. State is kept in float32: at several hundred boids
+    # the pairwise-distance work is memory-bound, so halving the element size
+    # roughly halves the cost of a simulation step.
+    home = np.array([0.0, 0.0, 5.0], dtype=np.float32)  # Center of the territory.
     home_radius = 7.0  # Soft boundary; boids steer back once outside.
     neighbor_radius = 1.8
     separation_radius = 0.7
@@ -182,8 +221,8 @@ def main() -> None:
     rng = np.random.default_rng(0)
 
     def spawn(n: int) -> tuple[np.ndarray, np.ndarray]:
-        positions = home + rng.uniform(-3.0, 3.0, size=(n, 3))
-        velocities = rng.normal(size=(n, 3))
+        positions = home + rng.uniform(-3.0, 3.0, size=(n, 3)).astype(np.float32)
+        velocities = rng.normal(size=(n, 3)).astype(np.float32)
         velocities *= 4.0 / np.linalg.norm(velocities, axis=1, keepdims=True)
         return positions, velocities
 
@@ -192,7 +231,7 @@ def main() -> None:
     @scatter_button.on_click
     def _(_) -> None:
         nonlocal velocities
-        velocities = rng.normal(size=velocities.shape)
+        velocities = rng.normal(size=velocities.shape).astype(np.float32)
         velocities *= max_speed_slider.value / np.linalg.norm(
             velocities, axis=1, keepdims=True
         )
@@ -265,29 +304,9 @@ def main() -> None:
             dt = 1.0 / 60.0
             max_speed = max_speed_slider.value
 
-            # Pairwise offsets and distances, with self-distance masked out.
-            offsets = positions[None, :, :] - positions[:, None, :]  # (N, N, 3)
-            dists = np.linalg.norm(offsets, axis=-1)
-            np.fill_diagonal(dists, np.inf)
-
-            # Separation: steer away from close neighbors, weighted by 1/distance^2.
-            close = dists < separation_radius
-            push = np.where(
-                close[:, :, None], -offsets / (dists[:, :, None] ** 2 + 1e-6), 0.0
-            ).sum(axis=1)
-
-            # Alignment and cohesion over the (larger) neighbor radius.
-            near = dists < neighbor_radius
-            num_near = np.maximum(near.sum(axis=1, keepdims=True), 1)
-            mean_velocity = (near[:, :, None] * velocities[None, :, :]).sum(
-                axis=1
-            ) / num_near
-            mean_position = (
-                positions + (near[:, :, None] * offsets).sum(axis=1) / num_near
+            push, align, cohere = flocking_accelerations(
+                positions, velocities, separation_radius, neighbor_radius
             )
-            has_neighbors = near.any(axis=1, keepdims=True)
-            align = np.where(has_neighbors, mean_velocity - velocities, 0.0)
-            cohere = np.where(has_neighbors, mean_position - positions, 0.0)
 
             # Soft containment: pull back toward home once outside the boundary.
             from_home = positions - home
@@ -297,7 +316,7 @@ def main() -> None:
             )
 
             # Flee the predator.
-            from_predator = positions - np.asarray(predator.position)
+            from_predator = positions - np.asarray(predator.position, dtype=np.float32)
             dist_predator = np.linalg.norm(from_predator, axis=1, keepdims=True)
             flee = np.where(
                 dist_predator < predator_radius,
