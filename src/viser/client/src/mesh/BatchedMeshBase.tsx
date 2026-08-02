@@ -3,6 +3,10 @@ import * as THREE from "three";
 import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { BatchedMeshHoverOutlines } from "./BatchedMeshHoverOutlines";
+import {
+  createBackToFrontSort,
+  isTransparentMaterial,
+} from "./batchedDepthSort";
 import { useThree } from "@react-three/fiber";
 
 // Define the types of LOD settings.
@@ -396,6 +400,32 @@ export const BatchedMeshBase = React.forwardRef<
       mesh.setOpacityAt(i, globalOpacity * opacities[i]);
     }
   }, [props.opacity, props.batched_opacities, mesh]);
+
+  // Sort instances back-to-front when the material blends.
+  //
+  // Three.js depth-sorts objects, not instances: the whole batch is one draw
+  // call, so transparent instances would otherwise composite in buffer order
+  // (far geometry blended over near geometry, with the artifact pattern
+  // jumping as the camera orbits). InstancedMesh2 can reorder its index
+  // buffer during the culling pass it already runs each frame; the sort
+  // itself lives in `batchedDepthSort`.
+  //
+  // Opaque meshes stay unsorted: they don't need it, and enabling it would
+  // add a per-frame O(n) pass plus force the render-list path for meshes
+  // that can otherwise reuse a cached index array.
+  const transparentMaterial = isTransparentMaterial(props.material);
+  useEffect(() => {
+    if (!mesh) return;
+
+    // `customSort` is only consulted while `sortObjects` is on, so turning
+    // the toggle off is enough to disable sorting -- and the vendor types
+    // the callback as non-nullable even though it defaults to null, so we
+    // couldn't clear it back out anyway.
+    mesh.sortObjects = transparentMaterial;
+    if (transparentMaterial) {
+      mesh.customSort = createBackToFrontSort();
+    }
+  }, [mesh, transparentMaterial]);
 
   // Update shadow settings.
   useEffect(() => {

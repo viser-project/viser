@@ -365,8 +365,6 @@ InstancedMesh2.prototype.frustumCullingLOD = function (
   if (sortObjects) {
     const customSort = this.customSort;
     const list = _renderList.array;
-    let levelIndex = 0;
-    let levelDistance = levels[1].distance;
 
     if (customSort === null) {
       list.sort(
@@ -378,16 +376,22 @@ InstancedMesh2.prototype.frustumCullingLOD = function (
       customSort(list);
     }
 
+    // === VISER LOCAL PATCH ===
+    // Upstream assigns LOD levels with a cursor that only ever advances to
+    // coarser levels (and by one level per item), which assumes the sort left
+    // depths ascending. That holds for `sortOpaque`, but a transparent batch
+    // is sorted back-to-front: the cursor then steps off level 0 on the very
+    // first -- farthest -- item and can never come back, so every near
+    // instance renders at the lowest detail. Resolve each item's level
+    // independently instead. This is the same lookup the unsorted path uses,
+    // it is correct for either sort direction, and with the hysteresis of 0
+    // that viser's LODs are built with it reproduces the ascending walk.
     for (let i = 0, l = list.length; i < l; i++) {
       const item = list[i];
-
-      if (item.depth > levelDistance) {
-        levelIndex++;
-        levelDistance = levels[levelIndex + 1]?.distance ?? Infinity; // improve this condition and use for of instead
-      }
-
+      const levelIndex = this.getObjectLODIndexForDistance(levels, item.depth);
       indexes[levelIndex][count[levelIndex]++] = item.index;
     }
+    // === END VISER LOCAL PATCH ===
 
     _renderList.reset();
   }

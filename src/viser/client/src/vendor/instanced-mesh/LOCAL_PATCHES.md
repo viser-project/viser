@@ -31,3 +31,22 @@ lists every divergence from upstream.
 - **Re-apply check:** confirm upstream still creates `instanceIndex` as a raw
   `GLInstancedBufferAttribute` (untracked by three). If upstream adds its own
   disposal for it, this patch may become redundant -- verify before dropping.
+
+### 2. LOD level assignment must not assume an ascending sort
+
+- **File:** `core/feature/FrustumCulling.ts` (`frustumCullingLOD`)
+- **What:** when `sortObjects` is on, the sorted render list is bucketed into
+  LOD levels via `getObjectLODIndexForDistance()` per item, instead of a
+  forward-only cursor that advances at most one level per item.
+- **Why:** the cursor assumes the sort left depths ascending, which holds only
+  for `sortOpaque`. Viser sorts transparent batches back-to-front (see
+  `mesh/batchedDepthSort.ts`, needed so instances in one batch composite
+  correctly), and under that descending order the cursor steps off level 0 on
+  the first -- farthest -- item and can never come back: every near instance
+  ends up rendering at the coarsest LOD. The per-item lookup is the same one
+  the unsorted path already uses and is correct for either direction. Covered
+  by `core/feature/FrustumCulling.lod.test.ts`.
+- **Re-apply check:** if upstream reworks the sorted LOD path to handle
+  descending order itself (the block carries an `improve this condition` TODO),
+  drop this patch -- but verify with the test above, since dropping it
+  silently degrades LOD quality rather than breaking anything outright.
