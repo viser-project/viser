@@ -458,7 +458,6 @@ export interface ArrowMessage {
     shaft_radius: number;
     head_radius: number;
     head_length: number;
-    line_width: number;
     scale: number | [number, number, number];
   };
 }
@@ -3154,10 +3153,6 @@ export const SceneNodePropsSchema: {
       tsType: "number",
     },
     head_length: {
-      kind: "default",
-      tsType: "number",
-    },
-    line_width: {
       kind: "default",
       tsType: "number",
     },

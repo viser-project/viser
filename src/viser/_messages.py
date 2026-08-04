@@ -2249,8 +2249,6 @@ class ArrowProps:
     """Radius of the arrow head cone."""
     head_length: float = 0.1
     """Length of the arrow head."""
-    line_width: float = 1
-    """Width of the lines (fallback rendering)."""
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the arrows."""
 

@@ -1005,7 +1005,6 @@ class SceneApi:
         shaft_radius: float = 0.02,
         head_radius: float = 0.05,
         head_length: float = 0.1,
-        line_width: float = 1,
         scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
@@ -1027,7 +1026,6 @@ class SceneApi:
             shaft_radius: Radius of the arrow shaft.
             head_radius: Radius of the arrow head cone.
             head_length: Length of the arrow head.
-            line_width: Width of the lines (fallback rendering).
             scale: Scale of the arrows. A single float for uniform
                 scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
@@ -1059,7 +1057,6 @@ class SceneApi:
                 shaft_radius=shaft_radius,
                 head_radius=head_radius,
                 head_length=head_length,
-                line_width=line_width,
                 scale=scale,
             ),
         )
