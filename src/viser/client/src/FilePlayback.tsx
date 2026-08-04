@@ -54,6 +54,7 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import {
+  IconBinaryTree2,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
 } from "@tabler/icons-react";
@@ -199,6 +200,10 @@ function PlaybackInterface({
   const [playbackSpeed, setPlaybackSpeed] = useState("1x");
   const [paused, setPaused] = useState(false);
   const [recording, setRecording] = useState<SerializedMessages | null>(null);
+  // Scene tree panel visibility for animated playback, toggled from the
+  // playback bar. Static scenes mount the panel unconditionally instead
+  // (collapsed); see the render below.
+  const [scenePanelOpen, setScenePanelOpen] = useState(false);
 
   // Instead of removing all of the existing scene nodes, we're just going to hide them.
   // This will prevent unnecessary remounting when messages are looped.
@@ -349,15 +354,29 @@ function PlaybackInterface({
       </div>
     );
   } else {
-    // The scene tree panel mounts only once the recording is loaded, so it
-    // never floats above the download progress screen.
-    const showScenePanel = shouldShowPlaybackScenePanel(
+    // Whether the scene tree is accessible at all; the `hideSceneTree` URL
+    // param / `show_scene_tree=False` opt-outs remove both the panel and its
+    // playback-bar toggle. Everything here mounts only once the recording is
+    // loaded, so nothing floats above the download progress screen.
+    const sceneTreeAccessible = shouldShowPlaybackScenePanel(
       window.location.search,
       (window as any).__VISER_EMBED_CONFIG__,
     );
+    const isStaticScene = recording.durationSeconds === 0.0;
     return (
       <>
-        {showScenePanel && <PlaybackScenePanel />}
+        {/* Hidden-by-default scene tree, keeping playback consistent with the
+        panel-free canvas of a live connection's defaults. Animated playback:
+        the bar's toggle button mounts the panel on demand, expanded (the
+        click was already an explicit ask). Static scenes hide the playback
+        bar entirely, so there's nowhere to put a toggle -- fall back to the
+        always-mounted panel, collapsed to its slim header. */}
+        {sceneTreeAccessible &&
+          (isStaticScene ? (
+            <PlaybackScenePanel />
+          ) : (
+            scenePanelOpen && <PlaybackScenePanel defaultExpanded />
+          ))}
         {/* Docked, full-width playback bar: a normal row at the bottom of the
         layout column (see AppLayout's messageProducer slot), so the canvas
         ends above it instead of being covered by a floating bar. Hidden
@@ -432,6 +451,18 @@ function PlaybackInterface({
               comboboxProps={{ zIndex: 5, width: "5.25em" }}
             />
           </Tooltip>
+          {sceneTreeAccessible && (
+            <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
+              <ActionIcon
+                size="md"
+                variant={scenePanelOpen ? "light" : "subtle"}
+                aria-label={`${scenePanelOpen ? "Hide" : "Show"} scene tree`}
+                onClick={() => setScenePanelOpen(!scenePanelOpen)}
+              >
+                <IconBinaryTree2 height="1.125em" width="1.125em" />
+              </ActionIcon>
+            </Tooltip>
+          )}
         </Paper>
       </>
     );

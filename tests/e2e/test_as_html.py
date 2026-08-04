@@ -104,9 +104,12 @@ def test_as_html_renders_scene(
     assert "/render_sphere" in names
     assert "/render_box" in names
 
-    # The offline scene tree panel is shown by default and lists the nodes.
+    # Static scenes have no playback bar (nowhere for a scene tree toggle), so
+    # the scene tree panel is mounted with its header collapsed by default;
+    # expanding it reveals the tree rows.
     panel = page.locator("[data-playback-scene-tree]")
     panel.wait_for(state="visible", timeout=15_000)
+    page.get_by_role("button", name="Expand scene tree").click()
     panel.locator("[data-scene-node='/render_sphere']").wait_for(
         state="visible", timeout=15_000
     )

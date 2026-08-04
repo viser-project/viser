@@ -3400,8 +3400,11 @@ class SceneApi:
 
         Args:
             dark_mode: Use dark color scheme.
-            show_scene_tree: Show a collapsible scene tree panel, which can be
-                used to toggle visibilities and edit properties of scene nodes.
+            show_scene_tree: Make the scene tree panel available, for
+                toggling visibilities and editing properties of scene nodes.
+                It's hidden by default: animated recordings get a toggle
+                button in the playback bar, static scenes a collapsed panel
+                header. Set to False to remove it entirely.
 
         Returns:
             A complete HTML document as a string.
@@ -3440,8 +3443,11 @@ class SceneApi:
         Args:
             height: Height of the embedded viewer in pixels.
             dark_mode: Use dark color scheme.
-            show_scene_tree: Show a collapsible scene tree panel, which can be
-                used to toggle visibilities and edit properties of scene nodes.
+            show_scene_tree: Make the scene tree panel available, for
+                toggling visibilities and editing properties of scene nodes.
+                It's hidden by default: animated recordings get a toggle
+                button in the playback bar, static scenes a collapsed panel
+                header. Set to False to remove it entirely.
         """
         from ._viser import ViserServer
 

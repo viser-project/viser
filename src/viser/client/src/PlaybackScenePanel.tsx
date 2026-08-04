@@ -1,32 +1,25 @@
-import {
-  Box,
-  Collapse,
-  Paper,
-  ScrollArea,
-  useMantineTheme,
-} from "@mantine/core";
+import { Box, Collapse, Paper, ScrollArea } from "@mantine/core";
 import { IconChevronRight } from "@tabler/icons-react";
-import { useDisclosure, useMediaQuery } from "@mantine/hooks";
+import { useDisclosure } from "@mantine/hooks";
 import React from "react";
 import SceneTreeTable from "./ControlPanel/SceneTreeTable";
 
 /** Floating, collapsible scene tree panel for offline playback (`.viser` file
  * playback and embedded scenes). The regular control panel only exists with a
  * websocket connection, so this is what makes the scene tree table -- local
- * visibility overrides and property editing -- accessible offline. */
-export function PlaybackScenePanel() {
-  // Start collapsed on the mobile breakpoint, matching the control panel's
-  // bottom sheet convention: on a small screen the panel is wayfinding
-  // chrome, and one tap opens it. Same query AppLayout uses for mobile
-  // detection; read synchronously so the very first paint is correct.
-  // Mount-time default only -- a later viewport resize doesn't override the
-  // user's toggle.
-  const theme = useMantineTheme();
-  const useMobileView =
-    useMediaQuery(`(max-width: ${theme.breakpoints.xs})`, false, {
-      getInitialValueInEffect: false,
-    }) ?? false;
-  const [expanded, { toggle }] = useDisclosure(!useMobileView);
+ * visibility overrides and property editing -- accessible offline.
+ *
+ * Two entry points (see PlaybackInterface): animated playback mounts this only
+ * when toggled on from the playback bar's scene tree button (already an
+ * explicit ask, so it opens expanded); static scenes have no playback bar to
+ * hold a button, so the panel is always mounted there and this collapsed
+ * header is the affordance. */
+export function PlaybackScenePanel({
+  defaultExpanded = false,
+}: {
+  defaultExpanded?: boolean;
+}) {
+  const [expanded, { toggle }] = useDisclosure(defaultExpanded);
   return (
     <Paper
       radius="xs"

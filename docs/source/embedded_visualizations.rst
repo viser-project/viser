@@ -189,14 +189,20 @@ You can embed this into other webpages using an HTML ``<iframe />`` tag.
 The Scene Tree Panel
 --------------------
 
-During offline playback, the client shows a collapsible "Scene tree" panel in
-the top-right corner. Like the scene tree in the regular control panel, it can
-be used to inspect the scene hierarchy, toggle visibility of individual nodes,
-and edit scene node properties. Changes are local to the browser; they don't
-persist and are overwritten by property updates in the recording.
+During offline playback, a "Scene tree" panel is available. Like the scene
+tree in the regular control panel, it can be used to inspect the scene
+hierarchy, toggle visibility of individual nodes, and edit scene node
+properties. Changes are local to the browser; they don't persist and are
+overwritten by property updates in the recording.
 
-The panel is shown by default, starting expanded on desktop and collapsed on
-small screens. To hide it entirely, you can opt out in two ways:
+The panel is hidden by default, keeping the canvas clean:
+
+* For animated recordings, a scene tree button in the playback bar opens the
+  panel.
+* Static scenes have no playback bar; they instead show a collapsed "Scene
+  tree" header in the top-right corner, which expands on click.
+
+To remove the scene tree entirely, you can opt out in two ways:
 
 * When hosting a ``.viser`` file, add a ``hideSceneTree`` parameter to the URL:
 
