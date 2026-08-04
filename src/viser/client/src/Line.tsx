@@ -4,7 +4,7 @@
  */
 
 import "./r3f-extend";
-import "./patchLineMaterialReversedDepth";
+import "./patchLineMaterial";
 import * as React from "react";
 import * as THREE from "three";
 import { ColorRepresentation } from "three";
@@ -117,8 +117,8 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         [ref],
       );
 
-      // Reversed-depth near-plane fix for LineMaterial is applied globally
-      // (all instances, including drei's) in patchLineMaterialReversedDepth.
+      // Reversed-depth and antialiasing fixes for LineMaterial are applied
+      // globally (all instances, including drei's) in patchLineMaterial.
 
       // R3F manages lifecycle for all declarative children -- no manual disposal.
       const materialJsx = (
@@ -130,6 +130,10 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
           linewidth={linewidth ?? lineWidth ?? 1}
           worldUnits={worldUnits ?? false}
           dashed={dashed ?? false}
+          // Smooth fwidth()-based edge falloff via MSAA coverage; also lets
+          // sub-pixel world-unit lines fade out instead of stippling (see
+          // patchLineMaterial). No-op without MSAA.
+          alphaToCoverage={true}
           transparent={false}
           fog={true}
         />

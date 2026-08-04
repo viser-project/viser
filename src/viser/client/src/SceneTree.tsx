@@ -549,6 +549,7 @@ function createObjectFactory(
                   tension={message.props.tension}
                   lineWidth={message.props.line_width}
                   worldUnits={message.props.line_width_units === "world"}
+                  alphaToCoverage={true}
                   color={rgbToInt(message.props.color)}
                   // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
                   segments={(message.props.segments ?? undefined) as undefined}
@@ -582,6 +583,7 @@ function createObjectFactory(
                     midB={controlPoints[2 * i + 1]}
                     lineWidth={message.props.line_width}
                     worldUnits={message.props.line_width_units === "world"}
+                    alphaToCoverage={true}
                     color={rgbToInt(message.props.color)}
                     // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
                     segments={

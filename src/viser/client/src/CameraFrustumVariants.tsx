@@ -1,6 +1,7 @@
 // drei's Line constructs its own three-stdlib LineMaterial; make sure the
-// reversed-depth near-plane patch is installed before that happens.
-import "./patchLineMaterialReversedDepth";
+// shader patches (reversed-depth near plane, antialiasing pad) are
+// installed before that happens.
+import "./patchLineMaterial";
 import { Line } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import React from "react";
@@ -148,6 +149,7 @@ export const CameraFrustumComponent = React.forwardRef<
           isHovered ? 1.5 * message.props.line_width : message.props.line_width
         }
         worldUnits={message.props.line_width_units === "world"}
+        alphaToCoverage={true}
         segments
       />
 

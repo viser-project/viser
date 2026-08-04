@@ -7,7 +7,7 @@ units away from the camera: the part of the line sweeping past the camera
 vanishes. viser's own <Line> carried a local patch (#720), but drei's <Line>
 -- used for camera frustums, splines, and internally by PivotControls --
 constructs its own LineMaterial and was still broken. The patch now applies
-to every LineMaterial via patchLineMaterialReversedDepth.ts; this test
+to every LineMaterial via patchLineMaterial.ts; this test
 exercises the drei code path through the built client.
 """
 
