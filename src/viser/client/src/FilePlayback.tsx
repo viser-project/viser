@@ -200,9 +200,9 @@ function PlaybackInterface({
   const [playbackSpeed, setPlaybackSpeed] = useState("1x");
   const [paused, setPaused] = useState(false);
   const [recording, setRecording] = useState<SerializedMessages | null>(null);
-  // Scene tree panel visibility for animated playback, toggled from the
-  // playback bar. Static scenes mount the panel unconditionally instead
-  // (collapsed); see the render below.
+  // Scene tree panel visibility, toggled from the playback bar's scene tree
+  // button (animated recordings) or the floating corner button (static
+  // scenes); see the render below.
   const [scenePanelOpen, setScenePanelOpen] = useState(false);
 
   // Instead of removing all of the existing scene nodes, we're just going to hide them.
@@ -366,17 +366,31 @@ function PlaybackInterface({
     return (
       <>
         {/* Hidden-by-default scene tree, keeping playback consistent with the
-        panel-free canvas of a live connection's defaults. Animated playback:
-        the bar's toggle button mounts the panel on demand, expanded (the
-        click was already an explicit ask). Static scenes hide the playback
-        bar entirely, so there's nowhere to put a toggle -- fall back to the
-        always-mounted panel, collapsed to its slim header. */}
-        {sceneTreeAccessible &&
-          (isStaticScene ? (
-            <PlaybackScenePanel />
-          ) : (
-            scenePanelOpen && <PlaybackScenePanel defaultExpanded />
-          ))}
+        panel-free canvas of a live connection's defaults. The panel mounts on
+        demand from a scene tree icon: in the playback bar for animated
+        recordings, or -- since static scenes hide the playback bar entirely --
+        floating in the corner where the panel opens. */}
+        {sceneTreeAccessible && scenePanelOpen && (
+          <PlaybackScenePanel onClose={() => setScenePanelOpen(false)} />
+        )}
+        {sceneTreeAccessible && isStaticScene && !scenePanelOpen && (
+          <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
+            <Paper
+              radius="xs"
+              shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
+              style={{ position: "fixed", top: "1em", right: "1em", zIndex: 1 }}
+            >
+              <ActionIcon
+                size="lg"
+                variant="subtle"
+                aria-label="Show scene tree"
+                onClick={() => setScenePanelOpen(true)}
+              >
+                <IconBinaryTree2 height="1.25em" width="1.25em" />
+              </ActionIcon>
+            </Paper>
+          </Tooltip>
+        )}
         {/* Docked, full-width playback bar: a normal row at the bottom of the
         layout column (see AppLayout's messageProducer slot), so the canvas
         ends above it instead of being covered by a floating bar. Hidden

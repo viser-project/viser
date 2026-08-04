@@ -195,12 +195,9 @@ hierarchy, toggle visibility of individual nodes, and edit scene node
 properties. Changes are local to the browser; they don't persist and are
 overwritten by property updates in the recording.
 
-The panel is hidden by default, keeping the canvas clean:
-
-* For animated recordings, a scene tree button in the playback bar opens the
-  panel.
-* Static scenes have no playback bar; they instead show a collapsed "Scene
-  tree" header in the top-right corner, which expands on click.
+The panel is hidden by default, keeping the canvas clean. A scene tree button
+opens it: in the playback bar for animated recordings, or floating in the
+top-right corner for static scenes (which have no playback bar).
 
 To remove the scene tree entirely, you can opt out in two ways:
 

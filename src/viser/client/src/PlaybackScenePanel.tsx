@@ -1,25 +1,18 @@
-import { Box, Collapse, Paper, ScrollArea } from "@mantine/core";
-import { IconChevronRight } from "@tabler/icons-react";
-import { useDisclosure } from "@mantine/hooks";
+import { Box, Paper, ScrollArea } from "@mantine/core";
+import { IconX } from "@tabler/icons-react";
 import React from "react";
 import SceneTreeTable from "./ControlPanel/SceneTreeTable";
 
-/** Floating, collapsible scene tree panel for offline playback (`.viser` file
- * playback and embedded scenes). The regular control panel only exists with a
- * websocket connection, so this is what makes the scene tree table -- local
- * visibility overrides and property editing -- accessible offline.
+/** Floating scene tree panel for offline playback (`.viser` file playback and
+ * embedded scenes). The regular control panel only exists with a websocket
+ * connection, so this is what makes the scene tree table -- local visibility
+ * overrides and property editing -- accessible offline.
  *
- * Two entry points (see PlaybackInterface): animated playback mounts this only
- * when toggled on from the playback bar's scene tree button (already an
- * explicit ask, so it opens expanded); static scenes have no playback bar to
- * hold a button, so the panel is always mounted there and this collapsed
- * header is the affordance. */
-export function PlaybackScenePanel({
-  defaultExpanded = false,
-}: {
-  defaultExpanded?: boolean;
-}) {
-  const [expanded, { toggle }] = useDisclosure(defaultExpanded);
+ * Mounted only while open; closing returns to the launcher that opened it
+ * (see PlaybackInterface): the playback bar's scene tree toggle for animated
+ * recordings, or the floating corner button for static scenes, which have no
+ * playback bar to hold a toggle. */
+export function PlaybackScenePanel({ onClose }: { onClose: () => void }) {
   return (
     <Paper
       radius="xs"
@@ -36,15 +29,14 @@ export function PlaybackScenePanel({
       }}
     >
       <Box
-        onClick={toggle}
+        onClick={onClose}
         role="button"
-        aria-expanded={expanded}
-        aria-label={`${expanded ? "Collapse" : "Expand"} scene tree`}
+        aria-label="Close scene tree"
         tabIndex={0}
         onKeyDown={(ev) => {
           if (ev.key === "Enter" || ev.key === " ") {
             ev.preventDefault();
-            toggle();
+            onClose();
           }
         }}
         fz="sm"
@@ -58,37 +50,26 @@ export function PlaybackScenePanel({
           userSelect: "none",
         }}
       >
-        {/* Label left + chevron at the right end (rotating down when
-        expanded), matching the mobile panel sections -- a leading caret here
-        would sit at the same visual level as the tree rows' expand carets
-        below, making the header read as just another row. */}
         <Box style={{ flexGrow: 1 }}>Scene tree</Box>
-        <IconChevronRight
+        <IconX
           size="1em"
           aria-hidden
-          style={{
-            opacity: 0.55,
-            flexShrink: 0,
-            transform: expanded ? "rotate(90deg)" : "none",
-            transition: "transform 160ms",
-          }}
+          style={{ opacity: 0.55, flexShrink: 0 }}
         />
       </Box>
-      <Collapse in={expanded}>
-        {/* Bounded height with the panel's own scrollbars: unlike the control
-        panel's dock chrome, there is no surrounding panel body to scroll for
-        us during playback. Leave room for the playback bar at the bottom. */}
-        <ScrollArea.Autosize
-          mah="max(10em, calc(100vh - 8em))"
-          scrollbarSize={6}
-          type="auto"
-          style={{
-            borderTop: "1px solid var(--mantine-color-default-border)",
-          }}
-        >
-          <SceneTreeTable />
-        </ScrollArea.Autosize>
-      </Collapse>
+      {/* Bounded height with the panel's own scrollbars: unlike the control
+      panel's dock chrome, there is no surrounding panel body to scroll for
+      us during playback. Leave room for the playback bar at the bottom. */}
+      <ScrollArea.Autosize
+        mah="max(10em, calc(100vh - 8em))"
+        scrollbarSize={6}
+        type="auto"
+        style={{
+          borderTop: "1px solid var(--mantine-color-default-border)",
+        }}
+      >
+        <SceneTreeTable />
+      </ScrollArea.Autosize>
     </Paper>
   );
 }
