@@ -120,6 +120,69 @@ describe("InstancedMesh2 per-instance depth sorting", () => {
   });
 });
 
+describe("InstancedMesh2 shadow passes skip sorting", () => {
+  // performFrustumCulling(shadowCamera, mainCamera) with distinct cameras is
+  // how onBeforeShadow invokes culling; camera !== cameraLOD marks a shadow
+  // pass. Shadow maps are depth-only, so sorting there is pure waste.
+  const depths = [3, 1, 5, 2, 4];
+
+  it("renders shadow passes unsorted, main passes sorted (linear path)", () => {
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeMesh(depths, material, makeRenderer());
+    mesh.sortObjects = true;
+
+    mesh.performFrustumCulling(makeCamera(), makeCamera());
+
+    // Linear culling appends visible instances in id order when not sorting.
+    expect(renderedOrder(mesh)).toEqual([0, 1, 2, 3, 4]);
+
+    mesh.performFrustumCulling(makeCamera());
+
+    expect(renderedOrder(mesh)).toEqual([2, 4, 0, 3, 1]);
+  });
+
+  it("does not invoke customSort during shadow passes (BVH path)", () => {
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeMesh(depths, material, makeRenderer());
+    mesh.sortObjects = true;
+    let sortCalls = 0;
+    mesh.customSort = (list) => {
+      sortCalls++;
+      list.sort((a, b) => b.depth - a.depth);
+    };
+    mesh.computeBVH();
+
+    mesh.performFrustumCulling(makeCamera(), makeCamera());
+
+    // No sort ran, but every instance still renders (BVH traversal order is
+    // arbitrary, so only membership is asserted).
+    expect(sortCalls).toBe(0);
+    expect([...renderedOrder(mesh)].sort((a, b) => a - b)).toEqual([
+      0, 1, 2, 3, 4,
+    ]);
+
+    mesh.performFrustumCulling(makeCamera());
+
+    expect(sortCalls).toBe(1);
+    expect(renderedOrder(mesh)).toEqual([2, 4, 0, 3, 1]);
+  });
+
+  it("renders every instance in shadow passes with per-object culling off", () => {
+    const material = new THREE.MeshBasicMaterial({ transparent: true });
+    const mesh = makeMesh(depths, material, makeRenderer());
+    mesh.perObjectFrustumCulled = false;
+    mesh.sortObjects = true;
+
+    // Main pass first: leaves the index array holding a sorted list.
+    mesh.performFrustumCulling(makeCamera());
+    expect(renderedOrder(mesh)).toEqual([2, 4, 0, 3, 1]);
+
+    // The shadow pass must rebuild it to cover all active instances.
+    mesh.performFrustumCulling(makeCamera(), makeCamera());
+    expect(renderedOrder(mesh)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
 describe("InstancedMesh2 sorting with off-center geometry (BVH path)", () => {
   // A box whose bounding-sphere center sits at local (0, 0, +4). Instance 0
   // is rotated 180 degrees about X, flipping the offset to world -Z, so its

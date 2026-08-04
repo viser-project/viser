@@ -73,3 +73,26 @@ lists every divergence from upstream.
 - **Re-apply check:** if upstream's BVH culling paths sort by the
   transformed bounding sphere (matching their linear paths), this patch is
   redundant -- the off-center geometry tests verify either way.
+
+### 4. Non-LOD path skips sorting during shadow passes
+
+- **File:** `core/feature/FrustumCulling.ts` (`performFrustumCulling`,
+  `frustumCulling`, `BVHCulling`, `linearCulling`)
+- **What:** the LOD path already disables `sortObjects` while rendering
+  shadow maps (depth-only passes where draw order is irrelevant); the non-LOD
+  path re-sorted for every shadow camera each frame (upstream TODO at the top
+  of the file). `performFrustumCulling` now passes `camera !== cameraLOD`
+  (true only for shadow passes) into `frustumCulling`, which computes an
+  effective `sortObjects` flag and threads it into `BVHCulling` /
+  `linearCulling` -- those previously read `_sortObjects` themselves and
+  would otherwise push into a render list the shadow pass never drains,
+  rendering nothing. The `!perObjectFrustumCulled` early path forces an index
+  array rebuild for sorted meshes so shadow passes still render every active
+  instance.
+- **Why:** viser's batched meshes default to `cast_shadow=True`, so with a
+  shadow-casting light every transparent batch paid one extra sort per
+  shadow camera per frame for zero visual effect. Covered by the shadow-pass
+  tests in `core/FrustumCulling.sorting.test.ts`.
+- **Re-apply check:** if upstream resolves its "fix shadowMap sorting"
+  TODO by skipping sorts during shadow rendering in the non-LOD path, this
+  patch may be redundant -- the shadow-pass tests verify either way.

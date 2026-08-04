@@ -58,11 +58,14 @@ declare module "../InstancedMesh2.js" {
       camera: Camera,
       shadowCamera: Camera | null,
     ): boolean;
-    /** @internal */ frustumCulling(camera: Camera): void;
+    /** @internal */ frustumCulling(
+      camera: Camera,
+      isShadowRendering?: boolean,
+    ): void;
     /** @internal */ updateIndexArray(): void;
     /** @internal */ updateRenderList(): void;
-    /** @internal */ BVHCulling(camera: Camera): void;
-    /** @internal */ linearCulling(camera: Camera): void;
+    /** @internal */ BVHCulling(camera: Camera, sortObjects: boolean): void;
+    /** @internal */ linearCulling(camera: Camera, sortObjects: boolean): void;
 
     /** @internal */ frustumCullingLOD(
       LODrenderList: LODRenderList,
@@ -121,7 +124,11 @@ InstancedMesh2.prototype.performFrustumCulling = function (
 
   if (LODrenderList?.levels.length > 0)
     mainMesh.frustumCullingLOD(LODrenderList, camera, cameraLOD);
-  else mainMesh.frustumCulling(camera);
+  // === VISER LOCAL PATCH ===
+  // Pass shadow-pass information down so the non-LOD path can skip sorting,
+  // like the LOD path does (shadow maps are depth-only; order is irrelevant).
+  else mainMesh.frustumCulling(camera, camera !== cameraLOD);
+  // === END VISER LOCAL PATCH ===
 };
 
 InstancedMesh2.prototype.updateLastRenderInfo = function (
@@ -153,14 +160,30 @@ InstancedMesh2.prototype.frustumCullingAlreadyPerformed = function (
   return false;
 };
 
-InstancedMesh2.prototype.frustumCulling = function (camera: Camera) {
-  const sortObjects = this._sortObjects;
+InstancedMesh2.prototype.frustumCulling = function (
+  camera: Camera,
+  isShadowRendering = false,
+) {
+  // === VISER LOCAL PATCH ===
+  // Sorting is skipped when rendering shadow maps (depth-only passes where
+  // draw order doesn't matter), mirroring frustumCullingLOD. The effective
+  // flag is threaded into BVHCulling/linearCulling below -- they would
+  // otherwise consult `_sortObjects` themselves and push into a render list
+  // that this function never drains during shadow passes.
+  const sortObjects = !isShadowRendering && this._sortObjects;
+  // === END VISER LOCAL PATCH ===
   const perObjectFrustumCulled = this._perObjectFrustumCulled;
   const array = this.instanceIndex.array;
 
   this.instanceIndex._needsUpdate = true; // TODO improve
 
   if (!perObjectFrustumCulled && !sortObjects) {
+    // === VISER LOCAL PATCH ===
+    // A sorted mesh's index array holds the previous pass's culled, sorted
+    // list; a shadow pass taking this early path must rebuild it so every
+    // active instance casts a shadow.
+    if (this._sortObjects) this._indexArrayNeedsUpdate = true;
+    // === END VISER LOCAL PATCH ===
     this.updateIndexArray();
     return;
   }
@@ -183,8 +206,8 @@ InstancedMesh2.prototype.frustumCulling = function (camera: Camera) {
       .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
       .multiply(this.matrixWorld);
 
-    if (this.bvh) this.BVHCulling(camera);
-    else this.linearCulling(camera);
+    if (this.bvh) this.BVHCulling(camera, sortObjects);
+    else this.linearCulling(camera, sortObjects);
   }
 
   if (sortObjects) {
@@ -239,10 +262,14 @@ InstancedMesh2.prototype.updateRenderList = function () {
   }
 };
 
-InstancedMesh2.prototype.BVHCulling = function (camera: Camera) {
+InstancedMesh2.prototype.BVHCulling = function (
+  camera: Camera,
+  // === VISER LOCAL PATCH === effective flag from frustumCulling (false
+  // during shadow passes) instead of reading this._sortObjects.
+  sortObjects: boolean,
+) {
   const array = this.instanceIndex.array;
   const instancesArrayCount = this._instancesArrayCount;
-  const sortObjects = this._sortObjects;
   const onFrustumEnter = this.onFrustumEnter;
   let count = 0;
 
@@ -306,7 +333,12 @@ InstancedMesh2.prototype.BVHCulling = function (camera: Camera) {
   this.count = count;
 };
 
-InstancedMesh2.prototype.linearCulling = function (camera: Camera) {
+InstancedMesh2.prototype.linearCulling = function (
+  camera: Camera,
+  // === VISER LOCAL PATCH === effective flag from frustumCulling (false
+  // during shadow passes) instead of reading this._sortObjects.
+  sortObjects: boolean,
+) {
   const array = this.instanceIndex.array;
   if (!this.geometry.boundingSphere) this.geometry.computeBoundingSphere();
   const bSphere = this._geometry.boundingSphere;
@@ -314,7 +346,6 @@ InstancedMesh2.prototype.linearCulling = function (camera: Camera) {
   const center = bSphere.center;
   const instancesArrayCount = this._instancesArrayCount;
   const geometryCentered = center.x === 0 && center.y === 0 && center.z === 0;
-  const sortObjects = this._sortObjects;
   const onFrustumEnter = this.onFrustumEnter;
   let count = 0;
 
