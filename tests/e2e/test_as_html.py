@@ -45,22 +45,6 @@ def test_as_html_dark_mode(
     assert "darkMode:true" in html_dark
 
 
-def test_as_html_scene_tree_config(
-    viser_server: viser.ViserServer,
-    viser_page: Page,
-) -> None:
-    """show_scene_tree should inject showSceneTree in the embed config
-    (opt-out: shown by default)."""
-    viser_server.scene.add_box("/tree_box", dimensions=(1.0, 1.0, 1.0))
-    wait_for_scene_node(viser_page, "/tree_box")
-
-    html_default = viser_server.scene.as_html()
-    html_hidden = viser_server.scene.as_html(show_scene_tree=False)
-
-    assert "showSceneTree:true" in html_default
-    assert "showSceneTree:false" in html_hidden
-
-
 def test_as_html_renders_scene(
     viser_server: viser.ViserServer,
     page: Page,

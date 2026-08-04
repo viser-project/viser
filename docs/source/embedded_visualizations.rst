@@ -199,20 +199,15 @@ The panel is hidden by default, keeping the canvas clean. A scene tree button
 opens it: in the playback bar for animated recordings, or floating in the
 top-right corner for static scenes (which have no playback bar).
 
-To remove the scene tree entirely, you can opt out in two ways:
+.. figure:: _static/playback_scene_tree.png
+   :alt: Scene tree panel during offline playback
 
-* When hosting a ``.viser`` file, add a ``hideSceneTree`` parameter to the URL:
+   The scene tree panel opened from the playback bar's scene tree button.
 
-  * ``http://localhost:8000/viser-client/?playbackPath=http://localhost:8000/recordings/recording.viser&hideSceneTree``
+.. figure:: _static/playback_scene_tree_static.png
+   :alt: Floating scene tree button for static scenes
 
-* When exporting standalone HTML from Python, pass ``show_scene_tree=False`` to
-  :meth:`viser.SceneApi.as_html`, :meth:`viser.SceneApi.show`,
-  :meth:`viser.infra.StateSerializer.as_html`, or
-  :meth:`viser.infra.StateSerializer.show`:
-
-  .. code-block:: python
-
-     html = server.scene.as_html(show_scene_tree=False)
+   Static scenes show a floating scene tree button in the top-right corner.
 
 
 Step 4: Setting the initial camera pose

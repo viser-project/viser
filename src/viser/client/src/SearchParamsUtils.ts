@@ -4,20 +4,6 @@
 
 export const searchParamKey = "websocket";
 
-/** Whether the offline playback scene tree panel should be shown. Opt-out: it
- * defaults to visible, and is hidden by either the `hideSceneTree` URL
- * parameter or `showSceneTree: false` in the embed config (set from Python via
- * `show_scene_tree=False`). */
-export function shouldShowPlaybackScenePanel(
-  search: string,
-  embedConfig?: { showSceneTree?: boolean },
-): boolean {
-  return (
-    new URLSearchParams(search).get("hideSceneTree") === null &&
-    embedConfig?.showSceneTree !== false
-  );
-}
-
 export function syncSearchParamServer(server: string) {
   // Skip URL updates in srcdoc iframes (e.g., Jupyter notebook embeds).
   if (window.location.protocol === "about:") return;

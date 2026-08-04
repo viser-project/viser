@@ -123,7 +123,7 @@ class StateSerializer:
         compressed = zstandard.ZstdCompressor(level=12).compress(inner)
         return len(inner).to_bytes(8, "little") + compressed
 
-    def as_html(self, dark_mode: bool = False, show_scene_tree: bool = True) -> str:
+    def as_html(self, dark_mode: bool = False) -> str:
         """Get a standalone HTML string for the serialized scene.
 
         Returns a self-contained HTML document that can be saved to a file
@@ -131,12 +131,6 @@ class StateSerializer:
 
         Args:
             dark_mode: Use dark color scheme.
-            show_scene_tree: Make the scene tree panel available, for
-                toggling visibilities and editing properties of scene nodes.
-                It's hidden by default, opened via a scene tree button:
-                in the playback bar for animated recordings, or floating in
-                the corner for static scenes. Set to False to remove it
-                entirely.
 
         Returns:
             A complete HTML document as a string.
@@ -151,23 +145,16 @@ class StateSerializer:
         )
         client_html = client_html_path.read_text()
         dark_mode_str = "true" if dark_mode else "false"
-        show_scene_tree_str = "true" if show_scene_tree else "false"
         inject_script = (
             f"<script>"
             f'window.__VISER_EMBED_DATA__="{scene_b64}";'
-            f"window.__VISER_EMBED_CONFIG__={{darkMode:{dark_mode_str},"
-            f"showSceneTree:{show_scene_tree_str}}};"
+            f"window.__VISER_EMBED_CONFIG__={{darkMode:{dark_mode_str}}};"
             f"</script>"
         )
         head_end = client_html.index("</head>")
         return client_html[:head_end] + inject_script + client_html[head_end:]
 
-    def show(
-        self,
-        height: int = 400,
-        dark_mode: bool = False,
-        show_scene_tree: bool = True,
-    ) -> None:
+    def show(self, height: int = 400, dark_mode: bool = False) -> None:
         """Display the serialized scene in a Jupyter notebook or web browser.
 
         In Jupyter notebooks/labs, displays an inline IFrame. When running as a
@@ -178,18 +165,10 @@ class StateSerializer:
         Args:
             height: Height of the embedded viewer in pixels.
             dark_mode: Use dark color scheme.
-            show_scene_tree: Make the scene tree panel available, for
-                toggling visibilities and editing properties of scene nodes.
-                It's hidden by default, opened via a scene tree button:
-                in the playback bar for animated recordings, or floating in
-                the corner for static scenes. Set to False to remove it
-                entirely.
         """
         import html as html_module
 
-        modified_html = self.as_html(
-            dark_mode=dark_mode, show_scene_tree=show_scene_tree
-        )
+        modified_html = self.as_html(dark_mode=dark_mode)
 
         # Display in IPython (Jupyter, Colab, myst-nb, etc.) using srcdoc.
         # This embeds the entire HTML inline, avoiding file serving issues.

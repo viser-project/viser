@@ -23,7 +23,6 @@ import { ViewerContext } from "./ViewerContext";
 import { defaultEnvironmentState } from "./EnvironmentState";
 import { isFormElement } from "./utils/isFormElement";
 import { PlaybackScenePanel } from "./PlaybackScenePanel";
-import { shouldShowPlaybackScenePanel } from "./SearchParamsUtils";
 
 /** Toggle `paused` on spacebar, unless a form control is focused -- so typing a
  * space in the playback time/speed inputs doesn't toggle playback. */
@@ -354,14 +353,6 @@ function PlaybackInterface({
       </div>
     );
   } else {
-    // Whether the scene tree is accessible at all; the `hideSceneTree` URL
-    // param / `show_scene_tree=False` opt-outs remove both the panel and its
-    // playback-bar toggle. Everything here mounts only once the recording is
-    // loaded, so nothing floats above the download progress screen.
-    const sceneTreeAccessible = shouldShowPlaybackScenePanel(
-      window.location.search,
-      (window as any).__VISER_EMBED_CONFIG__,
-    );
     const isStaticScene = recording.durationSeconds === 0.0;
     return (
       <>
@@ -369,11 +360,13 @@ function PlaybackInterface({
         panel-free canvas of a live connection's defaults. The panel mounts on
         demand from a scene tree icon: in the playback bar for animated
         recordings, or -- since static scenes hide the playback bar entirely --
-        floating in the corner where the panel opens. */}
-        {sceneTreeAccessible && scenePanelOpen && (
+        floating in the corner where the panel opens. Everything here mounts
+        only once the recording is loaded, so nothing floats above the
+        download progress screen. */}
+        {scenePanelOpen && (
           <PlaybackScenePanel onClose={() => setScenePanelOpen(false)} />
         )}
-        {sceneTreeAccessible && isStaticScene && !scenePanelOpen && (
+        {isStaticScene && !scenePanelOpen && (
           <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
             <Paper
               radius="xs"
@@ -465,18 +458,16 @@ function PlaybackInterface({
               comboboxProps={{ zIndex: 5, width: "5.25em" }}
             />
           </Tooltip>
-          {sceneTreeAccessible && (
-            <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
-              <ActionIcon
-                size="md"
-                variant={scenePanelOpen ? "light" : "subtle"}
-                aria-label={`${scenePanelOpen ? "Hide" : "Show"} scene tree`}
-                onClick={() => setScenePanelOpen(!scenePanelOpen)}
-              >
-                <IconBinaryTree2 height="1.125em" width="1.125em" />
-              </ActionIcon>
-            </Tooltip>
-          )}
+          <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
+            <ActionIcon
+              size="md"
+              variant={scenePanelOpen ? "light" : "subtle"}
+              aria-label={`${scenePanelOpen ? "Hide" : "Show"} scene tree`}
+              onClick={() => setScenePanelOpen(!scenePanelOpen)}
+            >
+              <IconBinaryTree2 height="1.125em" width="1.125em" />
+            </ActionIcon>
+          </Tooltip>
         </Paper>
       </>
     );
