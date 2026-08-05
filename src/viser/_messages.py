@@ -2541,3 +2541,52 @@ class CommandTriggerMessage(Message, include_in_scene_serialization=False):
     """Message from client->server when a command is triggered from the command palette."""
 
     uuid: str
+
+
+@dataclasses.dataclass
+class LocalStorageSetItemMessage(Message, include_in_scene_serialization=False):
+    """Set a key in the client's localStorage."""
+
+    key: str
+    value: str
+
+    @override
+    def redundancy_key(self) -> str:
+        return "LocalStorageItem-" + self.key
+
+
+@dataclasses.dataclass
+class LocalStorageRemoveItemMessage(Message, include_in_scene_serialization=False):
+    """Remove a key from the client's localStorage."""
+
+    key: str
+
+    @override
+    def redundancy_key(self) -> str:
+        return "LocalStorageItem-" + self.key
+
+
+@dataclasses.dataclass
+class LocalStorageClearMessage(Message, include_in_scene_serialization=False):
+    """Clear all keys from the client's localStorage."""
+
+
+@dataclasses.dataclass
+class LocalStorageGetItemRequestMessage(Message, include_in_scene_serialization=False):
+    """Message from server->client requesting a value from localStorage."""
+
+    key: str
+    request_uuid: str
+
+    @override
+    def redundancy_key(self) -> str:
+        return type(self).__name__ + "-" + self.request_uuid
+
+
+@dataclasses.dataclass
+class LocalStorageGetItemResponseMessage(Message, include_in_scene_serialization=False):
+    """Message from client->server carrying the requested localStorage value."""
+
+    value: Optional[str]
+    error: Optional[str]
+    request_uuid: str

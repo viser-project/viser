@@ -2040,6 +2040,49 @@ export interface CommandTriggerMessage {
   type: "CommandTriggerMessage";
   uuid: string;
 }
+/** Set a key in the client's localStorage.
+ *
+ * (automatically generated)
+ */
+export interface LocalStorageSetItemMessage {
+  type: "LocalStorageSetItemMessage";
+  key: string;
+  value: string;
+}
+/** Remove a key from the client's localStorage.
+ *
+ * (automatically generated)
+ */
+export interface LocalStorageRemoveItemMessage {
+  type: "LocalStorageRemoveItemMessage";
+  key: string;
+}
+/** Clear all keys from the client's localStorage.
+ *
+ * (automatically generated)
+ */
+export interface LocalStorageClearMessage {
+  type: "LocalStorageClearMessage";
+}
+/** Message from server->client requesting a value from localStorage.
+ *
+ * (automatically generated)
+ */
+export interface LocalStorageGetItemRequestMessage {
+  type: "LocalStorageGetItemRequestMessage";
+  key: string;
+  request_uuid: string;
+}
+/** Message from client->server carrying the requested localStorage value.
+ *
+ * (automatically generated)
+ */
+export interface LocalStorageGetItemResponseMessage {
+  type: "LocalStorageGetItemResponseMessage";
+  value: string | null;
+  error: string | null;
+  request_uuid: string;
+}
 
 export type Message =
   | CameraFrustumMessage
@@ -2155,7 +2198,12 @@ export type Message =
   | RegisterCommandMessage
   | CommandUpdateMessage
   | RemoveCommandMessage
-  | CommandTriggerMessage;
+  | CommandTriggerMessage
+  | LocalStorageSetItemMessage
+  | LocalStorageRemoveItemMessage
+  | LocalStorageClearMessage
+  | LocalStorageGetItemRequestMessage
+  | LocalStorageGetItemResponseMessage;
 export type SceneNodeMessage =
   | CameraFrustumMessage
   | GlbMessage
