@@ -549,7 +549,11 @@ function createObjectFactory(
                   tension={message.props.tension}
                   lineWidth={message.props.line_width}
                   worldUnits={message.props.line_width_units === "world"}
-                  alphaToCoverage={true}
+                  // World-unit edge falloff blends (see patchLineMaterial);
+                  // no depth writes, so overlapping joint quads don't
+                  // depth-reject each other.
+                  transparent={message.props.line_width_units === "world"}
+                  depthWrite={message.props.line_width_units !== "world"}
                   color={rgbToInt(message.props.color)}
                   // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
                   segments={(message.props.segments ?? undefined) as undefined}
@@ -583,7 +587,11 @@ function createObjectFactory(
                     midB={controlPoints[2 * i + 1]}
                     lineWidth={message.props.line_width}
                     worldUnits={message.props.line_width_units === "world"}
-                    alphaToCoverage={true}
+                    // World-unit edge falloff blends (see patchLineMaterial);
+                    // no depth writes, so overlapping joint quads don't
+                    // depth-reject each other.
+                    transparent={message.props.line_width_units === "world"}
+                    depthWrite={message.props.line_width_units !== "world"}
                     color={rgbToInt(message.props.color)}
                     // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
                     segments={

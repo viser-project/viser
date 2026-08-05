@@ -149,7 +149,10 @@ export const CameraFrustumComponent = React.forwardRef<
           isHovered ? 1.5 * message.props.line_width : message.props.line_width
         }
         worldUnits={message.props.line_width_units === "world"}
-        alphaToCoverage={true}
+        // World-unit edge falloff blends (see patchLineMaterial); no depth
+        // writes, so overlapping joint quads don't depth-reject each other.
+        transparent={message.props.line_width_units === "world"}
+        depthWrite={message.props.line_width_units !== "world"}
         segments
       />
 

@@ -130,11 +130,13 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
           linewidth={linewidth ?? lineWidth ?? 1}
           worldUnits={worldUnits ?? false}
           dashed={dashed ?? false}
-          // Smooth fwidth()-based edge falloff via MSAA coverage; also lets
-          // sub-pixel world-unit lines fade out instead of stippling (see
-          // patchLineMaterial). No-op without MSAA.
-          alphaToCoverage={true}
-          transparent={false}
+          // World-unit lines render a smooth fwidth()-based edge falloff
+          // and sub-pixel fade via alpha blending (see patchLineMaterial),
+          // so they need the transparent pass. Depth writes stay off there:
+          // adjacent segment quads overlap at joints, and the first quad's
+          // blended edge would depth-reject the next segment's core.
+          transparent={worldUnits ?? false}
+          depthWrite={!(worldUnits ?? false)}
           fog={true}
         />
       );
