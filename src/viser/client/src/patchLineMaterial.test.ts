@@ -4,37 +4,41 @@ import { LineMaterial } from "three-stdlib";
 import {
   BROKEN_NEAR_ESTIMATE,
   FIXED_NEAR_ESTIMATE,
-  SMOOTH_ALPHA_MARKER,
+  FRINGE_GUARD,
 } from "./patchLineMaterial";
 
 describe("patchLineMaterial", () => {
   it("rewrites the near-plane estimate on every new LineMaterial", () => {
-    // Constructing directly mirrors what drei's <Line> does internally; the
+    // Constructing directly mirrors what drei components do internally; the
     // patch must apply without any per-instance setup.
     const mat = new LineMaterial();
     expect(mat.vertexShader).not.toContain(BROKEN_NEAR_ESTIMATE);
     expect(mat.vertexShader).toContain(FIXED_NEAR_ESTIMATE);
   });
 
-  it("pads the world-units quad so the edge falloff has room", () => {
+  it("pads the world-units quad only for the fringe pass", () => {
     const mat = new LineMaterial();
     expect(mat.vertexShader).toContain("renderWidth");
+    expect(mat.vertexShader).toContain(
+      "#if defined( VISER_LINE_FRINGE ) && !defined( USE_DASH )",
+    );
     expect(mat.vertexShader).toContain("offset *= renderWidth * 0.5;");
     expect(mat.vertexShader).not.toContain("offset *= linewidth * 0.5;");
   });
 
-  it("makes the world-units smooth falloff unconditional, with blending", () => {
+  it("guards the smooth falloff on the fringe define, keeping the core discard", () => {
     const mat = new LineMaterial();
-    // The falloff must not depend on USE_ALPHA_TO_COVERAGE (alpha-to-coverage
-    // writes partial alpha without blending, which composites additively with
-    // the page background through viser's transparent canvas -- a white glow).
-    expect(mat.fragmentShader).toContain(SMOOTH_ALPHA_MARKER);
-    // Fully-faded pad fragments must discard so they don't write depth.
-    expect(mat.fragmentShader).toContain("if ( alpha < 0.02 ) discard;");
-    // Falloff respects material opacity.
+    // Falloff branch is selected by VISER_LINE_FRINGE, not alphaToCoverage
+    // (alpha-to-coverage writes partial alpha without blending, which
+    // composites additively with the page background through viser's
+    // transparent canvas -- a white glow).
+    expect(mat.fragmentShader).toContain(FRINGE_GUARD);
     expect(mat.fragmentShader).toContain(
       "alpha = opacity * ( 1.0 - smoothstep( 0.5 - dnorm, 0.5 + dnorm, norm ) );",
     );
+    expect(mat.fragmentShader).toContain("if ( alpha < 0.02 ) discard;");
+    // The stock hard discard must survive for the depth-anchoring core pass.
+    expect(mat.fragmentShader).toContain("if ( norm > 0.5 ) {");
   });
 
   it("survives clone() without double-applying", () => {
@@ -47,7 +51,7 @@ describe("patchLineMaterial", () => {
     expect(
       cloned.vertexShader.split("offset *= renderWidth * 0.5;").length - 1,
     ).toBe(1);
-    expect(cloned.fragmentShader.split(SMOOTH_ALPHA_MARKER).length - 1).toBe(1);
+    expect(cloned.fragmentShader.split(FRINGE_GUARD).length - 1).toBe(1);
   });
 
   it("preserves three-stdlib's own onBeforeCompile hook", () => {

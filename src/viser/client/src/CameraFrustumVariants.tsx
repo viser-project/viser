@@ -1,8 +1,4 @@
-// drei's Line constructs its own three-stdlib LineMaterial; make sure the
-// shader patches (reversed-depth near plane, antialiasing pad) are
-// installed before that happens.
-import "./patchLineMaterial";
-import { Line } from "@react-three/drei";
+import { Line } from "./Line";
 import { useFrame } from "@react-three/fiber";
 import React from "react";
 import { HoverableContext } from "./HoverContext";
@@ -57,37 +53,38 @@ export const CameraFrustumComponent = React.forwardRef<
 
   // Memoized on geometry inputs only; <Line> rebuilds its geometry whenever
   // the `points` identity changes.
-  const frustumPoints = React.useMemo<[number, number, number][]>(
-    () =>
-      (
-        [
-          // Rectangle.
-          [-1, -1, 1],
-          [1, -1, 1],
-          [1, -1, 1],
-          [1, 1, 1],
-          [1, 1, 1],
-          [-1, 1, 1],
-          [-1, 1, 1],
-          [-1, -1, 1],
-          // Lines to origin.
-          [-1, -1, 1],
-          [0, 0, 0],
-          [0, 0, 0],
-          [1, -1, 1],
-          // Lines to origin.
-          [-1, 1, 1],
-          [0, 0, 0],
-          [0, 0, 0],
-          [1, 1, 1],
-          // Up direction indicator.
-          // Don't overlap with the image if the image is present.
-          [0.0, -1.2, 1.0],
-          imageTexture === undefined ? [0.0, -0.9, 1.0] : [0.0, -1.0, 1.0],
-        ] as [number, number, number][]
-      ).map((xyz) => [xyz[0] * x, xyz[1] * y, xyz[2] * z]),
-    [x, y, z, imageTexture],
-  );
+  const frustumPoints = React.useMemo<Float32Array>(() => {
+    const triplets = (
+      [
+        // Rectangle.
+        [-1, -1, 1],
+        [1, -1, 1],
+        [1, -1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [-1, 1, 1],
+        [-1, 1, 1],
+        [-1, -1, 1],
+        // Lines to origin.
+        [-1, -1, 1],
+        [0, 0, 0],
+        [0, 0, 0],
+        [1, -1, 1],
+        // Lines to origin.
+        [-1, 1, 1],
+        [0, 0, 0],
+        [0, 0, 0],
+        [1, 1, 1],
+        // Up direction indicator.
+        // Don't overlap with the image if the image is present.
+        [0.0, -1.2, 1.0],
+        imageTexture === undefined ? [0.0, -0.9, 1.0] : [0.0, -1.0, 1.0],
+      ] as [number, number, number][]
+    ).map((xyz) => [xyz[0] * x, xyz[1] * y, xyz[2] * z]);
+    const flat = new Float32Array(triplets.length * 3);
+    triplets.forEach((p, i) => flat.set(p, i * 3));
+    return flat;
+  }, [x, y, z, imageTexture]);
 
   // Fresh BufferGeometry per dimension change: in-place setAttribute swaps
   // hit the same truncation bug as LineSegments2. See:
@@ -139,21 +136,13 @@ export const CameraFrustumComponent = React.forwardRef<
     <group ref={ref}>
       {/* Wireframe lines - always visible */}
       <Line
-        // Remount on units change: drei's Line applies worldUnits via prop
-        // spread, which toggles a shader define without bumping the material
-        // version.
-        key={message.props.line_width_units}
         points={frustumPoints}
         color={isHovered ? 0xfbff00 : rgbToInt(message.props.color)}
         lineWidth={
           isHovered ? 1.5 * message.props.line_width : message.props.line_width
         }
         worldUnits={message.props.line_width_units === "world"}
-        // World-unit edge falloff blends (see patchLineMaterial); no depth
-        // writes, so overlapping joint quads don't depth-reject each other.
-        transparent={message.props.line_width_units === "world"}
-        depthWrite={message.props.line_width_units !== "world"}
-        segments
+        segments={true}
       />
 
       {/* Filled faces - only for "filled" variant */}
