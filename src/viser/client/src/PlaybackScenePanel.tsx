@@ -1,5 +1,5 @@
 import { Box, Paper, ScrollArea } from "@mantine/core";
-import { IconX } from "@tabler/icons-react";
+import { IconGripHorizontal } from "@tabler/icons-react";
 import React from "react";
 import SceneTreeTable from "./ControlPanel/SceneTreeTable";
 
@@ -8,20 +8,38 @@ import SceneTreeTable from "./ControlPanel/SceneTreeTable";
  * connection, so this is what makes the scene tree table -- local visibility
  * overrides and property editing -- accessible offline.
  *
- * Mounted only while open; closing returns to the launcher that opened it
- * (see PlaybackInterface): the playback bar's scene tree toggle for animated
- * recordings, or the floating corner button for static scenes, which have no
- * playback bar to hold a toggle. */
-export function PlaybackScenePanel({ onClose }: { onClose: () => void }) {
+ * Visibility is owned entirely by the scene tree toggle that opened it (see
+ * PlaybackInterface): the playback bar's button for animated recordings, or
+ * the floating corner button for static scenes. The panel itself only moves:
+ * its title bar is a drag handle. `top` positions the initial anchor so the
+ * static-scene launcher button isn't covered. */
+export function PlaybackScenePanel({ top = "1em" }: { top?: string }) {
+  const paperRef = React.useRef<HTMLDivElement | null>(null);
+  // Dragged position in viewport px; null until the first drag, where the
+  // panel sits at its default top-right anchor.
+  const [dragPos, setDragPos] = React.useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const [dragging, setDragging] = React.useState(false);
+  // Cursor offset from the panel's top-left corner at drag start, so the
+  // panel doesn't jump to put its corner under the cursor.
+  const dragOffset = React.useRef<{ dx: number; dy: number } | null>(null);
+
+  const clamp = (value: number, lo: number, hi: number) =>
+    Math.min(Math.max(value, lo), Math.max(lo, hi));
+
   return (
     <Paper
+      ref={paperRef}
       radius="xs"
       shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
       data-playback-scene-tree
       style={{
         position: "fixed",
-        top: "1em",
-        right: "1em",
+        ...(dragPos === null
+          ? { top, right: "1em" }
+          : { top: dragPos.top, left: dragPos.left }),
         width: "17.5em",
         maxWidth: "calc(100% - 2em)",
         zIndex: 1,
@@ -29,15 +47,38 @@ export function PlaybackScenePanel({ onClose }: { onClose: () => void }) {
       }}
     >
       <Box
-        onClick={onClose}
-        role="button"
-        aria-label="Close scene tree"
-        tabIndex={0}
-        onKeyDown={(ev) => {
-          if (ev.key === "Enter" || ev.key === " ") {
-            ev.preventDefault();
-            onClose();
-          }
+        onPointerDown={(ev) => {
+          const rect = paperRef.current!.getBoundingClientRect();
+          dragOffset.current = {
+            dx: ev.clientX - rect.left,
+            dy: ev.clientY - rect.top,
+          };
+          setDragging(true);
+          ev.currentTarget.setPointerCapture(ev.pointerId);
+        }}
+        onPointerMove={(ev) => {
+          if (dragOffset.current === null) return;
+          const rect = paperRef.current!.getBoundingClientRect();
+          setDragPos({
+            left: clamp(
+              ev.clientX - dragOffset.current.dx,
+              0,
+              window.innerWidth - rect.width,
+            ),
+            top: clamp(
+              ev.clientY - dragOffset.current.dy,
+              0,
+              window.innerHeight - rect.height,
+            ),
+          });
+        }}
+        onPointerUp={() => {
+          dragOffset.current = null;
+          setDragging(false);
+        }}
+        onPointerCancel={() => {
+          dragOffset.current = null;
+          setDragging(false);
         }}
         fz="sm"
         style={{
@@ -46,15 +87,18 @@ export function PlaybackScenePanel({ onClose }: { onClose: () => void }) {
           gap: "0.5em",
           padding: "0.375em 0.625em",
           fontWeight: 500,
-          cursor: "pointer",
+          cursor: dragging ? "grabbing" : "grab",
           userSelect: "none",
+          // Opt out of native touch scrolling/zoom so touch drags move the
+          // panel instead of firing pointercancel mid-drag.
+          touchAction: "none",
         }}
       >
         <Box style={{ flexGrow: 1 }}>Scene tree</Box>
-        <IconX
+        <IconGripHorizontal
           size="1em"
           aria-hidden
-          style={{ opacity: 0.55, flexShrink: 0 }}
+          style={{ opacity: 0.4, flexShrink: 0 }}
         />
       </Box>
       {/* Bounded height with the panel's own scrollbars: unlike the control

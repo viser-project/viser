@@ -50,6 +50,7 @@ import {
   Select,
   Slider,
   Tooltip,
+  useComputedColorScheme,
   useMantineTheme,
 } from "@mantine/core";
 import {
@@ -242,6 +243,7 @@ function PlaybackInterface({
   const [currentTime, setCurrentTime] = useState(0.0);
 
   const theme = useMantineTheme();
+  const colorScheme = useComputedColorScheme("light");
 
   useEffect(() => {
     deserialize(setStatus).then((data) => {
@@ -354,20 +356,30 @@ function PlaybackInterface({
     );
   } else {
     const isStaticScene = recording.durationSeconds === 0.0;
+    const sceneTreeTooltip = (
+      <>
+        Scene tree
+        <br />
+        Inspect the scene, toggle visibility of
+        <br />
+        objects, and override their properties.
+      </>
+    );
     return (
       <>
         {/* Hidden-by-default scene tree, keeping playback consistent with the
-        panel-free canvas of a live connection's defaults. The panel mounts on
-        demand from a scene tree icon: in the playback bar for animated
-        recordings, or -- since static scenes hide the playback bar entirely --
-        floating in the corner where the panel opens. Everything here mounts
-        only once the recording is loaded, so nothing floats above the
-        download progress screen. */}
+        panel-free canvas of a live connection's defaults. The panel is
+        draggable and its visibility is owned entirely by a scene tree toggle:
+        in the playback bar for animated recordings, or -- since static scenes
+        hide the playback bar entirely -- floating in the corner (with the
+        panel opening below it). Everything here mounts only once the
+        recording is loaded, so nothing floats above the download progress
+        screen. */}
         {scenePanelOpen && (
-          <PlaybackScenePanel onClose={() => setScenePanelOpen(false)} />
+          <PlaybackScenePanel top={isStaticScene ? "3.75em" : undefined} />
         )}
-        {isStaticScene && !scenePanelOpen && (
-          <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
+        {isStaticScene && (
+          <Tooltip zIndex={10} label={sceneTreeTooltip} withinPortal>
             <Paper
               radius="xs"
               shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
@@ -375,9 +387,9 @@ function PlaybackInterface({
             >
               <ActionIcon
                 size="lg"
-                variant="subtle"
-                aria-label="Show scene tree"
-                onClick={() => setScenePanelOpen(true)}
+                variant={scenePanelOpen ? "light" : "subtle"}
+                aria-label={`${scenePanelOpen ? "Hide" : "Show"} scene tree`}
+                onClick={() => setScenePanelOpen(!scenePanelOpen)}
               >
                 <IconBinaryTree2 height="1.25em" width="1.25em" />
               </ActionIcon>
@@ -393,7 +405,13 @@ function PlaybackInterface({
           style={{
             width: "100%",
             flexShrink: 0,
-            borderTop: "1px solid var(--mantine-color-default-border)",
+            // Softer than --mantine-color-default-border, which reads too
+            // heavy as a full-width line.
+            borderTop: `1px solid ${
+              colorScheme === "dark"
+                ? theme.colors.dark[5]
+                : theme.colors.gray[2]
+            }`,
             padding: "0.375em 0.625em",
             display: recording.durationSeconds === 0.0 ? "none" : "flex",
             alignItems: "center",
@@ -458,7 +476,7 @@ function PlaybackInterface({
               comboboxProps={{ zIndex: 5, width: "5.25em" }}
             />
           </Tooltip>
-          <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
+          <Tooltip zIndex={10} label={sceneTreeTooltip} withinPortal>
             <ActionIcon
               size="md"
               variant={scenePanelOpen ? "light" : "subtle"}
