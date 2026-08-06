@@ -88,6 +88,16 @@ def test_as_html_renders_scene(
     assert "/render_sphere" in names
     assert "/render_box" in names
 
+    # Static scenes have no playback bar (nowhere for a scene tree toggle), so
+    # a floating scene tree button is shown instead; clicking it opens the
+    # panel with the tree rows.
+    page.get_by_role("button", name="Show scene tree").click()
+    panel = page.locator("[data-playback-scene-tree]")
+    panel.wait_for(state="visible", timeout=15_000)
+    panel.locator("[data-scene-node='/render_sphere']").wait_for(
+        state="visible", timeout=15_000
+    )
+
     Path(tmp_path).unlink(missing_ok=True)
 
 

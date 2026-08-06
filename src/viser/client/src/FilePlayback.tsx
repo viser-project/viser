@@ -22,6 +22,7 @@ import {
 import { ViewerContext } from "./ViewerContext";
 import { defaultEnvironmentState } from "./EnvironmentState";
 import { isFormElement } from "./utils/isFormElement";
+import { PlaybackScenePanel } from "./PlaybackScenePanel";
 
 /** Toggle `paused` on spacebar, unless a form control is focused -- so typing a
  * space in the playback time/speed inputs doesn't toggle playback. */
@@ -49,9 +50,11 @@ import {
   Select,
   Slider,
   Tooltip,
+  useComputedColorScheme,
   useMantineTheme,
 } from "@mantine/core";
 import {
+  IconBinaryTree2,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
 } from "@tabler/icons-react";
@@ -197,6 +200,12 @@ function PlaybackInterface({
   const [playbackSpeed, setPlaybackSpeed] = useState("1x");
   const [paused, setPaused] = useState(false);
   const [recording, setRecording] = useState<SerializedMessages | null>(null);
+  // Scene tree panel visibility, toggled from the playback bar's scene tree
+  // button (animated recordings) or the floating corner button (static
+  // scenes); see the render below.
+  const [scenePanelOpen, setScenePanelOpen] = useState(false);
+  // Handle to the playback bar, so scene tree panel drags can't occlude it.
+  const playbackBarRef = useRef<HTMLDivElement | null>(null);
 
   // Instead of removing all of the existing scene nodes, we're just going to hide them.
   // This will prevent unnecessary remounting when messages are looped.
@@ -236,6 +245,7 @@ function PlaybackInterface({
   const [currentTime, setCurrentTime] = useState(0.0);
 
   const theme = useMantineTheme();
+  const colorScheme = useComputedColorScheme("light");
 
   useEffect(() => {
     deserialize(setStatus).then((data) => {
@@ -347,83 +357,134 @@ function PlaybackInterface({
       </div>
     );
   } else {
+    const isStaticScene = recording.durationSeconds === 0.0;
     return (
-      <Paper
-        radius="xs"
-        shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
-        style={{
-          position: "fixed",
-          bottom: "1em",
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "25em",
-          maxWidth: "95%",
-          zIndex: 1,
-          padding: "0.5em",
-          display: recording.durationSeconds === 0.0 ? "none" : "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "0.375em",
-        }}
-      >
-        <ActionIcon
-          size="md"
-          variant="subtle"
-          onClick={() => setPaused(!paused)}
-        >
-          {paused ? (
-            <IconPlayerPlayFilled height="1.125em" width="1.125em" />
-          ) : (
-            <IconPlayerPauseFilled height="1.125em" width="1.125em" />
-          )}
-        </ActionIcon>
-        <NumberInput
-          size="xs"
-          hideControls
-          value={currentTime.toFixed(1)}
-          step={0.01}
-          styles={{
-            wrapper: {
-              width: "3.1em",
-            },
-            input: {
-              padding: "0.2em",
-              fontFamily: theme.fontFamilyMonospace,
-              textAlign: "center",
-            },
-          }}
-          onChange={(value) => {
-            // Ignore the transient empty/NaN value while the field is cleared;
-            // committing NaN would freeze playback at NaN.
-            const t = typeof value === "number" ? value : parseFloat(value);
-            if (Number.isFinite(t)) updateCurrentTime(t);
-          }}
-        />
-        <Slider
-          thumbSize={0}
-          radius="xs"
-          step={1e-4}
-          style={{ flexGrow: 1 }}
-          min={0}
-          max={recording.durationSeconds}
-          value={currentTime}
-          onChange={updateCurrentTime}
-          styles={{ thumb: { display: "none" } }}
-        />
-        <Tooltip zIndex={10} label={"Playback speed"} withinPortal>
-          <Select
-            size="xs"
-            value={playbackSpeed}
-            onChange={(val) => (val === null ? null : setPlaybackSpeed(val))}
-            radius="xs"
-            data={["0.5x", "1x", "2x", "4x", "8x"]}
-            styles={{
-              wrapper: { width: "3.25em" },
-            }}
-            comboboxProps={{ zIndex: 5, width: "5.25em" }}
+      <>
+        {/* Hidden-by-default scene tree, keeping playback consistent with the
+        panel-free canvas of a live connection's defaults. The panel is
+        draggable and its visibility is owned entirely by a scene tree toggle:
+        in the playback bar for animated recordings, or -- since static scenes
+        hide the playback bar entirely -- floating in the corner (with the
+        panel opening below it). Everything here mounts only once the
+        recording is loaded, so nothing floats above the download progress
+        screen. */}
+        {scenePanelOpen && (
+          <PlaybackScenePanel
+            top={isStaticScene ? "3.75em" : undefined}
+            bottomBoundRef={playbackBarRef}
           />
-        </Tooltip>
-      </Paper>
+        )}
+        {isStaticScene && (
+          <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
+            <Paper
+              radius="xs"
+              shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
+              style={{ position: "fixed", top: "1em", right: "1em", zIndex: 1 }}
+            >
+              <ActionIcon
+                size="lg"
+                variant={scenePanelOpen ? "light" : "subtle"}
+                aria-label={`${scenePanelOpen ? "Hide" : "Show"} scene tree`}
+                onClick={() => setScenePanelOpen(!scenePanelOpen)}
+              >
+                <IconBinaryTree2 height="1.25em" width="1.25em" />
+              </ActionIcon>
+            </Paper>
+          </Tooltip>
+        )}
+        {/* Docked, full-width playback bar: a normal row at the bottom of the
+        layout column (see AppLayout's messageProducer slot), so the canvas
+        ends above it instead of being covered by a floating bar. Hidden
+        entirely for static scenes. */}
+        <Paper
+          ref={playbackBarRef}
+          radius={0}
+          style={{
+            width: "100%",
+            flexShrink: 0,
+            // Softer than --mantine-color-default-border, which reads too
+            // heavy as a full-width line.
+            borderTop: `1px solid ${
+              colorScheme === "dark"
+                ? theme.colors.dark[5]
+                : theme.colors.gray[2]
+            }`,
+            padding: "0.375em 0.625em",
+            display: recording.durationSeconds === 0.0 ? "none" : "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.5em",
+          }}
+        >
+          <ActionIcon
+            size="md"
+            variant="subtle"
+            onClick={() => setPaused(!paused)}
+          >
+            {paused ? (
+              <IconPlayerPlayFilled height="1.125em" width="1.125em" />
+            ) : (
+              <IconPlayerPauseFilled height="1.125em" width="1.125em" />
+            )}
+          </ActionIcon>
+          <NumberInput
+            size="xs"
+            hideControls
+            value={currentTime.toFixed(1)}
+            step={0.01}
+            styles={{
+              wrapper: {
+                width: "3.1em",
+              },
+              input: {
+                padding: "0.2em",
+                fontFamily: theme.fontFamilyMonospace,
+                textAlign: "center",
+              },
+            }}
+            onChange={(value) => {
+              // Ignore the transient empty/NaN value while the field is
+              // cleared; committing NaN would freeze playback at NaN.
+              const t = typeof value === "number" ? value : parseFloat(value);
+              if (Number.isFinite(t)) updateCurrentTime(t);
+            }}
+          />
+          <Slider
+            thumbSize={0}
+            radius="xs"
+            step={1e-4}
+            style={{ flexGrow: 1 }}
+            min={0}
+            max={recording.durationSeconds}
+            value={currentTime}
+            onChange={updateCurrentTime}
+            styles={{ thumb: { display: "none" } }}
+          />
+          <Tooltip zIndex={10} label={"Playback speed"} withinPortal>
+            <Select
+              size="xs"
+              value={playbackSpeed}
+              onChange={(val) => (val === null ? null : setPlaybackSpeed(val))}
+              radius="xs"
+              data={["0.5x", "1x", "2x", "4x", "8x"]}
+              styles={{
+                wrapper: { width: "3.25em" },
+              }}
+              comboboxProps={{ zIndex: 5, width: "5.25em" }}
+            />
+          </Tooltip>
+          <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
+            <ActionIcon
+              size="md"
+              variant={scenePanelOpen ? "light" : "subtle"}
+              aria-label={`${scenePanelOpen ? "Hide" : "Show"} scene tree`}
+              onClick={() => setScenePanelOpen(!scenePanelOpen)}
+            >
+              <IconBinaryTree2 height="1.125em" width="1.125em" />
+            </ActionIcon>
+          </Tooltip>
+        </Paper>
+      </>
     );
   }
 }
