@@ -204,6 +204,8 @@ function PlaybackInterface({
   // button (animated recordings) or the floating corner button (static
   // scenes); see the render below.
   const [scenePanelOpen, setScenePanelOpen] = useState(false);
+  // Handle to the playback bar, so scene tree panel drags can't occlude it.
+  const playbackBarRef = useRef<HTMLDivElement | null>(null);
 
   // Instead of removing all of the existing scene nodes, we're just going to hide them.
   // This will prevent unnecessary remounting when messages are looped.
@@ -376,7 +378,10 @@ function PlaybackInterface({
         recording is loaded, so nothing floats above the download progress
         screen. */}
         {scenePanelOpen && (
-          <PlaybackScenePanel top={isStaticScene ? "3.75em" : undefined} />
+          <PlaybackScenePanel
+            top={isStaticScene ? "3.75em" : undefined}
+            bottomBoundRef={playbackBarRef}
+          />
         )}
         {isStaticScene && (
           <Tooltip zIndex={10} label={sceneTreeTooltip} withinPortal>
@@ -401,6 +406,7 @@ function PlaybackInterface({
         ends above it instead of being covered by a floating bar. Hidden
         entirely for static scenes. */}
         <Paper
+          ref={playbackBarRef}
           radius={0}
           style={{
             width: "100%",

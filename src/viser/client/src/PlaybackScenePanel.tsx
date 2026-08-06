@@ -12,8 +12,15 @@ import SceneTreeTable from "./ControlPanel/SceneTreeTable";
  * PlaybackInterface): the playback bar's button for animated recordings, or
  * the floating corner button for static scenes. The panel itself only moves:
  * its title bar is a drag handle. `top` positions the initial anchor so the
- * static-scene launcher button isn't covered. */
-export function PlaybackScenePanel({ top = "1em" }: { top?: string }) {
+ * static-scene launcher button isn't covered. `bottomBoundRef` optionally
+ * points at the playback bar so drags can't occlude it. */
+export function PlaybackScenePanel({
+  top = "1em",
+  bottomBoundRef,
+}: {
+  top?: string;
+  bottomBoundRef?: React.RefObject<HTMLDivElement | null>;
+}) {
   const paperRef = React.useRef<HTMLDivElement | null>(null);
   // Dragged position in viewport px; null until the first drag, where the
   // panel sits at its default top-right anchor.
@@ -59,6 +66,15 @@ export function PlaybackScenePanel({ top = "1em" }: { top?: string }) {
         onPointerMove={(ev) => {
           if (dragOffset.current === null) return;
           const rect = paperRef.current!.getBoundingClientRect();
+          // The panel may not cover the playback bar: its bottom edge stops
+          // at the bar's top. The bar is display:none for static scenes, so
+          // only a laid-out (nonzero-height) bar constrains the drag.
+          let bottomBound = window.innerHeight;
+          const barEl = bottomBoundRef?.current;
+          if (barEl != null) {
+            const barRect = barEl.getBoundingClientRect();
+            if (barRect.height > 0) bottomBound = barRect.top;
+          }
           setDragPos({
             left: clamp(
               ev.clientX - dragOffset.current.dx,
@@ -68,7 +84,7 @@ export function PlaybackScenePanel({ top = "1em" }: { top?: string }) {
             top: clamp(
               ev.clientY - dragOffset.current.dy,
               0,
-              window.innerHeight - rect.height,
+              bottomBound - rect.height,
             ),
           });
         }}
