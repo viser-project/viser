@@ -34,7 +34,7 @@ def main() -> None:
         "/line_segments",
         points=points,
         colors=colors,
-        line_width=3.0,
+        thickness=0.03,
     )
 
     # Spline helpers.
@@ -47,7 +47,7 @@ def main() -> None:
             f"/catmull/{i}",
             points=points,
             tension=0.5,
-            line_width=3.0,
+            thickness=0.03,
             color=np.random.uniform(size=3),
             segments=100,
         )
@@ -57,7 +57,7 @@ def main() -> None:
             f"/cubic_bezier/{i}",
             points=points,
             control_points=control_points,
-            line_width=3.0,
+            thickness=0.03,
             color=np.random.uniform(size=3),
             segments=100,
         )

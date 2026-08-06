@@ -186,6 +186,30 @@ Your visualization will be available at: ``https://user.github.io/repo/viser-cli
 You can embed this into other webpages using an HTML ``<iframe />`` tag.
 
 
+The Scene Tree Panel
+--------------------
+
+During offline playback, a "Scene tree" panel is available. Like the scene
+tree in the regular control panel, it can be used to inspect the scene
+hierarchy, toggle visibility of individual nodes, and edit scene node
+properties. Changes are local to the browser; they don't persist and are
+overwritten by property updates in the recording.
+
+The panel is hidden by default, keeping the canvas clean. A scene tree button
+opens it: in the playback bar for animated recordings, or floating in the
+top-right corner for static scenes (which have no playback bar).
+
+.. figure:: _static/playback_scene_tree.png
+   :alt: Scene tree panel during offline playback
+
+   The scene tree panel opened from the playback bar's scene tree button.
+
+.. figure:: _static/playback_scene_tree_static.png
+   :alt: Floating scene tree button for static scenes
+
+   Static scenes show a floating scene tree button in the top-right corner.
+
+
 Step 4: Setting the initial camera pose
 -----------------------------------------------
 

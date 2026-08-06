@@ -12,7 +12,7 @@ export interface CameraFrustumMessage {
   props: {
     fov: number;
     aspect: number;
-    line_width: number;
+    thickness: number;
     color: [number, number, number];
     _format: "jpeg" | "png";
     _image_data: Uint8Array<ArrayBuffer> | null;
@@ -20,6 +20,7 @@ export interface CameraFrustumMessage {
     receive_shadow: boolean | number;
     variant: "wireframe" | "filled";
     scale: number | [number, number, number];
+    thickness_units: "screen" | "world";
   };
 }
 /** GlTF message.
@@ -438,9 +439,10 @@ export interface LineSegmentsMessage {
   name: string;
   props: {
     points: Float32Array;
-    line_width: number;
+    thickness: number;
     colors: Uint8Array<ArrayBuffer>;
     scale: number | [number, number, number];
+    thickness_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying arrow information.
@@ -456,7 +458,6 @@ export interface ArrowMessage {
     shaft_radius: number;
     head_radius: number;
     head_length: number;
-    line_width: number;
     scale: number | [number, number, number];
   };
 }
@@ -472,10 +473,11 @@ export interface CatmullRomSplineMessage {
     curve_type: "centripetal" | "chordal" | "catmullrom";
     tension: number;
     closed: boolean;
-    line_width: number;
+    thickness: number;
     color: [number, number, number];
     segments: number | null;
     scale: number | [number, number, number];
+    thickness_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying Cubic Bezier spline information.
@@ -488,10 +490,11 @@ export interface CubicBezierSplineMessage {
   props: {
     points: Float32Array;
     control_points: Float32Array;
-    line_width: number;
+    thickness: number;
     color: [number, number, number];
     segments: number | null;
     scale: number | [number, number, number];
+    thickness_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying splattable Gaussians.
@@ -2345,7 +2348,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "number",
     },
-    line_width: {
+    thickness: {
       kind: "default",
       tsType: "number",
     },
@@ -2378,6 +2381,11 @@ export const SceneNodePropsSchema: {
     scale: {
       kind: "default",
       tsType: "(number | [number, number, number])",
+    },
+    thickness_units: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'world'",
+      options: ["screen", "world"],
     },
   },
   GlbMessage: {
@@ -3157,7 +3165,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "Float32Array",
     },
-    line_width: {
+    thickness: {
       kind: "default",
       tsType: "number",
     },
@@ -3168,6 +3176,11 @@ export const SceneNodePropsSchema: {
     scale: {
       kind: "default",
       tsType: "(number | [number, number, number])",
+    },
+    thickness_units: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'world'",
+      options: ["screen", "world"],
     },
   },
   ArrowMessage: {
@@ -3188,10 +3201,6 @@ export const SceneNodePropsSchema: {
       tsType: "number",
     },
     head_length: {
-      kind: "default",
-      tsType: "number",
-    },
-    line_width: {
       kind: "default",
       tsType: "number",
     },
@@ -3218,7 +3227,7 @@ export const SceneNodePropsSchema: {
       kind: "boolean",
       tsType: "boolean",
     },
-    line_width: {
+    thickness: {
       kind: "default",
       tsType: "number",
     },
@@ -3233,6 +3242,11 @@ export const SceneNodePropsSchema: {
     scale: {
       kind: "default",
       tsType: "(number | [number, number, number])",
+    },
+    thickness_units: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'world'",
+      options: ["screen", "world"],
     },
   },
   CubicBezierSplineMessage: {
@@ -3244,7 +3258,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "Float32Array",
     },
-    line_width: {
+    thickness: {
       kind: "default",
       tsType: "number",
     },
@@ -3259,6 +3273,11 @@ export const SceneNodePropsSchema: {
     scale: {
       kind: "default",
       tsType: "(number | [number, number, number])",
+    },
+    thickness_units: {
+      kind: "stringLiteral",
+      tsType: "'screen' | 'world'",
+      options: ["screen", "world"],
     },
   },
   GaussianSplatsMessage: {

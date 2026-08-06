@@ -377,7 +377,6 @@ function ViewerContents({
           clear: () => null,
         }}
       >
-        {children}
         <ColorSchemeSetter darkMode={darkMode} />
         <BrowserWarning />
         <ViserModal />
@@ -388,6 +387,12 @@ function ViewerContents({
           showLogo={showLogo}
           messageSource={messageSource}
           canvases={canvases}
+          // The message producer renders inside the layout column so playback
+          // chrome (the docked playback bar) can occupy a real layout row
+          // below the canvas instead of floating over it. The websocket
+          // producer renders no UI, so this is layout-neutral for live
+          // connections.
+          messageProducer={children}
         />
         {showStats && <Stats className="stats-panel" />}
       </MantineProvider>
@@ -406,12 +411,18 @@ function AppLayout({
   showLogo,
   messageSource,
   canvases,
+  messageProducer,
 }: {
   darkMode: boolean;
   controlLayout: "floating" | "collapsible" | "fixed";
   showLogo: boolean;
   messageSource: "websocket" | "file_playback" | "embed";
   canvases: React.ReactNode;
+  /** Message source component (websocket producer or file/embed playback).
+   * Rendered as the last row of the layout column: playback mounts its docked
+   * playback bar here, below the canvas; the websocket producer renders no
+   * UI. */
+  messageProducer: React.ReactNode;
 }) {
   const mantineTheme = useMantineTheme();
   const useMobileView =
@@ -501,6 +512,7 @@ function AppLayout({
         </Box>
         {messageSource === "websocket" && !dockFloating && <ControlPanel />}
       </Box>
+      {messageProducer}
     </Box>
   );
 }

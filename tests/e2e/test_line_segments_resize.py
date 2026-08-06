@@ -44,7 +44,8 @@ def test_line_segments_resize_rerender(
             "/regression_line",
             points=_segments_along_x(half_extent, num_pts),
             colors=(255, 0, 0),
-            line_width=8.0,
+            thickness=8.0,
+            thickness_units="screen",
         )
 
     push(short_half_extent, short_num_pts)

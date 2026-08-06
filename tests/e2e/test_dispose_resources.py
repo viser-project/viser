@@ -148,7 +148,7 @@ def test_line_segments_geometry_dispose(
             "/test_lines_dispose",
             points=points,
             colors=colors,
-            line_width=2.0,
+            thickness=0.02,
         )
         wait_for_scene_node(viser_page, "/test_lines_dispose")
         viser_page.wait_for_timeout(500)

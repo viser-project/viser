@@ -4,7 +4,7 @@
  */
 
 import "./r3f-extend";
-import "./patchLineMaterialReversedDepth";
+import "./patchLineMaterial";
 import * as React from "react";
 import * as THREE from "three";
 import { ColorRepresentation } from "three";
@@ -32,6 +32,9 @@ export type LineProps = {
     color?: ColorRepresentation;
   };
 
+// Fringe pass objects are visual-only; the core object handles picking.
+const noopRaycast = () => undefined;
+
 export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
   /* @__PURE__ */ React.forwardRef<Line2 | LineSegments2, LineProps>(
     function Line(
@@ -43,6 +46,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         lineWidth,
         segments,
         dashed,
+        worldUnits,
         ...rest
       },
       ref,
@@ -91,6 +95,29 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         mat.needsUpdate = true;
       }, [dashed]);
 
+      // worldUnits toggles a shader define (WORLD_UNITS); the three-stdlib
+      // setter doesn't bump the material version, so recompile explicitly.
+      React.useLayoutEffect(() => {
+        const mat = matRef.current;
+        if (!mat) return;
+        mat.worldUnits = worldUnits ?? false;
+        mat.needsUpdate = true;
+      }, [worldUnits]);
+
+      // World-unit lines get a second, alpha-blended antialiasing pass (see
+      // patchLineMaterial): the fringe material re-draws the line with a
+      // smooth edge falloff, depth-tested but not depth-written, on top of
+      // the opaque depth-anchoring core.
+      const showFringe = (worldUnits ?? false) && !(dashed ?? false);
+      const fringeMatRef = React.useRef<LineMaterial>(null);
+      React.useLayoutEffect(() => {
+        const mat = fringeMatRef.current;
+        if (!mat) return;
+        mat.defines.VISER_LINE_FRINGE = "";
+        mat.worldUnits = true;
+        mat.needsUpdate = true;
+      }, [showFringe]);
+
       const effectiveColor = vertexColors ? 0xffffff : color;
 
       // Merge forwarded ref with internal ref.
@@ -107,8 +134,8 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         [ref],
       );
 
-      // Reversed-depth near-plane fix for LineMaterial is applied globally
-      // (all instances, including drei's) in patchLineMaterialReversedDepth.
+      // Reversed-depth and antialiasing fixes for LineMaterial are applied
+      // globally (all instances, including drei's) in patchLineMaterial.
 
       // R3F manages lifecycle for all declarative children -- no manual disposal.
       const materialJsx = (
@@ -118,25 +145,58 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
           vertexColors={Boolean(vertexColors)}
           resolution={[size.width, size.height]}
           linewidth={linewidth ?? lineWidth ?? 1}
+          worldUnits={worldUnits ?? false}
           dashed={dashed ?? false}
           transparent={false}
           fog={true}
         />
       );
 
+      // The fringe object shares the core's geometry; picking goes through
+      // the core only.
+      const fringeMaterialJsx = (
+        <lineMaterial
+          ref={fringeMatRef}
+          color={effectiveColor}
+          vertexColors={Boolean(vertexColors)}
+          resolution={[size.width, size.height]}
+          linewidth={linewidth ?? lineWidth ?? 1}
+          worldUnits={true}
+          transparent={true}
+          depthWrite={false}
+          fog={true}
+        />
+      );
+
       if (segments) {
         return (
-          <lineSegments2 ref={setLineRef} {...rest}>
-            <primitive object={lineGeom} attach="geometry" />
-            {materialJsx}
-          </lineSegments2>
+          <>
+            <lineSegments2 ref={setLineRef} {...rest}>
+              <primitive object={lineGeom} attach="geometry" />
+              {materialJsx}
+            </lineSegments2>
+            {showFringe && (
+              <lineSegments2 raycast={noopRaycast}>
+                <primitive object={lineGeom} attach="geometry" />
+                {fringeMaterialJsx}
+              </lineSegments2>
+            )}
+          </>
         );
       } else {
         return (
-          <line2 ref={setLineRef} {...rest}>
-            <primitive object={lineGeom} attach="geometry" />
-            {materialJsx}
-          </line2>
+          <>
+            <line2 ref={setLineRef} {...rest}>
+              <primitive object={lineGeom} attach="geometry" />
+              {materialJsx}
+            </line2>
+            {showFringe && (
+              <line2 raycast={noopRaycast}>
+                <primitive object={lineGeom} attach="geometry" />
+                {fringeMaterialJsx}
+              </line2>
+            )}
+          </>
         );
       }
     },
@@ -173,7 +233,8 @@ export const LineSegments = React.forwardRef<
       <group scale={normalizeScale(props.scale)}>
         <Line
           points={pointsArray}
-          lineWidth={props.line_width}
+          lineWidth={props.thickness}
+          worldUnits={props.thickness_units === "world"}
           color={color}
           vertexColors={vertexColors}
           segments={true}
