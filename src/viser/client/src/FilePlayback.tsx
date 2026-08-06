@@ -358,15 +358,6 @@ function PlaybackInterface({
     );
   } else {
     const isStaticScene = recording.durationSeconds === 0.0;
-    const sceneTreeTooltip = (
-      <>
-        Scene tree
-        <br />
-        Inspect the scene, toggle visibility of
-        <br />
-        objects, and override their properties.
-      </>
-    );
     return (
       <>
         {/* Hidden-by-default scene tree, keeping playback consistent with the
@@ -384,7 +375,7 @@ function PlaybackInterface({
           />
         )}
         {isStaticScene && (
-          <Tooltip zIndex={10} label={sceneTreeTooltip} withinPortal>
+          <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
             <Paper
               radius="xs"
               shadow="0.1em 0 1em 0 rgba(0,0,0,0.1)"
@@ -482,7 +473,7 @@ function PlaybackInterface({
               comboboxProps={{ zIndex: 5, width: "5.25em" }}
             />
           </Tooltip>
-          <Tooltip zIndex={10} label={sceneTreeTooltip} withinPortal>
+          <Tooltip zIndex={10} label={"Scene tree"} withinPortal>
             <ActionIcon
               size="md"
               variant={scenePanelOpen ? "light" : "subtle"}
