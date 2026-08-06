@@ -46,7 +46,7 @@ Code
            "/line_segments",
            points=points,
            colors=colors,
-           line_width=3.0,
+           thickness=0.03,
        )
    
        # Spline helpers.
@@ -59,7 +59,7 @@ Code
                f"/catmull/{i}",
                points=points,
                tension=0.5,
-               line_width=3.0,
+               thickness=0.03,
                color=np.random.uniform(size=3),
                segments=100,
            )
@@ -69,7 +69,7 @@ Code
                f"/cubic_bezier/{i}",
                points=points,
                control_points=control_points,
-               line_width=3.0,
+               thickness=0.03,
                color=np.random.uniform(size=3),
                segments=100,
            )

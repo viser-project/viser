@@ -450,7 +450,7 @@
 <span class="p">)</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing_extensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">ParamSpec</span><span class="p">,</span> <span class="n">TypeAlias</span><span class="p">,</span> <span class="n">deprecated</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing_extensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Never</span><span class="p">,</span> <span class="n">ParamSpec</span><span class="p">,</span> <span class="n">TypeAlias</span><span class="p">,</span> <span class="n">deprecated</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">viser._backwards_compat_shims</span><span class="w"> </span><span class="kn">import</span> <span class="n">deprecated_positional_shim</span>
 
@@ -1400,22 +1400,62 @@
         <span class="k">return</span> <span class="n">GlbHandle</span><span class="o">.</span><span class="n">_make</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span class="n">visible</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="SceneApi.add_line_segments">
-<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.add_line_segments">[docs]</a>
-    <span class="nd">@deprecated_positional_shim</span>
+    <span class="nd">@overload</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">add_line_segments</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">points</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">colors</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">RgbTupleOrArray</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
         <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
         <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
         <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LineSegmentsHandle</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The `line_width` parameter is deprecated. Use `thickness` instead.&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_line_segments</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">points</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">colors</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">RgbTupleOrArray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">line_width</span><span class="p">:</span> <span class="n">Never</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LineSegmentsHandle</span><span class="p">:</span> <span class="o">...</span>
+
+<div class="viewcode-block" id="SceneApi.add_line_segments">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.add_line_segments">[docs]</a>
+    <span class="nd">@deprecated_positional_shim</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_line_segments</span><span class="p">(</span>  <span class="c1"># pyright: ignore[reportInconsistentOverload]</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">points</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">colors</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="n">RgbTupleOrArray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">_deprecated_kwargs</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LineSegmentsHandle</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Add line segments to the scene.</span>
+
+<span class="sd">        .. note::</span>
+
+<span class="sd">            **API change.** The screen-space pixel ``line_width`` parameter is</span>
+<span class="sd">            deprecated in favor of ``thickness``, which defaults to world-space</span>
+<span class="sd">            units. Code passing ``line_width`` keeps its exact old rendering</span>
+<span class="sd">            (it maps to ``thickness_units=&quot;screen&quot;``) and emits a</span>
+<span class="sd">            :class:`DeprecationWarning`.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            name: A scene tree name. Names in the format of /parent/child can</span>
@@ -1425,7 +1465,14 @@
 <span class="sd">            colors: Colors of the line segments. Can be a single color as an RGB tuple or</span>
 <span class="sd">                np.ndarray of shape (3,) to apply to all segments, or an np.ndarray of</span>
 <span class="sd">                shape (N, 2, 3) to specify colors for each point of each segment.</span>
-<span class="sd">            line_width: Width of the lines.</span>
+<span class="sd">            thickness: Thickness of the lines, in the units chosen via</span>
+<span class="sd">                ``thickness_units``. Defaults to `0.01` world units.</span>
+<span class="sd">            thickness_units: Units for ``thickness``. `&quot;world&quot;` (default)</span>
+<span class="sd">                keeps lines a fixed thickness in scene units, so they get</span>
+<span class="sd">                thinner with distance like real geometry. `&quot;screen&quot;` keeps a</span>
+<span class="sd">                fixed pixel thickness regardless of distance. The deprecated</span>
+<span class="sd">                ``line_width`` argument maps to screen-space pixels, matching</span>
+<span class="sd">                its old behavior exactly.</span>
 <span class="sd">            scale: Scale of the line segments. A single float for uniform</span>
 <span class="sd">                scaling or a tuple of (x, y, z) for per-axis scaling.</span>
 <span class="sd">            wxyz: Quaternion rotation to parent frame from local frame (R_pl).</span>
@@ -1435,6 +1482,19 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;line_width&quot;</span> <span class="ow">in</span> <span class="n">_deprecated_kwargs</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="s2">&quot;The `line_width` parameter is deprecated. Use `thickness` with &quot;</span>
+                <span class="s2">&quot;`thickness_units=&#39;screen&#39;` for the same behavior.&quot;</span><span class="p">,</span>
+                <span class="ne">DeprecationWarning</span><span class="p">,</span>
+                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">thickness</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;line_width&quot;</span><span class="p">))</span>
+            <span class="n">thickness_units</span> <span class="o">=</span> <span class="s2">&quot;screen&quot;</span>
+        <span class="k">if</span> <span class="n">_deprecated_kwargs</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Unexpected keyword arguments: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="n">points_array</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">points</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="k">if</span> <span class="p">(</span>
             <span class="n">points_array</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">3</span>
@@ -1454,7 +1514,8 @@
             <span class="n">props</span><span class="o">=</span><span class="n">_messages</span><span class="o">.</span><span class="n">LineSegmentsProps</span><span class="p">(</span>
                 <span class="n">points</span><span class="o">=</span><span class="n">points_array</span><span class="p">,</span>
                 <span class="n">colors</span><span class="o">=</span><span class="n">colors_array</span><span class="p">,</span>
-                <span class="n">line_width</span><span class="o">=</span><span class="n">line_width</span><span class="p">,</span>
+                <span class="n">thickness</span><span class="o">=</span><span class="n">thickness</span><span class="p">,</span>
+                <span class="n">thickness_units</span><span class="o">=</span><span class="n">thickness_units</span><span class="p">,</span>
                 <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
             <span class="p">),</span>
         <span class="p">)</span>
@@ -1473,7 +1534,6 @@
         <span class="n">shaft_radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.02</span><span class="p">,</span>
         <span class="n">head_radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.05</span><span class="p">,</span>
         <span class="n">head_length</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
         <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
         <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
@@ -1495,7 +1555,6 @@
 <span class="sd">            shaft_radius: Radius of the arrow shaft.</span>
 <span class="sd">            head_radius: Radius of the arrow head cone.</span>
 <span class="sd">            head_length: Length of the arrow head.</span>
-<span class="sd">            line_width: Width of the lines (fallback rendering).</span>
 <span class="sd">            scale: Scale of the arrows. A single float for uniform</span>
 <span class="sd">                scaling or a tuple of (x, y, z) for per-axis scaling.</span>
 <span class="sd">            wxyz: Quaternion rotation to parent frame from local frame (R_pl).</span>
@@ -1527,7 +1586,6 @@
                 <span class="n">shaft_radius</span><span class="o">=</span><span class="n">shaft_radius</span><span class="p">,</span>
                 <span class="n">head_radius</span><span class="o">=</span><span class="n">head_radius</span><span class="p">,</span>
                 <span class="n">head_length</span><span class="o">=</span><span class="n">head_length</span><span class="p">,</span>
-                <span class="n">line_width</span><span class="o">=</span><span class="n">line_width</span><span class="p">,</span>
                 <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
             <span class="p">),</span>
         <span class="p">)</span>
@@ -1543,7 +1601,8 @@
         <span class="n">curve_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;centripetal&quot;</span><span class="p">,</span> <span class="s2">&quot;chordal&quot;</span><span class="p">,</span> <span class="s2">&quot;catmullrom&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;centripetal&quot;</span><span class="p">,</span>
         <span class="n">tension</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
         <span class="n">closed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
         <span class="n">segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -1562,7 +1621,27 @@
         <span class="n">curve_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;centripetal&quot;</span><span class="p">,</span> <span class="s2">&quot;chordal&quot;</span><span class="p">,</span> <span class="s2">&quot;catmullrom&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;centripetal&quot;</span><span class="p">,</span>
         <span class="n">tension</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
         <span class="n">closed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
+        <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
+        <span class="n">segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SplineCatmullRomHandle</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The `line_width` parameter is deprecated. Use `thickness` instead.&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_spline_catmull_rom</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">points</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">curve_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;centripetal&quot;</span><span class="p">,</span> <span class="s2">&quot;chordal&quot;</span><span class="p">,</span> <span class="s2">&quot;catmullrom&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;centripetal&quot;</span><span class="p">,</span>
+        <span class="n">tension</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+        <span class="n">closed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">line_width</span><span class="p">:</span> <span class="n">Never</span><span class="p">,</span>
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
         <span class="n">segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -1582,7 +1661,8 @@
         <span class="n">curve_type</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;centripetal&quot;</span><span class="p">,</span> <span class="s2">&quot;chordal&quot;</span><span class="p">,</span> <span class="s2">&quot;catmullrom&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;centripetal&quot;</span><span class="p">,</span>
         <span class="n">tension</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
         <span class="n">closed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
         <span class="n">segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -1595,6 +1675,14 @@
 
 <span class="sd">        This method creates a spline based on a set of points and interpolates</span>
 <span class="sd">        them using the Catmull-Rom algorithm. This can be used to create smooth curves.</span>
+
+<span class="sd">        .. note::</span>
+
+<span class="sd">            **API change.** The screen-space pixel ``line_width`` parameter is</span>
+<span class="sd">            deprecated in favor of ``thickness``, which defaults to world-space</span>
+<span class="sd">            units. Code passing ``line_width`` keeps its exact old rendering</span>
+<span class="sd">            (it maps to ``thickness_units=&quot;screen&quot;``) and emits a</span>
+<span class="sd">            :class:`DeprecationWarning`.</span>
 
 <span class="sd">        .. note::</span>
 
@@ -1612,7 +1700,14 @@
 <span class="sd">            curve_type: Type of the curve (&#39;centripetal&#39;, &#39;chordal&#39;, &#39;catmullrom&#39;).</span>
 <span class="sd">            tension: Tension of the curve. Affects the tightness of the curve.</span>
 <span class="sd">            closed: Boolean indicating if the spline is closed (forms a loop).</span>
-<span class="sd">            line_width: Width of the spline line.</span>
+<span class="sd">            thickness: Thickness of the spline line, in the units chosen via</span>
+<span class="sd">                ``thickness_units``. Defaults to `0.01` world units.</span>
+<span class="sd">            thickness_units: Units for ``thickness``. `&quot;world&quot;` (default)</span>
+<span class="sd">                keeps the line a fixed thickness in scene units, so it gets</span>
+<span class="sd">                thinner with distance like real geometry. `&quot;screen&quot;` keeps a</span>
+<span class="sd">                fixed pixel thickness regardless of distance. The deprecated</span>
+<span class="sd">                ``line_width`` argument maps to screen-space pixels, matching</span>
+<span class="sd">                its old behavior exactly.</span>
 <span class="sd">            color: Color of the spline as an RGB tuple.</span>
 <span class="sd">            segments: Number of segments to divide the spline into.</span>
 <span class="sd">            scale: Scale of the spline. A single float for uniform scaling or a</span>
@@ -1636,6 +1731,15 @@
                 <span class="ne">DeprecationWarning</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;line_width&quot;</span> <span class="ow">in</span> <span class="n">_deprecated_kwargs</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="s2">&quot;The `line_width` parameter is deprecated. Use `thickness` with &quot;</span>
+                <span class="s2">&quot;`thickness_units=&#39;screen&#39;` for the same behavior.&quot;</span><span class="p">,</span>
+                <span class="ne">DeprecationWarning</span><span class="p">,</span>
+                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">thickness</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;line_width&quot;</span><span class="p">))</span>
+            <span class="n">thickness_units</span> <span class="o">=</span> <span class="s2">&quot;screen&quot;</span>
         <span class="k">if</span> <span class="n">_deprecated_kwargs</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Unexpected keyword arguments: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -1651,7 +1755,8 @@
                 <span class="n">curve_type</span><span class="o">=</span><span class="n">curve_type</span><span class="p">,</span>
                 <span class="n">tension</span><span class="o">=</span><span class="n">tension</span><span class="p">,</span>
                 <span class="n">closed</span><span class="o">=</span><span class="n">closed</span><span class="p">,</span>
-                <span class="n">line_width</span><span class="o">=</span><span class="n">line_width</span><span class="p">,</span>
+                <span class="n">thickness</span><span class="o">=</span><span class="n">thickness</span><span class="p">,</span>
+                <span class="n">thickness_units</span><span class="o">=</span><span class="n">thickness_units</span><span class="p">,</span>
                 <span class="n">color</span><span class="o">=</span><span class="n">_encode_rgb</span><span class="p">(</span><span class="n">color</span><span class="p">),</span>
                 <span class="n">segments</span><span class="o">=</span><span class="n">segments</span><span class="p">,</span>
                 <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
@@ -1675,7 +1780,8 @@
         <span class="n">points</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">control_points</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
         <span class="n">segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -1694,7 +1800,25 @@
         <span class="n">positions</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">control_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
+        <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
+        <span class="n">segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SplineCubicBezierHandle</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The `line_width` parameter is deprecated. Use `thickness` instead.&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_spline_cubic_bezier</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">points</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">control_points</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">line_width</span><span class="p">:</span> <span class="n">Never</span><span class="p">,</span>
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
         <span class="n">segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -1718,7 +1842,8 @@
         <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
         <span class="o">|</span> <span class="n">MISSING_SENTINEL_TYPE</span> <span class="o">=</span> <span class="n">MISSING_SENTINEL</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
         <span class="n">segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -1742,6 +1867,14 @@
 
 <span class="sd">            The `positions` parameter is deprecated and will be removed in the future. Use `points` instead.</span>
 
+<span class="sd">        .. note::</span>
+
+<span class="sd">            **API change.** The screen-space pixel ``line_width`` parameter is</span>
+<span class="sd">            deprecated in favor of ``thickness``, which defaults to world-space</span>
+<span class="sd">            units. Code passing ``line_width`` keeps its exact old rendering</span>
+<span class="sd">            (it maps to ``thickness_units=&quot;screen&quot;``) and emits a</span>
+<span class="sd">            :class:`DeprecationWarning`.</span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            name: A scene tree name. Names in the format of /parent/child can be used to</span>
 <span class="sd">                define a kinematic tree.</span>
@@ -1750,7 +1883,14 @@
 <span class="sd">                exactly `2 * len(points) - 2` control points. For a cubic Bezier with N</span>
 <span class="sd">                points, the curve passes through points[0], points[1], ..., points[N-1],</span>
 <span class="sd">                with two control points between each consecutive pair of points.</span>
-<span class="sd">            line_width: Width of the spline line.</span>
+<span class="sd">            thickness: Thickness of the spline line, in the units chosen via</span>
+<span class="sd">                ``thickness_units``. Defaults to `0.01` world units.</span>
+<span class="sd">            thickness_units: Units for ``thickness``. `&quot;world&quot;` (default)</span>
+<span class="sd">                keeps the line a fixed thickness in scene units, so it gets</span>
+<span class="sd">                thinner with distance like real geometry. `&quot;screen&quot;` keeps a</span>
+<span class="sd">                fixed pixel thickness regardless of distance. The deprecated</span>
+<span class="sd">                ``line_width`` argument maps to screen-space pixels, matching</span>
+<span class="sd">                its old behavior exactly.</span>
 <span class="sd">            color: Color of the spline as an RGB tuple.</span>
 <span class="sd">            segments: Number of segments to divide the spline into.</span>
 <span class="sd">            scale: Scale of the spline. A single float for uniform scaling or a</span>
@@ -1774,6 +1914,15 @@
                 <span class="ne">DeprecationWarning</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;line_width&quot;</span> <span class="ow">in</span> <span class="n">_deprecated_kwargs</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="s2">&quot;The `line_width` parameter is deprecated. Use `thickness` with &quot;</span>
+                <span class="s2">&quot;`thickness_units=&#39;screen&#39;` for the same behavior.&quot;</span><span class="p">,</span>
+                <span class="ne">DeprecationWarning</span><span class="p">,</span>
+                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">thickness</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;line_width&quot;</span><span class="p">))</span>
+            <span class="n">thickness_units</span> <span class="o">=</span> <span class="s2">&quot;screen&quot;</span>
         <span class="k">if</span> <span class="n">_deprecated_kwargs</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Unexpected keyword arguments: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -1788,7 +1937,8 @@
             <span class="n">_messages</span><span class="o">.</span><span class="n">CubicBezierSplineProps</span><span class="p">(</span>
                 <span class="n">points</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">points</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
                 <span class="n">control_points</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">control_points</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span>
-                <span class="n">line_width</span><span class="o">=</span><span class="n">line_width</span><span class="p">,</span>
+                <span class="n">thickness</span><span class="o">=</span><span class="n">thickness</span><span class="p">,</span>
+                <span class="n">thickness_units</span><span class="o">=</span><span class="n">thickness_units</span><span class="p">,</span>
                 <span class="n">color</span><span class="o">=</span><span class="n">_encode_rgb</span><span class="p">(</span><span class="n">color</span><span class="p">),</span>
                 <span class="n">segments</span><span class="o">=</span><span class="n">segments</span><span class="p">,</span>
                 <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
@@ -1799,9 +1949,7 @@
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="SceneApi.add_camera_frustum">
-<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.add_camera_frustum">[docs]</a>
-    <span class="nd">@deprecated_positional_shim</span>
+    <span class="nd">@overload</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">add_camera_frustum</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -1809,7 +1957,8 @@
         <span class="n">aspect</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.3</span><span class="p">,</span>
-        <span class="n">line_width</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.02</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
         <span class="n">image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="nb">format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
@@ -1820,6 +1969,53 @@
         <span class="n">cast_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">receive_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">variant</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;wireframe&quot;</span><span class="p">,</span> <span class="s2">&quot;filled&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;wireframe&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CameraFrustumHandle</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The `line_width` parameter is deprecated. Use `thickness` instead.&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_camera_frustum</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">fov</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">aspect</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.3</span><span class="p">,</span>
+        <span class="n">line_width</span><span class="p">:</span> <span class="n">Never</span><span class="p">,</span>
+        <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
+        <span class="n">image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="nb">format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+        <span class="n">jpeg_quality</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">cast_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">receive_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">variant</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;wireframe&quot;</span><span class="p">,</span> <span class="s2">&quot;filled&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;wireframe&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CameraFrustumHandle</span><span class="p">:</span> <span class="o">...</span>
+
+<div class="viewcode-block" id="SceneApi.add_camera_frustum">
+<a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.add_camera_frustum">[docs]</a>
+    <span class="nd">@deprecated_positional_shim</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_camera_frustum</span><span class="p">(</span>  <span class="c1"># pyright: ignore[reportInconsistentOverload]</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">fov</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">aspect</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.3</span><span class="p">,</span>
+        <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.02</span><span class="p">,</span>
+        <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;world&quot;</span><span class="p">,</span>
+        <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>
+        <span class="n">image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="nb">format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+        <span class="n">jpeg_quality</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">cast_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">receive_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">variant</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;wireframe&quot;</span><span class="p">,</span> <span class="s2">&quot;filled&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;wireframe&quot;</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">_deprecated_kwargs</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CameraFrustumHandle</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a camera frustum to the scene for visualization.</span>
 
@@ -1830,6 +2026,14 @@
 <span class="sd">        Like all cameras in the viser Python API, frustums follow the OpenCV [+Z forward,</span>
 <span class="sd">        +X right, +Y down] convention. fov is vertical in radians; aspect is width over height.</span>
 
+<span class="sd">        .. note::</span>
+
+<span class="sd">            **API change.** The screen-space pixel ``line_width`` parameter is</span>
+<span class="sd">            deprecated in favor of ``thickness``, which defaults to world-space</span>
+<span class="sd">            units. Code passing ``line_width`` keeps its exact old rendering</span>
+<span class="sd">            (it maps to ``thickness_units=&quot;screen&quot;``) and emits a</span>
+<span class="sd">            :class:`DeprecationWarning`.</span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            name: A scene tree name. Names in the format of /parent/child can be used to</span>
 <span class="sd">                define a kinematic tree.</span>
@@ -1837,7 +2041,14 @@
 <span class="sd">            aspect: Aspect ratio of the camera (width over height).</span>
 <span class="sd">            scale: Scale factor for the size of the frustum. A single float</span>
 <span class="sd">                for uniform scaling or a tuple of (x, y, z) for per-axis scaling.</span>
-<span class="sd">            line_width: Width of the frustum lines, in screen space. Defaults to `2.0`.</span>
+<span class="sd">            thickness: Thickness of the frustum lines, in the units chosen via</span>
+<span class="sd">                ``thickness_units``. Defaults to `0.02` world units.</span>
+<span class="sd">            thickness_units: Units for ``thickness``. `&quot;world&quot;` (default)</span>
+<span class="sd">                keeps the lines a fixed thickness in scene units, so they get</span>
+<span class="sd">                thinner with distance like real geometry. `&quot;screen&quot;` keeps a</span>
+<span class="sd">                fixed pixel thickness regardless of distance. The deprecated</span>
+<span class="sd">                ``line_width`` argument maps to screen-space pixels, matching</span>
+<span class="sd">                its old behavior exactly.</span>
 <span class="sd">            color: Color of the frustum as an RGB tuple.</span>
 <span class="sd">            image: Optional image to be displayed on the frustum.</span>
 <span class="sd">            format: Format to transport and display the image using. &#39;auto&#39; will use PNG for RGBA images and JPEG for RGB.</span>
@@ -1855,6 +2066,19 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Handle for manipulating scene node.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;line_width&quot;</span> <span class="ow">in</span> <span class="n">_deprecated_kwargs</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                <span class="s2">&quot;The `line_width` parameter is deprecated. Use `thickness` with &quot;</span>
+                <span class="s2">&quot;`thickness_units=&#39;screen&#39;` for the same behavior.&quot;</span><span class="p">,</span>
+                <span class="ne">DeprecationWarning</span><span class="p">,</span>
+                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">thickness</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;line_width&quot;</span><span class="p">))</span>
+            <span class="n">thickness_units</span> <span class="o">=</span> <span class="s2">&quot;screen&quot;</span>
+        <span class="k">if</span> <span class="n">_deprecated_kwargs</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Unexpected keyword arguments: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">image</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">resolved_format</span><span class="p">,</span> <span class="n">binary</span> <span class="o">=</span> <span class="n">_encode_image_binary</span><span class="p">(</span>
                 <span class="n">image</span><span class="p">,</span> <span class="nb">format</span><span class="p">,</span> <span class="n">jpeg_quality</span><span class="o">=</span><span class="n">jpeg_quality</span>
@@ -1869,7 +2093,8 @@
                 <span class="n">fov</span><span class="o">=</span><span class="n">fov</span><span class="p">,</span>
                 <span class="n">aspect</span><span class="o">=</span><span class="n">aspect</span><span class="p">,</span>
                 <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
-                <span class="n">line_width</span><span class="o">=</span><span class="n">line_width</span><span class="p">,</span>
+                <span class="n">thickness</span><span class="o">=</span><span class="n">thickness</span><span class="p">,</span>
+                <span class="n">thickness_units</span><span class="o">=</span><span class="n">thickness_units</span><span class="p">,</span>
                 <span class="n">color</span><span class="o">=</span><span class="n">_encode_rgb</span><span class="p">(</span><span class="n">color</span><span class="p">),</span>
                 <span class="n">_format</span><span class="o">=</span><span class="n">resolved_format</span><span class="p">,</span>
                 <span class="n">_image_data</span><span class="o">=</span><span class="n">binary</span><span class="p">,</span>
