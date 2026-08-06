@@ -709,7 +709,7 @@ def lines_segments(server: viser.ViserServer) -> None:
     points = np.stack([starts, ends], axis=1)
     colors = rng.integers(50, 255, size=(n, 2, 3), dtype=np.uint8, endpoint=False)
     server.scene.add_line_segments(
-        "/lines", points=points, colors=colors, line_width=2.0
+        "/lines", points=points, colors=colors, thickness=0.02
     )
 
 
@@ -724,7 +724,7 @@ def spline_catmull_rom(server: viser.ViserServer) -> None:
         [np.cos(t) * 0.8, np.sin(t) * 0.8, t / (4 * np.pi) * 2], axis=-1
     ).astype(np.float32)
     server.scene.add_spline_catmull_rom(
-        "/helix", points=points, color=(200, 60, 60), line_width=3.0
+        "/helix", points=points, color=(200, 60, 60), thickness=0.03
     )
     server.scene.add_grid("/grid", width=4, height=4, plane="xy")
 
@@ -752,7 +752,7 @@ def spline_cubic_bezier(server: viser.ViserServer) -> None:
         dtype=np.float32,
     )
     server.scene.add_spline_cubic_bezier(
-        "/bezier", knots, control_points, color=(60, 60, 200), line_width=3.0
+        "/bezier", knots, control_points, color=(60, 60, 200), thickness=0.03
     )
     for i, p in enumerate(knots):
         server.scene.add_icosphere(
@@ -977,7 +977,7 @@ def composition_kitchen_sink(server: viser.ViserServer) -> None:
         [np.cos(t) * 0.5, np.sin(t) * 0.5 + 2, t / (2 * np.pi) + 0.1], axis=-1
     ).astype(np.float32)
     server.scene.add_spline_catmull_rom(
-        "/spline", points=helix_pts, color=(200, 60, 200), line_width=2.0
+        "/spline", points=helix_pts, color=(200, 60, 200), thickness=0.02
     )
 
 

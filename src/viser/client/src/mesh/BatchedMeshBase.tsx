@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
+import { createBackToFrontRadixSort } from "./backToFrontRadixSort";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { BatchedMeshHoverOutlines } from "./BatchedMeshHoverOutlines";
 import { useThree } from "@react-three/fiber";
@@ -169,6 +170,25 @@ export const BatchedMeshBase = React.forwardRef<
     // `computeBoundingSphere()` on the full mesh whenever instances move. Note
     // that we still benefit from per-instance culling in IM2!
     newMesh.frustumCulled = false;
+
+    // Per-instance depth sorting for transparent materials. three.js only
+    // depth-sorts objects relative to each other; the instances inside a
+    // single InstancedMesh2 are otherwise drawn in buffer order, so farther
+    // instances can blend over closer ones. Sorting costs a per-frame pass
+    // over the instances, so it stays off for opaque materials, where draw
+    // order doesn't affect correctness.
+    //
+    // Known limits: multi-material meshes draw one pass per geometry group,
+    // so blending is only sorted within each group, not across groups; with
+    // LODs, three.js's object-level sort decides order *between* LOD levels
+    // arbitrarily, so only instances within a level are ordered.
+    const materialList = Array.isArray(props.material)
+      ? props.material
+      : [props.material];
+    if (materialList.some((material) => material.transparent)) {
+      newMesh.sortObjects = true;
+      newMesh.customSort = createBackToFrontRadixSort();
+    }
 
     // Create LODs if needed.
     let lodGeometries: THREE.BufferGeometry[] = [];

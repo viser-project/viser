@@ -1,8 +1,4 @@
-import {
-  CatmullRomLine,
-  CubicBezierLine,
-  PivotControls,
-} from "@react-three/drei";
+import { PivotControls } from "@react-three/drei";
 import { Grid } from "./Grid";
 import { ContextBridge, useContextBridge } from "its-fine";
 import { useFrame, useThree } from "@react-three/fiber";
@@ -35,11 +31,16 @@ import {
   ViserLabel,
 } from "./ThreeAssets";
 import { CameraFrustumComponent } from "./CameraFrustumVariants";
-import { SceneNodeMessage, SpotLightMessage } from "./WebsocketMessages";
+import {
+  CatmullRomSplineMessage,
+  CubicBezierSplineMessage,
+  SceneNodeMessage,
+  SpotLightMessage,
+} from "./WebsocketMessages";
 import { SplatObject } from "./Splatting/GaussianSplats";
 import { Paper } from "@mantine/core";
 import GeneratedGuiContainer from "./ControlPanel/Generated";
-import { LineSegments } from "./Line";
+import { Line, LineSegments } from "./Line";
 import { Arrows } from "./Arrows";
 import { shadowArgs } from "./ShadowArgs";
 import { CascadedDirectionalLight } from "./CascadedDirectionalLight";
@@ -96,6 +97,72 @@ function tripletListFromFloat32Array(data: Float32Array) {
     triplets.push([data[i], data[i + 1], data[i + 2]]);
   }
   return triplets;
+}
+
+function flatFromVector3List(points: THREE.Vector3[]): Float32Array {
+  const flat = new Float32Array(points.length * 3);
+  points.forEach((p, i) => p.toArray(flat, i * 3));
+  return flat;
+}
+
+/** Catmull-Rom spline sampled with three's curve classes (the same ones
+ * drei's CatmullRomLine uses) and rendered through viser's <Line>, which
+ * handles the world-unit antialiasing passes. */
+function CatmullRomSpline({ message }: { message: CatmullRomSplineMessage }) {
+  const p = message.props;
+  const sampledPoints = React.useMemo(() => {
+    const curve = new THREE.CatmullRomCurve3(
+      tripletListFromFloat32Array(p.points).map(
+        (xyz) => new THREE.Vector3(...xyz),
+      ),
+      p.closed,
+      p.curve_type,
+      p.tension,
+    );
+    return flatFromVector3List(curve.getPoints(p.segments ?? 20));
+  }, [p.points, p.closed, p.curve_type, p.tension, p.segments]);
+  return (
+    <Line
+      points={sampledPoints}
+      lineWidth={p.thickness}
+      worldUnits={p.thickness_units === "world"}
+      color={rgbToInt(p.color)}
+    />
+  );
+}
+
+/** Cubic Bezier spline, one curve per consecutive point pair (matching
+ * drei's CubicBezierLine), rendered through viser's <Line>. */
+function CubicBezierSpline({ message }: { message: CubicBezierSplineMessage }) {
+  const p = message.props;
+  const sampledCurves = React.useMemo(() => {
+    const pts = tripletListFromFloat32Array(p.points);
+    const controls = tripletListFromFloat32Array(p.control_points);
+    const curves: Float32Array[] = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const curve = new THREE.CubicBezierCurve3(
+        new THREE.Vector3(...pts[i]),
+        new THREE.Vector3(...controls[2 * i]),
+        new THREE.Vector3(...controls[2 * i + 1]),
+        new THREE.Vector3(...pts[i + 1]),
+      );
+      curves.push(flatFromVector3List(curve.getPoints(p.segments ?? 20)));
+    }
+    return curves;
+  }, [p.points, p.control_points, p.segments]);
+  return (
+    <>
+      {sampledCurves.map((sampledPoints, i) => (
+        <Line
+          key={i}
+          points={sampledPoints}
+          lineWidth={p.thickness}
+          worldUnits={p.thickness_units === "world"}
+          color={rgbToInt(p.color)}
+        />
+      ))}
+    </>
+  );
 }
 
 export type MakeObject = (
@@ -538,16 +605,7 @@ function createObjectFactory(
           return (
             <group ref={ref}>
               <group scale={normalizeScale(message.props.scale)}>
-                <CatmullRomLine
-                  points={tripletListFromFloat32Array(message.props.points)}
-                  closed={message.props.closed}
-                  curveType={message.props.curve_type}
-                  tension={message.props.tension}
-                  lineWidth={message.props.line_width}
-                  color={rgbToInt(message.props.color)}
-                  // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
-                  segments={(message.props.segments ?? undefined) as undefined}
-                />
+                <CatmullRomSpline message={message} />
               </group>
               {children}
             </group>
@@ -558,28 +616,10 @@ function createObjectFactory(
     case "CubicBezierSplineMessage": {
       return {
         makeObject: (ref, children) => {
-          const points = tripletListFromFloat32Array(message.props.points);
-          const controlPoints = tripletListFromFloat32Array(
-            message.props.control_points,
-          );
           return (
             <group ref={ref}>
               <group scale={normalizeScale(message.props.scale)}>
-                {[...Array(points.length - 1).keys()].map((i) => (
-                  <CubicBezierLine
-                    key={i}
-                    start={points[i]}
-                    end={points[i + 1]}
-                    midA={controlPoints[2 * i]}
-                    midB={controlPoints[2 * i + 1]}
-                    lineWidth={message.props.line_width}
-                    color={rgbToInt(message.props.color)}
-                    // Sketchy cast needed due to https://github.com/pmndrs/drei/issues/1476.
-                    segments={
-                      (message.props.segments ?? undefined) as undefined
-                    }
-                  ></CubicBezierLine>
-                ))}
+                <CubicBezierSpline message={message} />
               </group>
               {children}
             </group>

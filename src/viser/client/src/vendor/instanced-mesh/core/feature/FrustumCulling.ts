@@ -58,11 +58,14 @@ declare module "../InstancedMesh2.js" {
       camera: Camera,
       shadowCamera: Camera | null,
     ): boolean;
-    /** @internal */ frustumCulling(camera: Camera): void;
+    /** @internal */ frustumCulling(
+      camera: Camera,
+      isShadowRendering?: boolean,
+    ): void;
     /** @internal */ updateIndexArray(): void;
     /** @internal */ updateRenderList(): void;
-    /** @internal */ BVHCulling(camera: Camera): void;
-    /** @internal */ linearCulling(camera: Camera): void;
+    /** @internal */ BVHCulling(camera: Camera, sortObjects: boolean): void;
+    /** @internal */ linearCulling(camera: Camera, sortObjects: boolean): void;
 
     /** @internal */ frustumCullingLOD(
       LODrenderList: LODRenderList,
@@ -121,7 +124,11 @@ InstancedMesh2.prototype.performFrustumCulling = function (
 
   if (LODrenderList?.levels.length > 0)
     mainMesh.frustumCullingLOD(LODrenderList, camera, cameraLOD);
-  else mainMesh.frustumCulling(camera);
+  // === VISER LOCAL PATCH ===
+  // Pass shadow-pass information down so the non-LOD path can skip sorting,
+  // like the LOD path does (shadow maps are depth-only; order is irrelevant).
+  else mainMesh.frustumCulling(camera, camera !== cameraLOD);
+  // === END VISER LOCAL PATCH ===
 };
 
 InstancedMesh2.prototype.updateLastRenderInfo = function (
@@ -153,14 +160,30 @@ InstancedMesh2.prototype.frustumCullingAlreadyPerformed = function (
   return false;
 };
 
-InstancedMesh2.prototype.frustumCulling = function (camera: Camera) {
-  const sortObjects = this._sortObjects;
+InstancedMesh2.prototype.frustumCulling = function (
+  camera: Camera,
+  isShadowRendering = false,
+) {
+  // === VISER LOCAL PATCH ===
+  // Sorting is skipped when rendering shadow maps (depth-only passes where
+  // draw order doesn't matter), mirroring frustumCullingLOD. The effective
+  // flag is threaded into BVHCulling/linearCulling below -- they would
+  // otherwise consult `_sortObjects` themselves and push into a render list
+  // that this function never drains during shadow passes.
+  const sortObjects = !isShadowRendering && this._sortObjects;
+  // === END VISER LOCAL PATCH ===
   const perObjectFrustumCulled = this._perObjectFrustumCulled;
   const array = this.instanceIndex.array;
 
   this.instanceIndex._needsUpdate = true; // TODO improve
 
   if (!perObjectFrustumCulled && !sortObjects) {
+    // === VISER LOCAL PATCH ===
+    // A sorted mesh's index array holds the previous pass's culled, sorted
+    // list; a shadow pass taking this early path must rebuild it so every
+    // active instance casts a shadow.
+    if (this._sortObjects) this._indexArrayNeedsUpdate = true;
+    // === END VISER LOCAL PATCH ===
     this.updateIndexArray();
     return;
   }
@@ -183,8 +206,8 @@ InstancedMesh2.prototype.frustumCulling = function (camera: Camera) {
       .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
       .multiply(this.matrixWorld);
 
-    if (this.bvh) this.BVHCulling(camera);
-    else this.linearCulling(camera);
+    if (this.bvh) this.BVHCulling(camera, sortObjects);
+    else this.linearCulling(camera, sortObjects);
   }
 
   if (sortObjects) {
@@ -239,12 +262,34 @@ InstancedMesh2.prototype.updateRenderList = function () {
   }
 };
 
-InstancedMesh2.prototype.BVHCulling = function (camera: Camera) {
+InstancedMesh2.prototype.BVHCulling = function (
+  camera: Camera,
+  // === VISER LOCAL PATCH === effective flag from frustumCulling (false
+  // during shadow passes) instead of reading this._sortObjects.
+  sortObjects: boolean,
+) {
   const array = this.instanceIndex.array;
   const instancesArrayCount = this._instancesArrayCount;
-  const sortObjects = this._sortObjects;
   const onFrustumEnter = this.onFrustumEnter;
   let count = 0;
+
+  // === VISER LOCAL PATCH ===
+  // Sort by the instance-transformed geometry bounding-sphere center, like
+  // linearCulling, instead of the raw instance origin. For off-center
+  // geometry the origin can order instances differently depending on their
+  // rotations, so the BVH and linear paths disagreed on draw order.
+  let sphereCenter: Vector3 = null;
+  let sphereRadius = 0;
+  let geometryCentered = true;
+  if (sortObjects) {
+    if (!this.geometry.boundingSphere) this.geometry.computeBoundingSphere();
+    const bSphere = this._geometry.boundingSphere;
+    sphereCenter = bSphere.center;
+    sphereRadius = bSphere.radius;
+    geometryCentered =
+      sphereCenter.x === 0 && sphereCenter.y === 0 && sphereCenter.z === 0;
+  }
+  // === END VISER LOCAL PATCH ===
 
   this.bvh.frustumCulling(
     _projScreenMatrix,
@@ -260,7 +305,22 @@ InstancedMesh2.prototype.BVHCulling = function (camera: Camera) {
         (!onFrustumEnter || onFrustumEnter(index, camera))
       ) {
         if (sortObjects) {
-          const depth = this.getPositionAt(index).sub(_cameraPos).dot(_forward);
+          // === VISER LOCAL PATCH ===
+          let depth: number;
+          if (geometryCentered) {
+            depth = this.getPositionAt(index).sub(_cameraPos).dot(_forward);
+          } else {
+            this.applyMatrixAtToSphere(
+              index,
+              _sphere,
+              sphereCenter,
+              sphereRadius,
+            );
+            depth = _position
+              .subVectors(_sphere.center, _cameraPos)
+              .dot(_forward);
+          }
+          // === END VISER LOCAL PATCH ===
           _renderList.push(depth, index);
         } else {
           array[count++] = index;
@@ -273,7 +333,12 @@ InstancedMesh2.prototype.BVHCulling = function (camera: Camera) {
   this.count = count;
 };
 
-InstancedMesh2.prototype.linearCulling = function (camera: Camera) {
+InstancedMesh2.prototype.linearCulling = function (
+  camera: Camera,
+  // === VISER LOCAL PATCH === effective flag from frustumCulling (false
+  // during shadow passes) instead of reading this._sortObjects.
+  sortObjects: boolean,
+) {
   const array = this.instanceIndex.array;
   if (!this.geometry.boundingSphere) this.geometry.computeBoundingSphere();
   const bSphere = this._geometry.boundingSphere;
@@ -281,7 +346,6 @@ InstancedMesh2.prototype.linearCulling = function (camera: Camera) {
   const center = bSphere.center;
   const instancesArrayCount = this._instancesArrayCount;
   const geometryCentered = center.x === 0 && center.y === 0 && center.z === 0;
-  const sortObjects = this._sortObjects;
   const onFrustumEnter = this.onFrustumEnter;
   let count = 0;
 
@@ -365,8 +429,6 @@ InstancedMesh2.prototype.frustumCullingLOD = function (
   if (sortObjects) {
     const customSort = this.customSort;
     const list = _renderList.array;
-    let levelIndex = 0;
-    let levelDistance = levels[1].distance;
 
     if (customSort === null) {
       list.sort(
@@ -378,16 +440,50 @@ InstancedMesh2.prototype.frustumCullingLOD = function (
       customSort(list);
     }
 
-    for (let i = 0, l = list.length; i < l; i++) {
-      const item = list[i];
+    // === VISER LOCAL PATCH ===
+    // The original level-assignment walk assumed `list` was sorted in
+    // ascending depth order, which only holds for opaque materials.
+    // Transparent materials sort back-to-front (descending depth), which
+    // made the walk assign the farthest instances to the finest LOD level
+    // and scramble the rest. Detect the actual ordering and walk the level
+    // thresholds in the matching direction, preserving the sorted draw
+    // order within each level.
+    const descending =
+      list.length > 1 && list[0].depth > list[list.length - 1].depth;
 
-      if (item.depth > levelDistance) {
-        levelIndex++;
-        levelDistance = levels[levelIndex + 1]?.distance ?? Infinity; // improve this condition and use for of instead
+    if (descending) {
+      let levelIndex = levels.length - 1;
+
+      for (let i = 0, l = list.length; i < l; i++) {
+        const item = list[i];
+
+        while (levelIndex > 0 && item.depth <= levels[levelIndex].distance) {
+          levelIndex--;
+        }
+
+        indexes[levelIndex][count[levelIndex]++] = item.index;
       }
+    } else {
+      // `while` instead of upstream's `if`: an item whose depth skips more
+      // than one level band (e.g. a single instance, or several equidistant
+      // instances, far from the camera) must advance multiple levels for one
+      // item. Ties and single-item lists also take this branch, so it can't
+      // assume depths increase gradually.
+      let levelIndex = 0;
+      let levelDistance = levels[1].distance;
 
-      indexes[levelIndex][count[levelIndex]++] = item.index;
+      for (let i = 0, l = list.length; i < l; i++) {
+        const item = list[i];
+
+        while (item.depth > levelDistance) {
+          levelIndex++;
+          levelDistance = levels[levelIndex + 1]?.distance ?? Infinity;
+        }
+
+        indexes[levelIndex][count[levelIndex]++] = item.index;
+      }
     }
+    // === END VISER LOCAL PATCH ===
 
     _renderList.reset();
   }
@@ -410,6 +506,17 @@ InstancedMesh2.prototype.BVHCullingLOD = function (
   const onFrustumEnter = this.onFrustumEnter;
 
   if (sortObjects) {
+    // === VISER LOCAL PATCH ===
+    // Sort by the instance-transformed geometry bounding-sphere center, like
+    // linearCullingLOD, instead of the raw instance origin (see BVHCulling).
+    if (!this.geometry.boundingSphere) this.geometry.computeBoundingSphere();
+    const bSphere = this._geometry.boundingSphere;
+    const sphereCenter = bSphere.center;
+    const sphereRadius = bSphere.radius;
+    const geometryCentered =
+      sphereCenter.x === 0 && sphereCenter.y === 0 && sphereCenter.z === 0;
+    // === END VISER LOCAL PATCH ===
+
     this.bvh.frustumCulling(
       _projScreenMatrix,
       (node: BVHNode<{}, number>) => {
@@ -420,8 +527,21 @@ InstancedMesh2.prototype.BVHCullingLOD = function (
           this.getVisibilityAt(index) &&
           (!onFrustumEnter || onFrustumEnter(index, camera, cameraLOD))
         ) {
-          const distance =
-            this.getPositionAt(index).distanceToSquared(_cameraLODPos);
+          // === VISER LOCAL PATCH ===
+          let distance: number;
+          if (geometryCentered) {
+            distance =
+              this.getPositionAt(index).distanceToSquared(_cameraLODPos);
+          } else {
+            this.applyMatrixAtToSphere(
+              index,
+              _sphere,
+              sphereCenter,
+              sphereRadius,
+            );
+            distance = _sphere.center.distanceToSquared(_cameraLODPos);
+          }
+          // === END VISER LOCAL PATCH ===
           _renderList.push(distance, index);
         }
       },

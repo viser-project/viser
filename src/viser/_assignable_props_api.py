@@ -161,6 +161,12 @@ def props_setattr(self, name: str, value: Any) -> None:
 
 
 def props_getattr(self, name: str) -> Any:
+    # This only works because *Props dataclass fields never have defaults:
+    # a field default would become a class attribute on the handle (which
+    # inherits the props dataclass for typing), and normal attribute lookup
+    # would find it before __getattr__ is consulted -- reads would return
+    # the default forever instead of the live value. Enforced by
+    # tests/test_handle_prop_reads.py.
     if name in self._prop_hints:
         return getattr(self._impl.props, name)
     else:

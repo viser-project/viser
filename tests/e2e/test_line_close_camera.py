@@ -4,11 +4,11 @@ Under the reversed depth buffer (App.tsx), three-stdlib LineMaterial's
 ``trimSegment`` near-plane estimate evaluates to -far/2 instead of -near, so
 any line segment crossing the camera plane gets extrapolated hundreds of
 units away from the camera: the part of the line sweeping past the camera
-vanishes. viser's own <Line> carried a local patch (#720), but drei's <Line>
--- used for camera frustums, splines, and internally by PivotControls --
-constructs its own LineMaterial and was still broken. The patch now applies
-to every LineMaterial via patchLineMaterialReversedDepth.ts; this test
-exercises the drei code path through the built client.
+vanishes. viser's own <Line> carried a local patch (#720) that missed
+materials constructed elsewhere (at the time, drei's <Line>; still drei's
+PivotControls internals today). The fix now applies to every LineMaterial
+via a prototype patch in patchLineMaterial.ts; this test exercises it
+through a spline in the built client.
 """
 
 from __future__ import annotations
@@ -30,15 +30,16 @@ def test_spline_passing_camera_renders(
 ) -> None:
     """A straight spline passing just beside the camera must sweep across the
     screen toward the viewport edge, not vanish near the camera."""
-    # drei's CatmullRomLine (unlike add_line_segments) renders through drei's
-    # <Line>, whose LineMaterial viser code never touches directly.
+    # The spline path samples a curve into a polyline (Line2), unlike
+    # add_line_segments' LineSegments2 -- keep both paths covered.
     viser_server.scene.add_spline_catmull_rom(
         "/spline",
         points=np.array(
             [[-5.0, 0.0, 0.0], [-2.0, 0.0, 0.0], [2.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
         ),
         color=(255, 0, 0),
-        line_width=6.0,
+        thickness=6.0,
+        thickness_units="screen",
     )
     viser_server.scene.world_axes.visible = False
     wait_for_scene_node(viser_page, "/spline")

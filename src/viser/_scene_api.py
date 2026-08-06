@@ -23,7 +23,7 @@ from typing import (
 )
 
 import numpy as np
-from typing_extensions import Literal, ParamSpec, TypeAlias, deprecated
+from typing_extensions import Literal, Never, ParamSpec, TypeAlias, deprecated
 
 from viser._backwards_compat_shims import deprecated_positional_shim
 
@@ -929,20 +929,60 @@ class SceneApi:
         )
         return GlbHandle._make(self, message, name, wxyz, position, visible)
 
-    @deprecated_positional_shim
+    @overload
     def add_line_segments(
         self,
         name: str,
         points: np.ndarray,
         colors: np.ndarray | RgbTupleOrArray,
         *,
-        line_width: float = 1,
+        thickness: float = 0.01,
+        thickness_units: Literal["screen", "world"] = "world",
         scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
+    ) -> LineSegmentsHandle: ...
+
+    @overload
+    @deprecated("The `line_width` parameter is deprecated. Use `thickness` instead.")
+    def add_line_segments(
+        self,
+        name: str,
+        points: np.ndarray,
+        colors: np.ndarray | RgbTupleOrArray,
+        *,
+        line_width: Never,
+        scale: float | tuple[float, float, float] = 1.0,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+    ) -> LineSegmentsHandle: ...
+
+    @deprecated_positional_shim
+    def add_line_segments(  # pyright: ignore[reportInconsistentOverload]
+        self,
+        name: str,
+        points: np.ndarray,
+        colors: np.ndarray | RgbTupleOrArray,
+        *,
+        thickness: float = 0.01,
+        thickness_units: Literal["screen", "world"] = "world",
+        scale: float | tuple[float, float, float] = 1.0,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+        **_deprecated_kwargs,
     ) -> LineSegmentsHandle:
         """Add line segments to the scene.
+
+        .. note::
+
+            **API change.** The screen-space pixel ``line_width`` parameter is
+            deprecated in favor of ``thickness``, which defaults to world-space
+            units. Code passing ``line_width`` keeps its exact old rendering
+            (it maps to ``thickness_units="screen"``) and emits a
+            :class:`DeprecationWarning`.
 
         Args:
             name: A scene tree name. Names in the format of /parent/child can
@@ -952,7 +992,14 @@ class SceneApi:
             colors: Colors of the line segments. Can be a single color as an RGB tuple or
                 np.ndarray of shape (3,) to apply to all segments, or an np.ndarray of
                 shape (N, 2, 3) to specify colors for each point of each segment.
-            line_width: Width of the lines.
+            thickness: Thickness of the lines, in the units chosen via
+                ``thickness_units``. Defaults to `0.01` world units.
+            thickness_units: Units for ``thickness``. `"world"` (default)
+                keeps lines a fixed thickness in scene units, so they get
+                thinner with distance like real geometry. `"screen"` keeps a
+                fixed pixel thickness regardless of distance. The deprecated
+                ``line_width`` argument maps to screen-space pixels, matching
+                its old behavior exactly.
             scale: Scale of the line segments. A single float for uniform
                 scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
@@ -962,6 +1009,19 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
+        if "line_width" in _deprecated_kwargs:
+            warnings.warn(
+                "The `line_width` parameter is deprecated. Use `thickness` with "
+                "`thickness_units='screen'` for the same behavior.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            thickness = float(_deprecated_kwargs.pop("line_width"))
+            thickness_units = "screen"
+        if _deprecated_kwargs:
+            raise TypeError(
+                f"Unexpected keyword arguments: {list(_deprecated_kwargs.keys())}"
+            )
         points_array = np.asarray(points, dtype=np.float32)
         if (
             points_array.shape[-1] != 3
@@ -981,7 +1041,8 @@ class SceneApi:
             props=_messages.LineSegmentsProps(
                 points=points_array,
                 colors=colors_array,
-                line_width=line_width,
+                thickness=thickness,
+                thickness_units=thickness_units,
                 scale=scale,
             ),
         )
@@ -997,7 +1058,6 @@ class SceneApi:
         shaft_radius: float = 0.02,
         head_radius: float = 0.05,
         head_length: float = 0.1,
-        line_width: float = 1,
         scale: float | tuple[float, float, float] = 1.0,
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
@@ -1019,7 +1079,6 @@ class SceneApi:
             shaft_radius: Radius of the arrow shaft.
             head_radius: Radius of the arrow head cone.
             head_length: Length of the arrow head.
-            line_width: Width of the lines (fallback rendering).
             scale: Scale of the arrows. A single float for uniform
                 scaling or a tuple of (x, y, z) for per-axis scaling.
             wxyz: Quaternion rotation to parent frame from local frame (R_pl).
@@ -1051,7 +1110,6 @@ class SceneApi:
                 shaft_radius=shaft_radius,
                 head_radius=head_radius,
                 head_length=head_length,
-                line_width=line_width,
                 scale=scale,
             ),
         )
@@ -1066,7 +1124,8 @@ class SceneApi:
         curve_type: Literal["centripetal", "chordal", "catmullrom"] = "centripetal",
         tension: float = 0.5,
         closed: bool = False,
-        line_width: float = 1,
+        thickness: float = 0.01,
+        thickness_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1085,7 +1144,27 @@ class SceneApi:
         curve_type: Literal["centripetal", "chordal", "catmullrom"] = "centripetal",
         tension: float = 0.5,
         closed: bool = False,
-        line_width: float = 1,
+        thickness: float = 0.01,
+        thickness_units: Literal["screen", "world"] = "world",
+        color: RgbTupleOrArray = (20, 20, 20),
+        segments: int | None = None,
+        scale: float | tuple[float, float, float] = 1.0,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+    ) -> SplineCatmullRomHandle: ...
+
+    @overload
+    @deprecated("The `line_width` parameter is deprecated. Use `thickness` instead.")
+    def add_spline_catmull_rom(
+        self,
+        name: str,
+        points: np.ndarray,
+        *,
+        curve_type: Literal["centripetal", "chordal", "catmullrom"] = "centripetal",
+        tension: float = 0.5,
+        closed: bool = False,
+        line_width: Never,
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1103,7 +1182,8 @@ class SceneApi:
         curve_type: Literal["centripetal", "chordal", "catmullrom"] = "centripetal",
         tension: float = 0.5,
         closed: bool = False,
-        line_width: float = 1,
+        thickness: float = 0.01,
+        thickness_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1116,6 +1196,14 @@ class SceneApi:
 
         This method creates a spline based on a set of points and interpolates
         them using the Catmull-Rom algorithm. This can be used to create smooth curves.
+
+        .. note::
+
+            **API change.** The screen-space pixel ``line_width`` parameter is
+            deprecated in favor of ``thickness``, which defaults to world-space
+            units. Code passing ``line_width`` keeps its exact old rendering
+            (it maps to ``thickness_units="screen"``) and emits a
+            :class:`DeprecationWarning`.
 
         .. note::
 
@@ -1133,7 +1221,14 @@ class SceneApi:
             curve_type: Type of the curve ('centripetal', 'chordal', 'catmullrom').
             tension: Tension of the curve. Affects the tightness of the curve.
             closed: Boolean indicating if the spline is closed (forms a loop).
-            line_width: Width of the spline line.
+            thickness: Thickness of the spline line, in the units chosen via
+                ``thickness_units``. Defaults to `0.01` world units.
+            thickness_units: Units for ``thickness``. `"world"` (default)
+                keeps the line a fixed thickness in scene units, so it gets
+                thinner with distance like real geometry. `"screen"` keeps a
+                fixed pixel thickness regardless of distance. The deprecated
+                ``line_width`` argument maps to screen-space pixels, matching
+                its old behavior exactly.
             color: Color of the spline as an RGB tuple.
             segments: Number of segments to divide the spline into.
             scale: Scale of the spline. A single float for uniform scaling or a
@@ -1157,6 +1252,15 @@ class SceneApi:
                 DeprecationWarning,
                 stacklevel=2,
             )
+        if "line_width" in _deprecated_kwargs:
+            warnings.warn(
+                "The `line_width` parameter is deprecated. Use `thickness` with "
+                "`thickness_units='screen'` for the same behavior.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            thickness = float(_deprecated_kwargs.pop("line_width"))
+            thickness_units = "screen"
         if _deprecated_kwargs:
             raise TypeError(
                 f"Unexpected keyword arguments: {list(_deprecated_kwargs.keys())}"
@@ -1172,7 +1276,8 @@ class SceneApi:
                 curve_type=curve_type,
                 tension=tension,
                 closed=closed,
-                line_width=line_width,
+                thickness=thickness,
+                thickness_units=thickness_units,
                 color=_encode_rgb(color),
                 segments=segments,
                 scale=scale,
@@ -1195,7 +1300,8 @@ class SceneApi:
         points: np.ndarray,
         control_points: np.ndarray,
         *,
-        line_width: float = 1.0,
+        thickness: float = 0.01,
+        thickness_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1214,7 +1320,25 @@ class SceneApi:
         positions: tuple[tuple[float, float, float], ...],
         control_points: tuple[tuple[float, float, float], ...],
         *,
-        line_width: float = 1.0,
+        thickness: float = 0.01,
+        thickness_units: Literal["screen", "world"] = "world",
+        color: RgbTupleOrArray = (20, 20, 20),
+        segments: int | None = None,
+        scale: float | tuple[float, float, float] = 1.0,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+    ) -> SplineCubicBezierHandle: ...
+
+    @overload
+    @deprecated("The `line_width` parameter is deprecated. Use `thickness` instead.")
+    def add_spline_cubic_bezier(
+        self,
+        name: str,
+        points: np.ndarray,
+        control_points: np.ndarray,
+        *,
+        line_width: Never,
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1236,7 +1360,8 @@ class SceneApi:
         | np.ndarray
         | MISSING_SENTINEL_TYPE = MISSING_SENTINEL,
         *,
-        line_width: float = 1.0,
+        thickness: float = 0.01,
+        thickness_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         segments: int | None = None,
         scale: float | tuple[float, float, float] = 1.0,
@@ -1260,6 +1385,14 @@ class SceneApi:
 
             The `positions` parameter is deprecated and will be removed in the future. Use `points` instead.
 
+        .. note::
+
+            **API change.** The screen-space pixel ``line_width`` parameter is
+            deprecated in favor of ``thickness``, which defaults to world-space
+            units. Code passing ``line_width`` keeps its exact old rendering
+            (it maps to ``thickness_units="screen"``) and emits a
+            :class:`DeprecationWarning`.
+
         Args:
             name: A scene tree name. Names in the format of /parent/child can be used to
                 define a kinematic tree.
@@ -1268,7 +1401,14 @@ class SceneApi:
                 exactly `2 * len(points) - 2` control points. For a cubic Bezier with N
                 points, the curve passes through points[0], points[1], ..., points[N-1],
                 with two control points between each consecutive pair of points.
-            line_width: Width of the spline line.
+            thickness: Thickness of the spline line, in the units chosen via
+                ``thickness_units``. Defaults to `0.01` world units.
+            thickness_units: Units for ``thickness``. `"world"` (default)
+                keeps the line a fixed thickness in scene units, so it gets
+                thinner with distance like real geometry. `"screen"` keeps a
+                fixed pixel thickness regardless of distance. The deprecated
+                ``line_width`` argument maps to screen-space pixels, matching
+                its old behavior exactly.
             color: Color of the spline as an RGB tuple.
             segments: Number of segments to divide the spline into.
             scale: Scale of the spline. A single float for uniform scaling or a
@@ -1292,6 +1432,15 @@ class SceneApi:
                 DeprecationWarning,
                 stacklevel=2,
             )
+        if "line_width" in _deprecated_kwargs:
+            warnings.warn(
+                "The `line_width` parameter is deprecated. Use `thickness` with "
+                "`thickness_units='screen'` for the same behavior.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            thickness = float(_deprecated_kwargs.pop("line_width"))
+            thickness_units = "screen"
         if _deprecated_kwargs:
             raise TypeError(
                 f"Unexpected keyword arguments: {list(_deprecated_kwargs.keys())}"
@@ -1306,7 +1455,8 @@ class SceneApi:
             _messages.CubicBezierSplineProps(
                 points=np.asarray(points, dtype=np.float32),
                 control_points=np.asarray(control_points, dtype=np.float32),
-                line_width=line_width,
+                thickness=thickness,
+                thickness_units=thickness_units,
                 color=_encode_rgb(color),
                 segments=segments,
                 scale=scale,
@@ -1316,7 +1466,7 @@ class SceneApi:
             self, message, name, wxyz, position, visible
         )
 
-    @deprecated_positional_shim
+    @overload
     def add_camera_frustum(
         self,
         name: str,
@@ -1324,7 +1474,8 @@ class SceneApi:
         aspect: float,
         *,
         scale: float | tuple[float, float, float] = 0.3,
-        line_width: float = 2.0,
+        thickness: float = 0.02,
+        thickness_units: Literal["screen", "world"] = "world",
         color: RgbTupleOrArray = (20, 20, 20),
         image: np.ndarray | None = None,
         format: Literal["auto", "png", "jpeg"] = "auto",
@@ -1335,6 +1486,51 @@ class SceneApi:
         cast_shadow: bool = True,
         receive_shadow: bool | float = True,
         variant: Literal["wireframe", "filled"] = "wireframe",
+    ) -> CameraFrustumHandle: ...
+
+    @overload
+    @deprecated("The `line_width` parameter is deprecated. Use `thickness` instead.")
+    def add_camera_frustum(
+        self,
+        name: str,
+        fov: float,
+        aspect: float,
+        *,
+        scale: float | tuple[float, float, float] = 0.3,
+        line_width: Never,
+        color: RgbTupleOrArray = (20, 20, 20),
+        image: np.ndarray | None = None,
+        format: Literal["auto", "png", "jpeg"] = "auto",
+        jpeg_quality: int | None = None,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+        cast_shadow: bool = True,
+        receive_shadow: bool | float = True,
+        variant: Literal["wireframe", "filled"] = "wireframe",
+    ) -> CameraFrustumHandle: ...
+
+    @deprecated_positional_shim
+    def add_camera_frustum(  # pyright: ignore[reportInconsistentOverload]
+        self,
+        name: str,
+        fov: float,
+        aspect: float,
+        *,
+        scale: float | tuple[float, float, float] = 0.3,
+        thickness: float = 0.02,
+        thickness_units: Literal["screen", "world"] = "world",
+        color: RgbTupleOrArray = (20, 20, 20),
+        image: np.ndarray | None = None,
+        format: Literal["auto", "png", "jpeg"] = "auto",
+        jpeg_quality: int | None = None,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+        cast_shadow: bool = True,
+        receive_shadow: bool | float = True,
+        variant: Literal["wireframe", "filled"] = "wireframe",
+        **_deprecated_kwargs,
     ) -> CameraFrustumHandle:
         """Add a camera frustum to the scene for visualization.
 
@@ -1345,6 +1541,14 @@ class SceneApi:
         Like all cameras in the viser Python API, frustums follow the OpenCV [+Z forward,
         +X right, +Y down] convention. fov is vertical in radians; aspect is width over height.
 
+        .. note::
+
+            **API change.** The screen-space pixel ``line_width`` parameter is
+            deprecated in favor of ``thickness``, which defaults to world-space
+            units. Code passing ``line_width`` keeps its exact old rendering
+            (it maps to ``thickness_units="screen"``) and emits a
+            :class:`DeprecationWarning`.
+
         Args:
             name: A scene tree name. Names in the format of /parent/child can be used to
                 define a kinematic tree.
@@ -1352,7 +1556,14 @@ class SceneApi:
             aspect: Aspect ratio of the camera (width over height).
             scale: Scale factor for the size of the frustum. A single float
                 for uniform scaling or a tuple of (x, y, z) for per-axis scaling.
-            line_width: Width of the frustum lines, in screen space. Defaults to `2.0`.
+            thickness: Thickness of the frustum lines, in the units chosen via
+                ``thickness_units``. Defaults to `0.02` world units.
+            thickness_units: Units for ``thickness``. `"world"` (default)
+                keeps the lines a fixed thickness in scene units, so they get
+                thinner with distance like real geometry. `"screen"` keeps a
+                fixed pixel thickness regardless of distance. The deprecated
+                ``line_width`` argument maps to screen-space pixels, matching
+                its old behavior exactly.
             color: Color of the frustum as an RGB tuple.
             image: Optional image to be displayed on the frustum.
             format: Format to transport and display the image using. 'auto' will use PNG for RGBA images and JPEG for RGB.
@@ -1370,6 +1581,19 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
+        if "line_width" in _deprecated_kwargs:
+            warnings.warn(
+                "The `line_width` parameter is deprecated. Use `thickness` with "
+                "`thickness_units='screen'` for the same behavior.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            thickness = float(_deprecated_kwargs.pop("line_width"))
+            thickness_units = "screen"
+        if _deprecated_kwargs:
+            raise TypeError(
+                f"Unexpected keyword arguments: {list(_deprecated_kwargs.keys())}"
+            )
         if image is not None:
             resolved_format, binary = _encode_image_binary(
                 image, format, jpeg_quality=jpeg_quality
@@ -1384,7 +1608,8 @@ class SceneApi:
                 fov=fov,
                 aspect=aspect,
                 scale=scale,
-                line_width=line_width,
+                thickness=thickness,
+                thickness_units=thickness_units,
                 color=_encode_rgb(color),
                 _format=resolved_format,
                 _image_data=binary,

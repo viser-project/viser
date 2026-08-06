@@ -153,7 +153,7 @@ def test_line_segments_in_scene(
         "/test_lines",
         points=points,
         colors=colors,
-        line_width=2.0,
+        thickness=0.02,
     )
 
     wait_for_scene_node(viser_page, "/test_lines")
@@ -492,7 +492,7 @@ def test_spline_catmull_rom_in_scene(
         "/test_spline",
         points=points,
         tension=0.5,
-        line_width=2.0,
+        thickness=0.02,
         color=(255, 0, 128),
     )
 

@@ -26,7 +26,7 @@ def main():
         "/catmull_initial",
         np.random.normal(size=(30, 3)),
         tension=0.5,
-        line_width=3.0,
+        thickness=0.03,
         color=np.random.uniform(size=3),
     )
 
@@ -47,7 +47,7 @@ def main():
                 f"/catmull_{i}",
                 np.random.normal(size=(30, 3)),
                 tension=0.5,
-                line_width=3.0,
+                thickness=0.03,
                 color=np.random.uniform(size=3),
             )
             images.append(client.get_render(height=720, width=1280))
