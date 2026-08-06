@@ -139,9 +139,9 @@ export const CameraFrustumComponent = React.forwardRef<
         points={frustumPoints}
         color={isHovered ? 0xfbff00 : rgbToInt(message.props.color)}
         lineWidth={
-          isHovered ? 1.5 * message.props.line_width : message.props.line_width
+          isHovered ? 1.5 * message.props.thickness : message.props.thickness
         }
-        worldUnits={message.props.line_width_units === "world"}
+        worldUnits={message.props.thickness_units === "world"}
         segments={true}
       />
 

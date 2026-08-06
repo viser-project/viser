@@ -1,9 +1,9 @@
-"""World- vs screen-space line widths (``line_width_units``).
+"""World- vs screen-space line widths (``thickness_units``).
 
-With ``line_width_units="world"`` (the default), a line's width is a fixed
+With ``thickness_units="world"`` (the default), a line's width is a fixed
 size in scene units, so its on-screen width scales inversely with camera
 distance. With ``"screen"``, the width is a fixed pixel count regardless of
-distance (the pre-``line_width_units`` behavior).
+distance (the pre-``thickness_units`` behavior).
 
 Both tests render two vertical segments at camera distances 2 and 4 and
 measure their projected pixel widths: world units must give a ~2x width
@@ -35,23 +35,23 @@ _FAR = np.array([[[4.0, -1.6, -1.0], [4.0, -1.6, 1.0]]])
 def _measure_widths(
     viser_server: viser.ViserServer,
     viser_page: Page,
-    line_width: float,
-    line_width_units: Literal["screen", "world"],
+    thickness: float,
+    thickness_units: Literal["screen", "world"],
 ) -> tuple[float, float]:
     """Render the two-segment scene; return (near, far) pixel widths."""
     viser_server.scene.add_line_segments(
         "/near",
         points=_NEAR,
         colors=(0, 255, 0),
-        line_width=line_width,
-        line_width_units=line_width_units,
+        thickness=thickness,
+        thickness_units=thickness_units,
     )
     viser_server.scene.add_line_segments(
         "/far",
         points=_FAR,
         colors=(0, 0, 255),
-        line_width=line_width,
-        line_width_units=line_width_units,
+        thickness=thickness,
+        thickness_units=thickness_units,
     )
     viser_server.scene.world_axes.visible = False
     wait_for_scene_node(viser_page, "/near")
@@ -91,7 +91,7 @@ def test_world_units_width_scales_with_distance(
 ) -> None:
     """World-space width: on-screen width halves when distance doubles."""
     near, far = _measure_widths(
-        viser_server, viser_page, line_width=0.2, line_width_units="world"
+        viser_server, viser_page, thickness=0.2, thickness_units="world"
     )
     # Expected: 0.2 world units at distance 2 with fov 75deg on a 600px-tall
     # canvas is ~39px; ~20px at distance 4.
@@ -105,7 +105,7 @@ def test_screen_units_width_constant_with_distance(
 ) -> None:
     """Screen-space width: on-screen width is distance-independent."""
     near, far = _measure_widths(
-        viser_server, viser_page, line_width=10.0, line_width_units="screen"
+        viser_server, viser_page, thickness=10.0, thickness_units="screen"
     )
     assert 6 <= near <= 15, f"near line width off: {near=}"
     assert 6 <= far <= 15, f"far line width off: {far=}"

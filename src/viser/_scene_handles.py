@@ -948,6 +948,32 @@ class CameraFrustumHandle(
 ):
     """Handle for camera frustums."""
 
+    @property
+    @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
+    def line_width(self) -> float:
+        """Deprecated alias for :attr:`thickness`.
+
+        .. deprecated::
+            Use 'thickness' instead; it is interpreted in the units given
+            by 'thickness_units'.
+        """
+        warnings.warn(
+            "The 'line_width' property is deprecated. Use 'thickness' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.thickness
+
+    @line_width.setter
+    @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
+    def line_width(self, value: float) -> None:
+        warnings.warn(
+            "The 'line_width' property is deprecated. Use 'thickness' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.thickness = value
+
     _image: np.ndarray | None
     _jpeg_quality: int | None
     _user_format: Literal["auto", "jpeg", "png"]
@@ -1381,6 +1407,32 @@ class LineSegmentsHandle(
 ):
     """Handle for line segments objects."""
 
+    @property
+    @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
+    def line_width(self) -> float:
+        """Deprecated alias for :attr:`thickness`.
+
+        .. deprecated::
+            Use 'thickness' instead; it is interpreted in the units given
+            by 'thickness_units'.
+        """
+        warnings.warn(
+            "The 'line_width' property is deprecated. Use 'thickness' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.thickness
+
+    @line_width.setter
+    @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
+    def line_width(self, value: float) -> None:
+        warnings.warn(
+            "The 'line_width' property is deprecated. Use 'thickness' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.thickness = value
+
 
 class ArrowsHandle(
     SceneNodeHandle,
@@ -1394,6 +1446,32 @@ class SplineCatmullRomHandle(
     _messages.CatmullRomSplineProps,
 ):
     """Handle for Catmull-Rom splines."""
+
+    @property
+    @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
+    def line_width(self) -> float:
+        """Deprecated alias for :attr:`thickness`.
+
+        .. deprecated::
+            Use 'thickness' instead; it is interpreted in the units given
+            by 'thickness_units'.
+        """
+        warnings.warn(
+            "The 'line_width' property is deprecated. Use 'thickness' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.thickness
+
+    @line_width.setter
+    @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
+    def line_width(self, value: float) -> None:
+        warnings.warn(
+            "The 'line_width' property is deprecated. Use 'thickness' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.thickness = value
 
     @property
     @deprecated("The 'positions' property is deprecated. Use 'points' instead.")
@@ -1430,6 +1508,32 @@ class SplineCubicBezierHandle(
     _messages.CubicBezierSplineProps,
 ):
     """Handle for cubic Bezier splines."""
+
+    @property
+    @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
+    def line_width(self) -> float:
+        """Deprecated alias for :attr:`thickness`.
+
+        .. deprecated::
+            Use 'thickness' instead; it is interpreted in the units given
+            by 'thickness_units'.
+        """
+        warnings.warn(
+            "The 'line_width' property is deprecated. Use 'thickness' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.thickness
+
+    @line_width.setter
+    @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
+    def line_width(self, value: float) -> None:
+        warnings.warn(
+            "The 'line_width' property is deprecated. Use 'thickness' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.thickness = value
 
     @property
     @deprecated(

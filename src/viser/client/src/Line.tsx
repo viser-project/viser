@@ -233,8 +233,8 @@ export const LineSegments = React.forwardRef<
       <group scale={normalizeScale(props.scale)}>
         <Line
           points={pointsArray}
-          lineWidth={props.line_width}
-          worldUnits={props.line_width_units === "world"}
+          lineWidth={props.thickness}
+          worldUnits={props.thickness_units === "world"}
           color={color}
           vertexColors={vertexColors}
           segments={true}

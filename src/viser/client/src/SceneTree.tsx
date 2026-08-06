@@ -124,8 +124,8 @@ function CatmullRomSpline({ message }: { message: CatmullRomSplineMessage }) {
   return (
     <Line
       points={sampledPoints}
-      lineWidth={p.line_width}
-      worldUnits={p.line_width_units === "world"}
+      lineWidth={p.thickness}
+      worldUnits={p.thickness_units === "world"}
       color={rgbToInt(p.color)}
     />
   );
@@ -156,8 +156,8 @@ function CubicBezierSpline({ message }: { message: CubicBezierSplineMessage }) {
         <Line
           key={i}
           points={sampledPoints}
-          lineWidth={p.line_width}
-          worldUnits={p.line_width_units === "world"}
+          lineWidth={p.thickness}
+          worldUnits={p.thickness_units === "world"}
           color={rgbToInt(p.color)}
         />
       ))}

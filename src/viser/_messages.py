@@ -481,7 +481,7 @@ class CameraFrustumProps:
     """Field of view of the camera (in radians). """
     aspect: float
     """Aspect ratio of the camera (width over height)."""
-    line_width: float
+    thickness: float
     """Width of the frustum lines."""
     color: Tuple[int, int, int]
     """Color of the frustum as RGB integers. """
@@ -501,8 +501,8 @@ class CameraFrustumProps:
     scale: Union[float, Tuple[float, float, float]] = 0.3
     """Scale factor for the size of the frustum. A single float for uniform
     scaling or a tuple of (x, y, z) for per-axis scaling."""
-    line_width_units: Literal["screen", "world"] = "world"
-    """Units for line_width: 'world' for scene units, 'screen' for pixels."""
+    thickness_units: Literal["screen", "world"] = "world"
+    """Units for thickness: 'world' for scene units, 'screen' for pixels."""
 
 
 @dataclasses.dataclass
@@ -2223,7 +2223,7 @@ class LineSegmentsProps:
     points: npt.NDArray[np.float32]
     """A numpy array of shape (N, 2, 3) containing a batched set of line
     segments."""
-    line_width: float
+    thickness: float
     """Width of the lines."""
     colors: npt.NDArray[np.uint8]
     """Numpy array of shape (N, 2, 3) containing a color for each point.
@@ -2231,8 +2231,8 @@ class LineSegmentsProps:
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the line segments. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
-    line_width_units: Literal["screen", "world"] = "world"
-    """Units for line_width: 'world' for scene units, 'screen' for pixels."""
+    thickness_units: Literal["screen", "world"] = "world"
+    """Units for thickness: 'world' for scene units, 'screen' for pixels."""
 
 
 @dataclasses.dataclass
@@ -2277,7 +2277,7 @@ class CatmullRomSplineProps:
     """Tension of the curve. Affects the tightness of the curve."""
     closed: bool
     """Boolean indicating if the spline is closed (forms a loop)."""
-    line_width: float
+    thickness: float
     """Width of the spline line."""
     color: Tuple[int, int, int]
     """Color of the spline as RGB integers."""
@@ -2286,8 +2286,8 @@ class CatmullRomSplineProps:
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the spline. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
-    line_width_units: Literal["screen", "world"] = "world"
-    """Units for line_width: 'world' for scene units, 'screen' for pixels."""
+    thickness_units: Literal["screen", "world"] = "world"
+    """Units for thickness: 'world' for scene units, 'screen' for pixels."""
 
 
 @dataclasses.dataclass
@@ -2303,7 +2303,7 @@ class CubicBezierSplineProps:
     """Array of shape (N, 3) defining the spline's key points."""
     control_points: npt.NDArray[np.float32]
     """Array of shape (2*N-2, 3) defining control points for Bezier curve shaping."""
-    line_width: float
+    thickness: float
     """Width of the spline line."""
     color: Tuple[int, int, int]
     """Color of the spline as RGB integers."""
@@ -2312,8 +2312,8 @@ class CubicBezierSplineProps:
     scale: Union[float, Tuple[float, float, float]] = 1.0
     """Scale of the spline. A single float for uniform scaling or a
     tuple of (x, y, z) for per-axis scaling."""
-    line_width_units: Literal["screen", "world"] = "world"
-    """Units for line_width: 'world' for scene units, 'screen' for pixels."""
+    thickness_units: Literal["screen", "world"] = "world"
+    """Units for thickness: 'world' for scene units, 'screen' for pixels."""
 
 
 @dataclasses.dataclass

@@ -12,7 +12,7 @@ export interface CameraFrustumMessage {
   props: {
     fov: number;
     aspect: number;
-    line_width: number;
+    thickness: number;
     color: [number, number, number];
     _format: "jpeg" | "png";
     _image_data: Uint8Array<ArrayBuffer> | null;
@@ -20,7 +20,7 @@ export interface CameraFrustumMessage {
     receive_shadow: boolean | number;
     variant: "wireframe" | "filled";
     scale: number | [number, number, number];
-    line_width_units: "screen" | "world";
+    thickness_units: "screen" | "world";
   };
 }
 /** GlTF message.
@@ -439,10 +439,10 @@ export interface LineSegmentsMessage {
   name: string;
   props: {
     points: Float32Array;
-    line_width: number;
+    thickness: number;
     colors: Uint8Array<ArrayBuffer>;
     scale: number | [number, number, number];
-    line_width_units: "screen" | "world";
+    thickness_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying arrow information.
@@ -473,11 +473,11 @@ export interface CatmullRomSplineMessage {
     curve_type: "centripetal" | "chordal" | "catmullrom";
     tension: number;
     closed: boolean;
-    line_width: number;
+    thickness: number;
     color: [number, number, number];
     segments: number | null;
     scale: number | [number, number, number];
-    line_width_units: "screen" | "world";
+    thickness_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying Cubic Bezier spline information.
@@ -490,11 +490,11 @@ export interface CubicBezierSplineMessage {
   props: {
     points: Float32Array;
     control_points: Float32Array;
-    line_width: number;
+    thickness: number;
     color: [number, number, number];
     segments: number | null;
     scale: number | [number, number, number];
-    line_width_units: "screen" | "world";
+    thickness_units: "screen" | "world";
   };
 }
 /** Message from server->client carrying splattable Gaussians.
@@ -2300,7 +2300,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "number",
     },
-    line_width: {
+    thickness: {
       kind: "default",
       tsType: "number",
     },
@@ -2334,7 +2334,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "(number | [number, number, number])",
     },
-    line_width_units: {
+    thickness_units: {
       kind: "stringLiteral",
       tsType: "'screen' | 'world'",
       options: ["screen", "world"],
@@ -3117,7 +3117,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "Float32Array",
     },
-    line_width: {
+    thickness: {
       kind: "default",
       tsType: "number",
     },
@@ -3129,7 +3129,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "(number | [number, number, number])",
     },
-    line_width_units: {
+    thickness_units: {
       kind: "stringLiteral",
       tsType: "'screen' | 'world'",
       options: ["screen", "world"],
@@ -3179,7 +3179,7 @@ export const SceneNodePropsSchema: {
       kind: "boolean",
       tsType: "boolean",
     },
-    line_width: {
+    thickness: {
       kind: "default",
       tsType: "number",
     },
@@ -3195,7 +3195,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "(number | [number, number, number])",
     },
-    line_width_units: {
+    thickness_units: {
       kind: "stringLiteral",
       tsType: "'screen' | 'world'",
       options: ["screen", "world"],
@@ -3210,7 +3210,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "Float32Array",
     },
-    line_width: {
+    thickness: {
       kind: "default",
       tsType: "number",
     },
@@ -3226,7 +3226,7 @@ export const SceneNodePropsSchema: {
       kind: "default",
       tsType: "(number | [number, number, number])",
     },
-    line_width_units: {
+    thickness_units: {
       kind: "stringLiteral",
       tsType: "'screen' | 'world'",
       options: ["screen", "world"],
