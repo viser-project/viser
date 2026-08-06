@@ -598,6 +598,29 @@ git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </
 <p>You can embed this into other webpages using an HTML <code class="docutils literal notranslate"><span class="pre">&lt;iframe</span> <span class="pre">/&gt;</span></code> tag.</p>
 </section>
 </section>
+<section id="the-scene-tree-panel">
+<h2>The Scene Tree Panel<a class="headerlink" href="#the-scene-tree-panel" title="Link to this heading">¶</a></h2>
+<p>During offline playback, a “Scene tree” panel is available. Like the scene
+tree in the regular control panel, it can be used to inspect the scene
+hierarchy, toggle visibility of individual nodes, and edit scene node
+properties. Changes are local to the browser; they don’t persist and are
+overwritten by property updates in the recording.</p>
+<p>The panel is hidden by default, keeping the canvas clean. A scene tree button
+opens it: in the playback bar for animated recordings, or floating in the
+top-right corner for static scenes (which have no playback bar).</p>
+<figure class="align-default" id="id1">
+<img alt="Scene tree panel during offline playback" src="../_images/playback_scene_tree.png" />
+<figcaption>
+<p><span class="caption-text">The scene tree panel opened from the playback bar’s scene tree button.</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<figure class="align-default" id="id2">
+<img alt="Floating scene tree button for static scenes" src="../_images/playback_scene_tree_static.png" />
+<figcaption>
+<p><span class="caption-text">Static scenes show a floating scene tree button in the top-right corner.</span><a class="headerlink" href="#id2" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
 <section id="step-4-setting-the-initial-camera-pose">
 <h2>Step 4: Setting the initial camera pose<a class="headerlink" href="#step-4-setting-the-initial-camera-pose" title="Link to this heading">¶</a></h2>
 <section id="using-python">
@@ -725,6 +748,7 @@ parameters take priority over the Python-configured initial camera.</p>
 <li><a class="reference internal" href="#github-pages-deployment">GitHub Pages Deployment</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#the-scene-tree-panel">The Scene Tree Panel</a></li>
 <li><a class="reference internal" href="#step-4-setting-the-initial-camera-pose">Step 4: Setting the initial camera pose</a><ul>
 <li><a class="reference internal" href="#using-python">Using Python</a></li>
 <li><a class="reference internal" href="#using-url-parameters">Using URL Parameters</a></li>
