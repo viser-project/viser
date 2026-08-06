@@ -1,13 +1,19 @@
 """Reading a props field from a handle must return the live value.
 
-Handles inherit their ``*Props`` dataclass for typing, and dataclass fields
-WITH defaults become class attributes, which normal attribute lookup finds
-before ``__getattr__``. Reads of such fields used to return the class
-default forever (writes were unaffected). See props_getattribute in
-_assignable_props_api.py."""
+Handles inherit their ``*Props`` dataclass for typing, so a props field
+WITH a default would become a class attribute, which normal attribute
+lookup finds before the ``__getattr__`` that forwards reads to the live
+props object. Reads of such fields returned the class default forever
+(writes were unaffected): ``frustum.variant`` stayed ``"wireframe"`` after
+``variant="filled"``. The fix is structural -- props dataclasses carry no
+field defaults (the user-facing defaults live in the scene API signatures,
+and every props construction passes all fields explicitly) -- and this
+module enforces it."""
 
 from __future__ import annotations
 
+import dataclasses
+import inspect
 import socket
 from typing import Generator
 
@@ -16,6 +22,25 @@ import pytest
 
 import viser
 import viser._client_autobuild
+from viser import _messages
+
+
+def test_props_dataclasses_have_no_field_defaults() -> None:
+    """A default on a props field silently breaks handle reads (see module
+    docstring); user-facing defaults belong in the scene/GUI API signatures
+    instead."""
+    offenders = [
+        f"{name}.{field.name}"
+        for name in dir(_messages)
+        for cls in [getattr(_messages, name)]
+        if inspect.isclass(cls)
+        and name.endswith("Props")
+        and dataclasses.is_dataclass(cls)
+        for field in dataclasses.fields(cls)
+        if field.default is not dataclasses.MISSING
+        or field.default_factory is not dataclasses.MISSING
+    ]
+    assert not offenders, f"Props fields must not have defaults: {offenders}"
 
 
 def _find_free_port() -> int:

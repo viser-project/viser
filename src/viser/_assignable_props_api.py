@@ -161,6 +161,12 @@ def props_setattr(self, name: str, value: Any) -> None:
 
 
 def props_getattr(self, name: str) -> Any:
+    # This only works because *Props dataclass fields never have defaults:
+    # a field default would become a class attribute on the handle (which
+    # inherits the props dataclass for typing), and normal attribute lookup
+    # would find it before __getattr__ is consulted -- reads would return
+    # the default forever instead of the live value. Enforced by
+    # tests/test_handle_prop_reads.py.
     if name in self._prop_hints:
         return getattr(self._impl.props, name)
     else:
@@ -169,32 +175,5 @@ def props_getattr(self, name: str) -> Any:
         )
 
 
-def props_getattribute(self, name: str) -> Any:
-    """Route reads of props fields to the live props object.
-
-    Handles inherit their ``*Props`` dataclass for typing, and dataclass
-    fields WITH defaults become plain class attributes -- which normal
-    attribute lookup finds before ``__getattr__`` is ever consulted. Without
-    this override, reading such a field from a handle returned the class
-    default forever (e.g. ``frustum.variant`` stayed ``"wireframe"`` after
-    ``variant="filled"``). Descriptors (properties, methods) keep priority so
-    intentional overrides like GUI ``value`` properties and deprecated
-    aliases still work.
-    """
-    if not name.startswith("_"):
-        cls_attr = getattr(type(self), name, None)
-        if cls_attr is None or not hasattr(cls_attr, "__get__"):
-            try:
-                hints = object.__getattribute__(self, "_prop_hints")
-                impl = object.__getattribute__(self, "_impl")
-            except AttributeError:
-                pass
-            else:
-                if name in hints:
-                    return getattr(impl.props, name)
-    return object.__getattribute__(self, name)
-
-
 AssignablePropsBase.__setattr__ = props_setattr  # type: ignore
 AssignablePropsBase.__getattr__ = props_getattr  # type: ignore
-AssignablePropsBase.__getattribute__ = props_getattribute  # type: ignore
