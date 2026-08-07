@@ -431,6 +431,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">atexit</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">mimetypes</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
@@ -808,6 +809,19 @@
 
     <span class="nd">@min_orbit_distance</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">min_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">min_orbit_distance</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Validate BEFORE the no-op short-circuit: a bad value must raise even</span>
+        <span class="c1"># when it happens to be &quot;close&quot; to the stored one (e.g. re-assigning</span>
+        <span class="c1"># the same bad value after a raise).</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">min_orbit_distance</span><span class="p">)</span> <span class="ow">or</span> <span class="n">min_orbit_distance</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;min_orbit_distance (</span><span class="si">{</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">) must be a &quot;</span>
+                <span class="s2">&quot;positive, finite number.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">min_orbit_distance</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;min_orbit_distance (</span><span class="si">{</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">) must be &lt;= &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;max_orbit_distance (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">).&quot;</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="p">,</span> <span class="n">min_orbit_distance</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span> <span class="o">=</span> <span class="n">min_orbit_distance</span>
@@ -820,7 +834,8 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">max_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;How far the camera may be dollied out from its orbit (look-at) point.</span>
 <span class="sd">        Distinct from :attr:`far`, which clips rendering rather than camera</span>
-<span class="sd">        travel. Defaults to 1e4. Synchronized automatically when assigned.</span>
+<span class="sd">        travel. Defaults to 1e4; set to ``float(&quot;inf&quot;)`` for the unbounded</span>
+<span class="sd">        pre-1.1.0 behavior. Synchronized automatically when assigned.</span>
 
 <span class="sd">        Dolly is multiplicative per wheel event, so a very large maximum means a long</span>
 <span class="sd">        scroll — a trackpad&#39;s inertial tail, for instance — can walk the camera out to</span>
@@ -831,6 +846,19 @@
 
     <span class="nd">@max_orbit_distance</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">max_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_orbit_distance</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Validate BEFORE the no-op short-circuit; see min_orbit_distance.</span>
+        <span class="c1"># +inf is allowed: it is the pre-1.1.0 unbounded behavior (and the</span>
+        <span class="c1"># camera-controls default), the opt-out for large-scale scenes.</span>
+        <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">max_orbit_distance</span><span class="p">)</span> <span class="ow">or</span> <span class="n">max_orbit_distance</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;max_orbit_distance (</span><span class="si">{</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">) must be a &quot;</span>
+                <span class="s2">&quot;positive number (or float(&#39;inf&#39;) for unbounded).&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">max_orbit_distance</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;max_orbit_distance (</span><span class="si">{</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">) must be &gt;= &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;min_orbit_distance (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">).&quot;</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="p">,</span> <span class="n">max_orbit_distance</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span> <span class="o">=</span> <span class="n">max_orbit_distance</span>
@@ -1552,6 +1580,18 @@
 
         <span class="c1"># Start the server.</span>
         <span class="n">server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="c1"># The share-tunnel slot must exist BEFORE stop() is registered with</span>
+        <span class="c1"># atexit below: stop() reads it, and if __init__ fails later, the</span>
+        <span class="c1"># atexit-time stop() on the partially-built server would otherwise</span>
+        <span class="c1"># miss the attribute and fall into DeprecatedAttributeShim.__getattr__</span>
+        <span class="c1"># (whose `self.scene` lookup recurses without `scene` set --&gt;</span>
+        <span class="c1"># RecursionError at interpreter exit).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="p">:</span> <span class="n">ViserTunnel</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Guards the share-tunnel slot&#39;s check-then-act. The handlers below run</span>
+        <span class="c1"># on pool threads (not serialized on the event loop), so two</span>
+        <span class="c1"># concurrent requests could both see None and each create a tunnel,</span>
+        <span class="c1"># orphaning (leaking) the first.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
         <span class="c1"># server.start() registered the infra-level WebsockServer.stop with</span>
         <span class="c1"># atexit; also register the full ViserServer.stop, which runs first</span>
         <span class="c1"># (LIFO) and supersedes it (WebsockServer.stop unregisters itself).</span>
@@ -1627,13 +1667,6 @@
                 <span class="n">expand</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="p">:</span> <span class="n">ViserTunnel</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="c1"># Guards the share-tunnel slot&#39;s check-then-act. The handlers now run</span>
-        <span class="c1"># on pool threads (not serialized on the event loop), so two</span>
-        <span class="c1"># concurrent requests could both see None and each create a tunnel,</span>
-        <span class="c1"># orphaning (leaking) the first.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
 
         <span class="c1"># Create share tunnel if requested.</span>
         <span class="c1"># This is deprecated: we should use get_share_url() instead.</span>
@@ -1803,6 +1836,14 @@
         <span class="c1"># OUTSIDE the lock so requests don&#39;t serialize on the connection.</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span><span class="p">:</span>
             <span class="n">tunnel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span>
+            <span class="k">if</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;failed&quot;</span><span class="p">,</span> <span class="s2">&quot;closed&quot;</span><span class="p">):</span>
+                <span class="c1"># A tunnel that failed to connect never signals disconnect, so</span>
+                <span class="c1"># nothing else clears the slot: without this, every later</span>
+                <span class="c1"># request would see the dead tunnel and return None forever.</span>
+                <span class="c1"># Close it (its worker already exited, so this is bookkeeping,</span>
+                <span class="c1"># not blocking) and let this request create a fresh one.</span>
+                <span class="n">tunnel</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+                <span class="n">tunnel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="n">we_created</span> <span class="o">=</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="kc">None</span>
             <span class="k">if</span> <span class="n">we_created</span><span class="p">:</span>
                 <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
@@ -1830,10 +1871,14 @@
 
             <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Disconnected from share URL&quot;</span><span class="p">)</span>
             <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span><span class="p">:</span>
-                <span class="c1"># Only clear the slot if it still points at OUR tunnel (a</span>
-                <span class="c1"># newer request may have replaced it).</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="n">tunnel</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="c1"># Only clear the slot (and broadcast the loss) if it still</span>
+                <span class="c1"># points at OUR tunnel. A newer request may have replaced it:</span>
+                <span class="c1"># broadcasting None here would clobber the replacement&#39;s URL</span>
+                <span class="c1"># for every client -- and, since the message persists in the</span>
+                <span class="c1"># broadcast buffer, for every late joiner too.</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">tunnel</span><span class="p">:</span>
+                    <span class="k">return</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">ShareUrlUpdated</span><span class="p">(</span><span class="kc">None</span><span class="p">))</span>
 
         <span class="nd">@tunnel</span><span class="o">.</span><span class="n">on_connect</span>
@@ -1963,8 +2008,11 @@
         <span class="c1"># connect between the two lines.</span>
         <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
-                <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cb</span><span class="p">(</span><span class="n">client</span><span class="p">))</span>
-                <span class="n">task</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_task_error</span><span class="p">)</span>
+                <span class="c1"># run_coroutine_threadsafe, not create_task: registration</span>
+                <span class="c1"># typically happens on a user thread, and create_task is</span>
+                <span class="c1"># neither thread-safe nor guaranteed to wake the loop.</span>
+                <span class="n">future</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">run_coroutine_threadsafe</span><span class="p">(</span><span class="n">cb</span><span class="p">(</span><span class="n">client</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="p">)</span>
+                <span class="n">future</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_task_error</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">client</span><span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span>
                     <span class="n">print_threadpool_errors</span>

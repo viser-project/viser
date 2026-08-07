@@ -4065,8 +4065,11 @@
         <span class="c1"># must not starve its siblings or leave the list uncleared.</span>
         <span class="k">for</span> <span class="n">cleanup</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cleanup</span><span class="p">):</span>
-                <span class="n">task</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cleanup</span><span class="p">())</span>
-                <span class="n">task</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_task_error</span><span class="p">)</span>
+                <span class="c1"># run_coroutine_threadsafe, not create_task: callback removal</span>
+                <span class="c1"># can run on a user thread, and create_task is neither</span>
+                <span class="c1"># thread-safe nor guaranteed to wake the loop.</span>
+                <span class="n">future</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">run_coroutine_threadsafe</span><span class="p">(</span><span class="n">cleanup</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span><span class="p">)</span>
+                <span class="n">future</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_task_error</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">try</span><span class="p">:</span>
                     <span class="n">cleanup</span><span class="p">()</span>

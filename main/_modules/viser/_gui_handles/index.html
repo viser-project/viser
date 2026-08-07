@@ -427,6 +427,7 @@
           <h1>Source code for viser._gui_handles</h1><div class="highlight"><pre>
 <span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
@@ -499,6 +500,7 @@
     <span class="n">SplitPlacement</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">._scene_api</span><span class="w"> </span><span class="kn">import</span> <span class="n">_encode_image_binary</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._threadpool_exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">print_task_error</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.infra</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClientId</span>
 
 <span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
@@ -687,7 +689,12 @@
             <span class="c1"># reduces the likelihood of many common race conditions.</span>
             <span class="n">cb_out</span> <span class="o">=</span> <span class="n">cb</span><span class="p">(</span><span class="n">GuiEvent</span><span class="p">(</span><span class="n">client_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">client</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="p">))</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cb_out</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cb_out</span><span class="p">)</span>
+                <span class="c1"># run_coroutine_threadsafe, not create_task: assignment</span>
+                <span class="c1"># typically happens on a user thread, and create_task is</span>
+                <span class="c1"># neither thread-safe nor guaranteed to wake the loop.</span>
+                <span class="n">asyncio</span><span class="o">.</span><span class="n">run_coroutine_threadsafe</span><span class="p">(</span>
+                    <span class="n">cb_out</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_event_loop</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_task_error</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">update_timestamp</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
@@ -838,10 +845,14 @@
 <span class="sd">    assignment path needs 5.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
         <span class="k">assert</span> <span class="n">value</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Expected a 1D color, got shape </span><span class="si">{</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">.&quot;</span>
+    <span class="c1"># Materialize once up front: we iterate twice (the float-channel check and</span>
+    <span class="c1"># the tuple build below), so a generator input would arrive exhausted at</span>
+    <span class="c1"># the second pass and silently yield an empty/partial color.</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">v</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)</span> <span class="ow">and</span> <span class="n">v</span> <span class="o">&gt;</span> <span class="mf">1.0</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="p">):</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
             <span class="s2">&quot;Float color channels are interpreted on [0, 1] and scaled to &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;[0, 255]; values &gt; 1.0 are clamped to 255 (got </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">!r}</span><span class="s2">). &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;[0, 255]; values &gt; 1.0 are clamped to 255 (got </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">). &quot;</span>
             <span class="s2">&quot;Use ints for absolute [0, 255] channels.&quot;</span><span class="p">,</span>
             <span class="n">stacklevel</span><span class="o">=</span><span class="n">warn_stacklevel</span><span class="p">,</span>
         <span class="p">)</span>
@@ -1255,8 +1266,8 @@
 <span class="sd">        icon change) rebuilds through here, so the parallel tuples can never</span>
 <span class="sd">        desync in length or order.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
-            <span class="c1"># Tear-down path: PanelHandle.remove() tombstones BEFORE draining</span>
-            <span class="c1"># its tabs (the tombstone must be an atomic check-and-set against</span>
+            <span class="c1"># Tear-down path: both mixers&#39; remove() tombstone BEFORE draining</span>
+            <span class="c1"># their tabs (the tombstone must be an atomic check-and-set against</span>
             <span class="c1"># concurrent removers), so the drain&#39;s write-backs land here after</span>
             <span class="c1"># removal. Skip the wire write-back: props_setattr would</span>
             <span class="c1"># (correctly) reject a props write on a removed handle, and the</span>
@@ -1289,27 +1300,29 @@
 <a class="viewcode-back" href="../../../api/handles/gui_handles/#viser.GuiTabGroupHandle.remove">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove this tab group and all contained GUI elements.&quot;&quot;&quot;</span>
-        <span class="c1"># Warn if already removed.</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Attempted to remove an already removed </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">,</span>
-                <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="k">return</span>
-
-        <span class="c1"># Remove tabs first. Each tab.remove() writes back to this group&#39;s</span>
-        <span class="c1"># tab-list props (_tab_labels / _tab_icons_html / _tab_container_ids), so</span>
-        <span class="c1"># we must NOT mark the group removed until afterwards -- otherwise the</span>
-        <span class="c1"># removed-handle guard in props_setattr raises on those writes, leaving</span>
-        <span class="c1"># the group half-removed (still in its parent&#39;s _children with</span>
-        <span class="c1"># removed=True). A subsequent gui.reset() then spins forever, since its</span>
-        <span class="c1"># `while root._children: child.remove()` loop hits that group whose</span>
-        <span class="c1"># remove() now no-ops via the already-removed guard.</span>
+        <span class="n">gui_api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span>
+        <span class="c1"># Tombstone CHECK-AND-SET under the lifecycle lock, mirroring</span>
+        <span class="c1"># PanelHandle.remove(): add_tab() takes the same lock for its</span>
+        <span class="c1"># removed-check + append, so an unlocked tombstone here let a</span>
+        <span class="c1"># concurrent add_tab interleave between our tab snapshot and the</span>
+        <span class="c1"># tombstone -- registering a live container entry for a group that no</span>
+        <span class="c1"># longer exists, which silently accepts children forever.</span>
+        <span class="k">with</span> <span class="n">gui_api</span><span class="o">.</span><span class="n">_panel_lifecycle_lock</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Attempted to remove an already removed </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">,</span>
+                    <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">return</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">gui_api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">GuiRemoveMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">))</span>
+        <span class="c1"># Only the tombstone winner reaches here. The tab drain runs AFTER the</span>
+        <span class="c1"># tombstone and OUTSIDE the (non-reentrant) lock: each tab.remove()</span>
+        <span class="c1"># writes back to this group&#39;s tab tuples, which _rebuild_tab_props</span>
+        <span class="c1"># skips for a removed group (props_setattr would reject the write; the</span>
+        <span class="c1"># client drops the whole entity via the remove message anyway).</span>
         <span class="k">for</span> <span class="n">tab</span> <span class="ow">in</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tab_handles</span><span class="p">):</span>
             <span class="n">tab</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="n">gui_api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span>
-        <span class="n">gui_api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">GuiRemoveMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">))</span>
         <span class="n">parent</span> <span class="o">=</span> <span class="n">gui_api</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">parent_container_id</span><span class="p">]</span>
         <span class="n">parent</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span></div>
 </div>
@@ -2003,7 +2016,13 @@
         <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_submit_cb</span><span class="p">:</span>
             <span class="n">cb_out</span> <span class="o">=</span> <span class="n">cb</span><span class="p">(</span><span class="n">GuiEvent</span><span class="p">(</span><span class="n">client_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">client</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="p">))</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cb_out</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">):</span>
-                <span class="n">gui_api</span><span class="o">.</span><span class="n">_event_loop</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">cb_out</span><span class="p">)</span>
+                <span class="c1"># run_coroutine_threadsafe, not create_task: submit() is</span>
+                <span class="c1"># typically called from a user thread (e.g. a button&#39;s</span>
+                <span class="c1"># on_click handler), and create_task is neither thread-safe</span>
+                <span class="c1"># nor guaranteed to wake the loop.</span>
+                <span class="n">asyncio</span><span class="o">.</span><span class="n">run_coroutine_threadsafe</span><span class="p">(</span>
+                    <span class="n">cb_out</span><span class="p">,</span> <span class="n">gui_api</span><span class="o">.</span><span class="n">_event_loop</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_task_error</span><span class="p">)</span>
         <span class="c1"># Broadcast to clients so they reset dirty state.</span>
         <span class="n">gui_api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">GuiFormSubmitMessage</span><span class="p">(</span><span class="n">uuid</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
