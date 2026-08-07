@@ -74,6 +74,7 @@ from ._scene_handles import TransformControlsHandle as TransformControlsHandle
 from ._viser import CameraHandle as CameraHandle
 from ._viser import ClientHandle as ClientHandle
 from ._viser import InitialCameraConfig as InitialCameraConfig
+from ._viser import LocalStorageHandle as LocalStorageHandle
 from ._viser import ViserServer as ViserServer
 
 # Legacy alias for ``ScenePointerEvent``: importable at runtime but

@@ -321,6 +321,51 @@ function useMessageHandler() {
         return;
       }
 
+      // Set a key in localStorage.
+      case "LocalStorageSetItemMessage": {
+        try {
+          localStorage.setItem(message.key, message.value);
+        } catch (error) {
+          console.error("Failed to set localStorage item:", error);
+        }
+        return;
+      }
+      // Remove a key from localStorage.
+      case "LocalStorageRemoveItemMessage": {
+        try {
+          localStorage.removeItem(message.key);
+        } catch (error) {
+          console.error("Failed to remove localStorage item:", error);
+        }
+        return;
+      }
+      // Clear all localStorage.
+      case "LocalStorageClearMessage": {
+        try {
+          localStorage.clear();
+        } catch (error) {
+          console.error("Failed to clear localStorage:", error);
+        }
+        return;
+      }
+      // Request the value of a key from localStorage.
+      case "LocalStorageGetItemRequestMessage": {
+        let value: string | null = null;
+        let error: string | null = null;
+        try {
+          value = localStorage.getItem(message.key);
+        } catch (caught) {
+          error = caught instanceof Error ? caught.message : String(caught);
+        }
+        viewerMutable.sendMessage({
+          type: "LocalStorageGetItemResponseMessage",
+          value,
+          error,
+          request_uuid: message.request_uuid,
+        });
+        return;
+      }
+
       // Run some arbitrary Javascript.
       // This is used for plotting, where the Python server will send over a
       // copy of plotly.min.js for the currently-installed version of plotly.
