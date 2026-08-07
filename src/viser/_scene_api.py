@@ -3501,8 +3501,11 @@ class SceneApi:
         # must not starve its siblings or leave the list uncleared.
         for cleanup in list(self._scene_pointer_done_cb):
             if asyncio.iscoroutinefunction(cleanup):
-                task = self._event_loop.create_task(cleanup())
-                task.add_done_callback(print_task_error)
+                # run_coroutine_threadsafe, not create_task: callback removal
+                # can run on a user thread, and create_task is neither
+                # thread-safe nor guaranteed to wake the loop.
+                future = asyncio.run_coroutine_threadsafe(cleanup(), self._event_loop)
+                future.add_done_callback(print_task_error)
             else:
                 try:
                     cleanup()

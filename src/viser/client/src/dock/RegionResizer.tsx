@@ -2,7 +2,7 @@
 
 import { Box } from "@mantine/core";
 import React from "react";
-import { dragGesture } from "./gestures";
+import { exclusiveDragGesture, GestureSlot } from "./gestures";
 import { DockEdge } from "./types";
 
 // How far the grab zone extends onto the canvas side of the region boundary.
@@ -19,10 +19,13 @@ const GRIP_BAR_CLEARANCE_PX = 48;
 
 export function RegionResizer({
   edge,
+  gestureSlot,
   makeOnResize,
   getStart,
 }: {
   edge: DockEdge;
+  /** The dock-wide one-gesture mutex (spec §4) owned by DockManager. */
+  gestureSlot: GestureSlot;
   /** Called once per drag (at pointer down) so the handlers can snapshot the
    * columns' start widths (and the drag-start layout); returns the per-frame
    * resize handler plus the release/cancel handler (called after the final
@@ -39,13 +42,17 @@ export function RegionResizer({
   React.useEffect(() => () => activeDrag.current?.(), []);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    if (activeDrag.current !== null) return; // one drag per resizer
+    // One gesture at a time, dock-wide (spec §4): a press while ANY gesture
+    // is live -- a move drag, another resize -- is ignored, via the same
+    // shared slot dragController's armPress checks. Checked before the
+    // makeOnResize side effects (it sets data-dock-resizing).
+    if (gestureSlot.current !== null) return;
     event.stopPropagation();
     const startX = event.clientX;
     const startWidth = getStart();
     const handlers = makeOnResize();
     let pending = startWidth;
-    activeDrag.current = dragGesture({
+    activeDrag.current = exclusiveDragGesture(gestureSlot, {
       grip: event.currentTarget,
       pointerId: event.pointerId,
       update: (e) => {

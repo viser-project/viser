@@ -359,6 +359,16 @@ export class InstancedMesh2<
       this.performFrustumCulling(shadowCamera, camera);
     }
 
+    // === VISER LOCAL PATCH (see vendor/instanced-mesh/LOCAL_PATCHES.md) ===
+    // Disposed mesh (instanceIndex nulled): skip, mirroring onBeforeRender's
+    // null gate. The shadow pass runs BEFORE the main pass in a frame, so a
+    // frame drawn in the dispose->unmount window reaches this hook before
+    // onAfterRender's re-init branch can restore the attribute; without this
+    // gate the culling short-circuit above leaves `count` at its stale
+    // positive value and the update() below dereferences null.
+    if (!this.instanceIndex) return;
+    // === END VISER LOCAL PATCH ===
+
     if (this.count === 0) return;
 
     this.instanceIndex.update(this._renderer, this.count);
@@ -1078,9 +1088,26 @@ export class InstancedMesh2<
       const gl = this._renderer.getContext() as WebGL2RenderingContext;
       this.instanceIndex?.dispose(gl);
       if (this.LODinfo) {
-        for (const obj of this.LODinfo.objects) obj.instanceIndex?.dispose(gl);
+        for (const obj of this.LODinfo.objects) {
+          obj.instanceIndex?.dispose(gl);
+          obj.instanceIndex = null;
+          // LOD levels are separate meshes with their OWN geometries (addLOD
+          // takes a per-level geometry; `objects` includes `this`, a harmless
+          // repeat of the deleteAttribute below): each geometry must drop its
+          // retained instanceIndex attribute too, or a late frame drawing
+          // that level binds the freed buffer through the child's geometry.
+          obj._geometry?.deleteAttribute("instanceIndex");
+        }
       }
     }
+    // Null the reference (and the geometry's copy of it) after freeing the GL
+    // buffer: onBeforeRender/onAfterRender gate on `this.instanceIndex`
+    // falsiness, so a frame drawn between dispose() and React's unmount commit
+    // would otherwise bind the deleted buffer -- and never take the
+    // initIndexAttribute re-init branch. initIndexAttribute re-creates both
+    // the attribute and the geometry entry, so this doesn't break re-init.
+    this.instanceIndex = null;
+    this._geometry?.deleteAttribute("instanceIndex");
     // === END VISER LOCAL PATCH ===
   }
 

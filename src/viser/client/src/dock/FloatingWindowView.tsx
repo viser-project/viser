@@ -7,10 +7,11 @@ import { Box, Paper } from "@mantine/core";
 import React from "react";
 import { flushSync } from "react-dom";
 import { useDock } from "./DockContext";
-import { dragGesture } from "./gestures";
+import { exclusiveDragGesture } from "./gestures";
 import {
   cappedWindowHeight,
   cascadeResize,
+  stackDividerHeightPlan,
   windowAllMinimized,
 } from "./layoutOps";
 import { StackHandleBar } from "./handles";
@@ -270,8 +271,10 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
 
   // Cancel an in-flight grip gesture if this window unmounts mid-resize (e.g.
   // another client docks it away), so its listeners can't fire afterwards. One
-  // ref serves all grips: only one resize gesture may be active per window (a
-  // second finger on another grip is ignored while one is running).
+  // ref serves all grips for unmount cleanup; gesture EXCLUSION is the
+  // dock-wide slot (spec §4: one active gesture at a time, extra pointers
+  // ignored) -- a second finger on any grip, divider, or drag surface is
+  // ignored while one gesture is running anywhere in the dock.
   const activeGrip = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => activeGrip.current?.(), []);
   // True while a height resize is magnetized to the content-height detent (the
@@ -314,14 +317,14 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
   const widthResizeHandler =
     (side: "left" | "right") => (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
-      if (activeGrip.current !== null) return;
+      if (dock.gestureSlot.current !== null) return; // one gesture at a time (§4)
       event.stopPropagation();
       const startX = event.clientX;
       const { startWidth, widthFrom, xFor, startXRestore } = wResizeStart(side);
 
       let pending = startWidth;
       let pendingX: number | undefined = undefined;
-      activeGrip.current = dragGesture({
+      activeGrip.current = exclusiveDragGesture(dock.gestureSlot, {
         grip: event.currentTarget,
         pointerId: event.pointerId,
         update: (e) => {
@@ -422,7 +425,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     (vside: "top" | "bottom") =>
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
-      if (activeGrip.current !== null) return;
+      if (dock.gestureSlot.current !== null) return; // one gesture at a time (§4)
       event.stopPropagation();
       // Per-frame height writes must track the cursor 1:1: suppress the D34
       // height ease (windowCollapseAnim) on this window for the drag.
@@ -438,7 +441,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       } = vResizeStart(vside);
 
       let pending = startHeight;
-      activeGrip.current = dragGesture({
+      activeGrip.current = exclusiveDragGesture(dock.gestureSlot, {
         grip: event.currentTarget,
         pointerId: event.pointerId,
         update: (e) => {
@@ -463,7 +466,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
     (side: "left" | "right", vside: "top" | "bottom" = "bottom") =>
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
-      if (activeGrip.current !== null) return;
+      if (dock.gestureSlot.current !== null) return; // one gesture at a time (§4)
       event.stopPropagation();
       // Corner drags also write height per frame: suppress the D34 ease.
       paperRef.current?.setAttribute("data-dock-resizing", "");
@@ -483,7 +486,7 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       let pendingX: number | undefined = undefined;
       let pendingH = startHeight;
       // Suppress the width-ease while dragging the corner (width tracks 1:1).
-      activeGrip.current = dragGesture({
+      activeGrip.current = exclusiveDragGesture(dock.gestureSlot, {
         grip: event.currentTarget,
         pointerId: event.pointerId,
         update: (e) => {
@@ -723,6 +726,9 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
                         onSetStackWeights(win.id, weights)
                       }
                       isFixed={fixedHeight}
+                      // The STORED pin (uncapped): what a cancel/motionless
+                      // press must restore (stackDividerHeightPlan).
+                      pinnedPx={pinnedPx}
                       setWindowHeight={(px) => onResizeHeight(win.id, px)}
                     />
                   )}
@@ -775,6 +781,7 @@ function FloatingStackDivider({
   weightOf,
   onSetWeights,
   isFixed,
+  pinnedPx,
   setWindowHeight,
 }: {
   stackRef: React.RefObject<HTMLDivElement>;
@@ -792,9 +799,15 @@ function FloatingStackDivider({
    * pinned mode reproduces the exact on-screen layout and a motionless
    * click cannot move anything. */
   isFixed: boolean;
+  /** The STORED pin (pinnedPxOf(win.height)) -- uncapped, unlike the paper's
+   * rendered offsetHeight -- so a cancel/motionless press restores exactly
+   * it (stackDividerHeightPlan / P2). Undefined for an auto window. */
+  pinnedPx: number | undefined;
   /** Pin (px) or restore auto (undefined) -- the window height writer. */
   setWindowHeight: (px: number | undefined) => void;
 }) {
+  // The dock-wide one-gesture mutex (spec §4), shared via context.
+  const { gestureSlot } = useDock();
   // Cancel the in-flight gesture if the divider unmounts mid-drag (the stack
   // can be restructured by another client), so the window listeners can't fire
   // after unmount and the shared `resizing` flag can't stick true.
@@ -807,7 +820,9 @@ function FloatingStackDivider({
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!resizable) return;
     if (event.button !== 0) return;
-    if (activeDrag.current !== null) return; // one drag per divider
+    // One gesture at a time, dock-wide (spec §4): a press while any gesture
+    // is live is ignored -- checked BEFORE the pin/weight side effects below.
+    if (gestureSlot.current !== null) return;
     event.stopPropagation();
     const container = stackRef.current;
     if (container === null) return;
@@ -818,8 +833,16 @@ function FloatingStackDivider({
     // + the auto-height FLIP) stays out of per-frame height writes.
     container.setAttribute("data-dock-resizing", "");
     paperRef.current?.setAttribute("data-dock-resizing", "");
+    // The RENDERED height (capped) for live drag math, and the height plan
+    // separating it from the STORED pin a cancel must commit
+    // (stackDividerHeightPlan: committing the rendered height on a
+    // motionless press rewrote a stored 700px pin to the capped px).
     const paperStartH = paperRef.current?.offsetHeight ?? containerPx;
     const wasFixed = isFixed;
+    const heightPlan = stackDividerHeightPlan({
+      storedPinnedPx: wasFixed ? pinnedPx : undefined,
+      renderedPx: paperStartH,
+    });
     // Snapshot the cells' RENDERED heights BEFORE any mode change: these
     // seed the pinned-mode weights, so flipping an auto window to fixed
     // reproduces the exact on-screen layout (the old path seeded stored
@@ -839,8 +862,8 @@ function FloatingStackDivider({
     stack.forEach((g) => {
       startWeights[g] = weightOf(g);
     });
-    if (!wasFixed) {
-      setWindowHeight(paperStartH);
+    if (heightPlan.pinOnDown !== null) {
+      setWindowHeight(heightPlan.pinOnDown);
       onSetWeights(renderedPx);
     }
     const start = event.clientY;
@@ -892,7 +915,7 @@ function FloatingStackDivider({
       const y = paperRef.current.offsetTop;
       return Math.max(paperStartH, parent.clientHeight - y);
     };
-    activeDrag.current = dragGesture({
+    activeDrag.current = exclusiveDragGesture(gestureSlot, {
       grip: event.currentTarget,
       pointerId: event.pointerId,
       update: (e) => {
@@ -960,10 +983,14 @@ function FloatingStackDivider({
           // Escape OR a motionless click: full restore -- weights AND the
           // height mode (an auto window a click briefly pinned reverts to
           // auto; P2: layout, sizes, and modes return to pre-gesture
-          // values). The detent never touches this path: cancel restores
-          // the exact pre-gesture mode/values regardless of any snap.
+          // values). The height committed is the STORED pin, never the
+          // rendered offsetHeight (heightPlan doc; the grip's
+          // startHeightCommit rule): a motionless press on a pinned window
+          // is a no-op on stored state. The detent never touches this
+          // path: cancel restores the exact pre-gesture mode/values
+          // regardless of any snap.
           onSetWeights(startWeights);
-          setWindowHeight(wasFixed ? paperStartH : undefined);
+          setWindowHeight(heightPlan.cancelCommit);
           return;
         }
         // THE SEMANTIC ARM (D56): releasing with EVERY cell of the stack at

@@ -425,8 +425,18 @@ function AppLayout({
   messageProducer: React.ReactNode;
 }) {
   const mantineTheme = useMantineTheme();
-  const useMobileView =
-    useMediaQuery(`(max-width: ${mantineTheme.breakpoints.xs})`) ?? false;
+  // `getInitialValueInEffect: false` makes the first render read matchMedia
+  // synchronously. With the effect-based default, a mobile-width load rendered
+  // desktop-first (`useMobileView === false`), mounted the canvas inside
+  // <ControlPanelDockSurface>, then flipped on the next render -- changing the
+  // element structure around `canvasContent` and remounting the entire canvas
+  // subtree (new WebGL context). This is a client-only app, so there is no SSR
+  // path that needs the deferred read.
+  const useMobileView = useMediaQuery(
+    `(max-width: ${mantineTheme.breakpoints.xs})`,
+    false,
+    { getInitialValueInEffect: false },
+  );
   // The floating layout runs on the docking library: the control panel is a
   // dock panel over the canvas (draggable, dockable to either edge, resizable,
   // minimizable). Sidebar layouts and the mobile bottom sheet are unchanged.

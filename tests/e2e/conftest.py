@@ -4,11 +4,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
-import tempfile
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Generator
 
@@ -18,6 +13,7 @@ from playwright.sync_api import Page
 import viser
 import viser._client_autobuild
 
+from . import vite_manager
 from .utils import find_free_port, wait_for_connection, wait_for_server_ready
 
 TEST_RESULTS_DIR = Path(__file__).resolve().parent.parent.parent / "test-results"
@@ -61,8 +57,6 @@ def pytest_configure(config: pytest.Config) -> None:
     the CLI) to re-enable ``retain-on-failure`` capture when debugging a flaky
     or hard-to-reproduce failure.
     """
-    import os
-
     if not os.environ.get("VISER_E2E_CAPTURE"):
         return
     option = config.option
@@ -194,45 +188,14 @@ def viser_page(
 # server (HMR off, serving the client SOURCE at /dock_test.html) per session/
 # xdist worker, instead of one per module: dock tests don't touch the prebuilt
 # client bundle, and a shared server cuts repeated ~5s startups.
+#
+# The server process itself lives in vite_manager.ViteServerManager so that
+# dock_helpers.open_playground can RESTART it mid-session: on CI the dev
+# server has twice wedged permanently partway through a run (HTML still
+# served, module graph never completing -- see vite_manager's module
+# docstring), and a restart is the only recovery.
 # ---------------------------------------------------------------------------
-DOCK_CLIENT_DIR = Path(__file__).resolve().parents[2] / "src" / "viser" / "client"
-
-# Wrap the client's vite config with HMR disabled: the playground tests drive
-# deterministic DOM interactions, and an HMR websocket reconnect mid-test can
-# reload the page under the pointer. Also disable file watching entirely (the
-# tests never edit source mid-run) -- vite otherwise recursively watches the
-# whole client dir, including the huge `.nodeenv`/`node_modules` trees, which can
-# exhaust the OS inotify watcher limit and crash the dev server on startup
-# (ENOSPC). usePolling:false + ignored globs keeps the server lightweight.
-_DOCK_HMR_OFF_CONFIG = """\
-import base from "./vite.config.mts";
-export default async (env) => {
-  const resolved = typeof base === "function" ? await base(env) : base;
-  return {
-    ...resolved,
-    server: {
-      ...(resolved.server || {}),
-      hmr: false,
-      watch: { ignored: ["**/.nodeenv/**", "**/node_modules/**"] },
-    },
-  };
-};
-"""
-
-
-def _wait_for_http(port: int, path: str, timeout: float = 30.0) -> None:
-    deadline = time.monotonic() + timeout
-    url = f"http://localhost:{port}{path}"
-    last_err: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            with urllib.request.urlopen(url, timeout=1.0) as resp:
-                if resp.status == 200:
-                    return
-        except (urllib.error.URLError, ConnectionError, OSError) as err:
-            last_err = err
-            time.sleep(0.1)
-    raise RuntimeError(f"Vite dev server not ready at {url}: {last_err}")
+DOCK_CLIENT_DIR = vite_manager.DOCK_CLIENT_DIR
 
 
 @pytest.fixture(scope="session")
@@ -243,30 +206,12 @@ def vite_server() -> Generator[int, None, None]:
     if not (DOCK_CLIENT_DIR / "node_modules").exists():
         pytest.skip("client node_modules missing; run `npm install` in the client dir")
 
-    cfg_fd, cfg_name = tempfile.mkstemp(
-        prefix="vite.e2e.hmroff.", suffix=".mts", dir=str(DOCK_CLIENT_DIR)
-    )
-    cfg_path = Path(cfg_name)
-    with os.fdopen(cfg_fd, "w") as f:
-        f.write(_DOCK_HMR_OFF_CONFIG)
-
-    port = find_free_port()
-    proc = subprocess.Popen(
-        ["npx", "vite", "--config", str(cfg_path), "--port", str(port), "--strictPort"],
-        cwd=str(DOCK_CLIENT_DIR),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    manager = vite_manager.ViteServerManager(find_free_port())
     try:
-        _wait_for_http(port, "/dock_test.html")
-        yield port
+        manager.start()
+        yield manager.port
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        cfg_path.unlink(missing_ok=True)
+        manager.close()
 
 
 @pytest.fixture(scope="module")

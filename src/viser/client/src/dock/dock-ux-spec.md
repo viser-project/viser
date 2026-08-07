@@ -631,7 +631,16 @@ constants in `hitTest.ts`; changing one is a spec change.
    band would shadow a whole 36px strip whose own 8px sliver already
    resolves to the same seam insert, and packed strips tile the whole
    region, so dock-beside there is entirely the rails' own slivers
-   (edge case 13). Suppressed where they'd duplicate the per-cell
+   (edge case 13). The yield covers each band's WHOLE run wherever it
+   horizontally overlaps a collapsed cell (at the pointer's height
+   within that cell), the cell's own pixels and the band's few-px
+   overhang past a 36px strip alike: the overhang sits on the strip's
+   adjacent seam between two zones that resolve there, so it must
+   resolve there too — the same-seam rule above — never to the region
+   boundary (which made the line hop outward and back across a 3px
+   sweep). The rail HEADER run is unaffected: no cell owns the pointer
+   at that height, so the bands still claim those pixels (§5.3).
+   Suppressed where they'd duplicate the per-cell
    resolution (a single-column, single-leaf region) and while a
    floating window's paper rect owns the pointer (§3.5).
 4. **Per-target zones**: the cell-, rail-, and bar-level zones of

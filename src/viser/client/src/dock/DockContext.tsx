@@ -4,6 +4,7 @@
 // split tree by hand.
 
 import React from "react";
+import { GestureSlot } from "./gestures";
 import {
   NodeId,
   AreaId,
@@ -45,6 +46,13 @@ export interface DockApi {
 
 export interface DockContextValue {
   panes: PaneRegistry;
+  /** The one-gesture mutex (spec §4: "One active gesture at a time; extra
+   * pointers are ignored"): the shared slot EVERY gesture entry point --
+   * move drags (via the start* gestures below, which check it internally)
+   * and the resize surfaces (dividers, window grips, the region resizer) --
+   * acquires. Ref-backed and identity-stable across renders; DockManager
+   * owns the ref and runs the parked cleanup if it unmounts mid-gesture. */
+  gestureSlot: GestureSlot;
   /** Imperative pane lifecycle API (stable identity). */
   api: DockApi;
   /** The committed layout, for sync layers that need to observe where things

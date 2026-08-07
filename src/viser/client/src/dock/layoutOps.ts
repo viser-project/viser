@@ -942,6 +942,39 @@ export function cappedWindowHeight(
   return Math.min(pinnedHeight, Math.max(floor, containerHeight - 8));
 }
 
+/** The stack divider's height plan, snapshotted at pointer down (spec §4's
+ * floating height-divider row + P2). Two distinct heights are in play and
+ * conflating them was a bug:
+ *   - `renderedPx` -- the paper's on-screen height, i.e.
+ *     cappedWindowHeight(pin, container) when pinned. LIVE DRAG math (the
+ *     auto->pinned seed, push-through budgets) runs on this: it is what the
+ *     user sees and trades.
+ *   - the STORED pin (`storedPinnedPx`, win.height) -- what a CANCEL or
+ *     motionless press must commit. Committing the rendered height instead
+ *     silently rewrote a stored 700px pin to ~container px on a motionless
+ *     press (P2: cancel restores the exact pre-gesture stored state; a
+ *     motionless press is a no-op on stored state). Same rule as the window
+ *     grip's startHeightCommit. An auto window restores to auto. */
+export function stackDividerHeightPlan(opts: {
+  /** The stored pin (pinnedPxOf(win.height)); undefined for an auto window. */
+  storedPinnedPx: number | undefined;
+  /** The paper's rendered height at drag start (offsetHeight). */
+  renderedPx: number;
+}): {
+  /** Pin committed at pointer down for an AUTO window (the rendered seed, so
+   * entering pinned mode reproduces the on-screen layout); null when already
+   * pinned -- a press changes nothing. */
+  pinOnDown: number | null;
+  /** What cancel / a motionless press commits: the stored pin (uncapped),
+   * or undefined to restore auto mode. */
+  cancelCommit: number | undefined;
+} {
+  return {
+    pinOnDown: opts.storedPinnedPx === undefined ? opts.renderedPx : null,
+    cancelCommit: opts.storedPinnedPx,
+  };
+}
+
 /** Set a floating window's explicit height (px), switching it from auto-height
  * to fixed-height with its contents scrolling -- or pass `undefined` to clear
  * the pin and return it to auto-height (the window tracks its content again).

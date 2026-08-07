@@ -15,6 +15,8 @@ from typing import Any, Mapping, Sequence
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 
+from .vite_manager import restart_for_port
+
 PLAYGROUND_PATH = "/dock_test.html"
 
 # Page-open readiness is a liveness wait, not an assertion: a generous timeout
@@ -38,9 +40,31 @@ def open_playground(dock_context, port: int, w: int = 1280, h: int = 800) -> Pag
     Retries once on a fresh page: waiting longer cannot rescue a page whose
     module-graph fetch got stuck, but a second page reuses the context's warm
     HTTP cache, so the retry is cheap.
+
+    If BOTH attempts fail, the worker's shared Vite dev server is restarted
+    and one final attempt runs against the fresh server. Two consecutive
+    boot failures are the signature of the server itself being wedged (CI
+    2026-07-27 and 2026-07-29: goto kept succeeding but the module graph
+    never completed, permanently, with esbuild children hung -- so every
+    later playground test on the worker burned the full timeout and failed).
+    A page-level retry cannot recover from that; a server restart does.
     """
     last_err: Exception | None = None
-    for _ in range(2):
+    for attempt in range(3):
+        if attempt == 2:
+            # Third attempt exists only to run against a freshly restarted
+            # server; without a managed server to restart it would just
+            # repeat the same failure against the same wedged process. If the
+            # restart itself fails, surface the PAGE symptom (the diagnostic
+            # that matters) with the restart failure chained as context,
+            # rather than letting the restart error replace it.
+            try:
+                restarted = restart_for_port(port)
+            except Exception as restart_err:
+                assert last_err is not None
+                raise last_err from restart_err
+            if not restarted:
+                break
         pg = dock_context.new_page()
         pg.set_viewport_size({"width": w, "height": h})
         try:

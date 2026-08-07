@@ -11,7 +11,7 @@ import { GuiComponentContext } from "./GuiComponentContext";
 import { htmlIconWrapper } from "../components/ComponentStyles.css";
 import { GuiDockContext } from "./GuiDockContext";
 import { DockContext } from "../dock/DockContext";
-import { shallowObjectKeysEqual } from "../utils/shallowObjectKeysEqual";
+import { panelsSelectorEquality } from "./panelsEquality";
 import {
   ActionIcon,
   Anchor,
@@ -260,7 +260,9 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
  * honored on this path too); sections sort by the server-side order. */
 function PanelsFallback() {
   const viewer = React.useContext(ViewerContext)!;
-  const panels = viewer.useGui((state) => state.panels, shallowObjectKeysEqual);
+  // Value-level equality, NOT key-set equality -- see panelsEquality.ts,
+  // which panelUpdates.test.ts pins.
+  const panels = viewer.useGui((state) => state.panels, panelsSelectorEquality);
   // On the dock surface, StandalonePanelSync places panels as dock groups -- so
   // this inline fallback must NOT also render them (that would double-render).
   const dockCtx = React.useContext(DockContext);

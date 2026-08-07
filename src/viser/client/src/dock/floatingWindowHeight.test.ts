@@ -6,7 +6,7 @@
 // D33 header/face-bar constancy constant.
 
 import { describe, expect, it } from "vitest";
-import { cappedWindowHeight } from "./layoutOps";
+import { cappedWindowHeight, stackDividerHeightPlan } from "./layoutOps";
 import {
   collapsedWindowHeightCss,
   FACE_BAR_EM,
@@ -47,6 +47,39 @@ describe("cappedWindowHeight", () => {
 
   it("returns the pinned height when the container is unmeasured (0)", () => {
     expect(cappedWindowHeight(300, 0)).toBe(300);
+  });
+});
+
+// P2 pin for the stack divider's cancel path (spec §4's floating
+// height-divider row: "a motionless press restores everything"): what a
+// cancel/motionless press commits is the STORED pin (win.height), never the
+// paper's rendered offsetHeight -- which is cappedWindowHeight(pin,
+// container) and therefore SMALLER whenever the container is shorter than
+// the pin. Committing the rendered height rewrote a stored 700 to 392 in a
+// 400px container on a motionless divider press.
+describe("stackDividerHeightPlan (cancel restores the stored pin)", () => {
+  it("pinned window: motionless press / Escape commit the stored 700, not the capped 392", () => {
+    const stored = 700;
+    const rendered = cappedWindowHeight(stored, 400); // 392 on screen
+    expect(rendered).toBe(392);
+    const plan = stackDividerHeightPlan({
+      storedPinnedPx: stored,
+      renderedPx: rendered,
+    });
+    // Already pinned: the press itself commits nothing...
+    expect(plan.pinOnDown).toBeNull();
+    // ...and cancel restores the stored pin exactly (700 stays 700).
+    expect(plan.cancelCommit).toBe(700);
+    expect(plan.cancelCommit).not.toBe(rendered);
+  });
+
+  it("auto window: press pins the rendered height; cancel reverts to auto", () => {
+    const plan = stackDividerHeightPlan({
+      storedPinnedPx: undefined,
+      renderedPx: 300,
+    });
+    expect(plan.pinOnDown).toBe(300);
+    expect(plan.cancelCommit).toBeUndefined();
   });
 });
 

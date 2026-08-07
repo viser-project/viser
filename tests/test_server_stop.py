@@ -86,3 +86,55 @@ def test_atexit_stop_outwaits_gil_contention():
         "The background loop thread was still alive after viser's atexit "
         f"cleanup.\nstdout: {result.stdout}\nstderr: {result.stderr}"
     )
+
+
+_INIT_FAILURE_EXIT_SCRIPT = """
+import viser, viser._client_autobuild, viser._viser
+
+viser._client_autobuild.ensure_client_is_built = lambda: None
+
+
+class Boom(Exception):
+    pass
+
+
+def _fail(*args, **kwargs):
+    raise Boom()
+
+
+# SceneApi is constructed AFTER ViserServer.__init__ registers stop() with
+# atexit, so this failure leaves the registered stop() pointed at a
+# partially-built server.
+viser._viser.SceneApi = _fail
+
+try:
+    viser.ViserServer(port=0, verbose=False)
+except Boom:
+    print("INIT_FAILED_AS_EXPECTED", flush=True)
+# Exit WITHOUT unregistering anything: the atexit-time stop() must run cleanly
+# against the partially-built server.
+"""
+
+
+def test_atexit_stop_tolerates_init_failure():
+    """The atexit-registered stop() must not raise when __init__ failed partway.
+
+    Regression: stop() was registered with atexit before ``_share_tunnel`` was
+    assigned. If __init__ failed in between, the atexit-time stop() missed the
+    attribute and fell into DeprecatedAttributeShim.__getattr__, whose
+    ``self.scene`` lookup (also unset) recursed until RecursionError -- an
+    exception at interpreter exit re-raised after the exit handlers, failing
+    the process.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", _INIT_FAILURE_EXIT_SCRIPT],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert "INIT_FAILED_AS_EXPECTED" in result.stdout, (
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert "RecursionError" not in result.stderr, result.stderr
+    assert result.returncode == 0, f"stdout: {result.stdout}\nstderr: {result.stderr}"

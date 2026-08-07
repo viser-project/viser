@@ -1183,6 +1183,78 @@ describe("P9 (D55): one seam resolves to one result and one line across all its 
   });
 });
 
+// ===========================================================================
+// D55 "one seam, one drop" at a side band's OVERHANG past a rail: on
+// [rail | a] the 40px region side band overhangs the 36px strip by a few px.
+// The band yields to the collapsed cell across its WHOLE run there (not just
+// the cell's own pixels), so the overhang resolves -- like both its
+// neighbors (the rail's inner sliver, the divider gap) -- to the seam BESIDE
+// the rail, never hopping to the region-boundary seam 0 mid-sweep.
+// ===========================================================================
+describe("D55: side-band overhang past a rail resolves with its neighbors (no hint hop)", () => {
+  // Left region [rail | a], rendered 300px wide: the rail is a fixed 36px
+  // strip, then the divider gap, then the expanded column.
+  const RAIL_W = 36;
+  const railSpec = colSplit([leaf("s")]);
+  if (railSpec.kind === "col") railSpec.column.railed = true;
+  const aSpec = leaf("a");
+  const tree = rowSplit([railSpec, aSpec]);
+  const layout = layoutWith({ left: tree });
+  const railLeafId = leafIdsOf(tree)[0];
+  const aLeafId = leafIdsOf(tree)[1];
+  const A_LEFT = RAIL_W + SPLIT_DIVIDER_PX;
+  const targets = (): GroupTarget[] => [
+    {
+      groupId: "s",
+      // Rail cell rect: starts below the ~16px header chrome (D53), extends
+      // to the strip bottom (last cell).
+      rect: rect(0, 16, RAIL_W, 784),
+      stripRect: null,
+      tabs: [{ paneId: "s.0", rect: rect(0, 40, RAIL_W, 70) }],
+      ctx: { kind: "docked", nodeId: railLeafId, edge: "left" },
+      collapsed: true,
+    },
+    dockedTarget("a", aLeafId, "left", rect(A_LEFT, 0, 300 - A_LEFT, 800)),
+  ];
+
+  it("sweeping x across the rail's inner edge: one seam, one hint (no 34.5->0->34.5 hop)", () => {
+    // x=30..45 spans the rail's inner sliver, the band overhang past the
+    // rail (x 37..39 -- inside the 40px band but past the 36px strip), the
+    // divider gap, and a's left side band; y mid-strip. Every sample must
+    // resolve to the SAME columnInsert seam (index 1, beside the rail) with
+    // a pixel-identical seam-centered hint.
+    const first = run(layout, targets(), 30, 400)!;
+    expect(first.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 1,
+    });
+    for (let x = 30; x <= 45; x += 1) {
+      const out = run(layout, targets(), x, 400);
+      expect(out, `null at x=${x}`).not.toBeNull();
+      expect(out!.result, `result changed at x=${x}`).toEqual(first.result);
+      expect(out!.hint, `hint moved at x=${x}`).toEqual(first.hint);
+    }
+    // The one line is region-tall and centered on the rail|a seam.
+    expect(first.hint.height).toBe(CONTAINER.height);
+    expect(first.hint.left + first.hint.width / 2).toBeCloseTo(
+      (RAIL_W + A_LEFT) / 2,
+      1,
+    );
+  });
+
+  it("the band still fires over the rail HEADER run (no cell owns the pointer there)", () => {
+    // y=8: above the rail cell's top (the header chrome, spec 5.3) -- the
+    // region band claims those pixels, resolving to seam 0.
+    const out = run(layout, targets(), 20, 8)!;
+    expect(out.result).toEqual({
+      kind: "columnInsert",
+      edge: "left",
+      index: 0,
+    });
+  });
+});
+
 // A content-sized minimized strip reads top-to-bottom: a thin top/bottom EDGE
 // band stacks a new cell above/below, the spine-label rows insert at a tab
 // position, and the + cap (just inside the top edge) merges. The cap must NOT be
@@ -1218,23 +1290,61 @@ describe("collapsed-target vertical zones (content-sized strip)", () => {
     return l;
   };
 
-  it("the + cap (just inside the top edge) -> add to the group, not split-above", () => {
+  it("the + cap (just inside the top edge) -> merge into the group, not split-above", () => {
     const l = baseLayout();
     const strip = mkStrip([
       { paneId: "p0", rect: rect(left, 124, STRIP, 26) },
       { paneId: "p1", rect: rect(left, 152, STRIP, 26) },
     ]);
     const targets: DropTargets = { groups: [strip] };
-    // y=115: the + cap, above the first row (at y=124) but past the 6px edge
-    // band (ends at y=106). It must ADD the panel to the group (insertTab at the
-    // top), NOT a split-above -- regression: the cap used to be swallowed by the
-    // "above" split zone, leaving no way to drop INTO a minimized strip.
+    // y=115: the + cap, above the first row (at y=124, and clear of its 8px
+    // insert-proximity run starting at y=116) but past the edge band (ends at
+    // y=108). Spec 5.3: "the rest, cap included: merge into that group" -- so
+    // the cap MERGES (appends), NOT a split-above (regression: the cap used
+    // to be swallowed by the "above" split zone, leaving no way to drop INTO
+    // a minimized strip) and NOT an insertTab (regression: nearest-row
+    // insertion had no distance bound, making merge unreachable anywhere on
+    // the strip).
     const out = hitTest(l, SW, CONTAINER, targets, midX, 115)?.result;
     expect(out).toMatchObject({
-      kind: "insertTab",
+      kind: "merge",
       targetGroupId: "s",
-      index: 0,
     });
+  });
+
+  it("near a spine row -> insertTab; far from any row (the cap) -> merge (spec 5.3)", () => {
+    const l = baseLayout();
+    // A taller strip with a taller cap run: rows start at y=140, so the cap
+    // spans ~[108..132) (past the 8px top edge band, clear of the first
+    // row's 8px insert-proximity run starting at y=132).
+    const strip: GroupTarget = {
+      groupId: "s",
+      rect: rect(left, 100, STRIP, 120),
+      stripRect: null,
+      tabs: [
+        { paneId: "p0", rect: rect(left, 140, STRIP, 26) },
+        { paneId: "p1", rect: rect(left, 168, STRIP, 26) },
+      ],
+      ctx: { kind: "docked", nodeId: "Ls", edge: "right" },
+      collapsed: true,
+    };
+    const targets: DropTargets = { groups: [strip] };
+    // Within 8px above the first row: still an insert (index 0).
+    expect(hitTest(l, SW, CONTAINER, targets, midX, 135)?.result).toMatchObject(
+      { kind: "insertTab", targetGroupId: "s", index: 0 },
+    );
+    // Between the rows: insert between them (index 1).
+    expect(hitTest(l, SW, CONTAINER, targets, midX, 167)?.result).toMatchObject(
+      { kind: "insertTab", targetGroupId: "s", index: 1 },
+    );
+    // Over the cap, beyond the proximity bound: merge, per 5.3's "the rest,
+    // cap included".
+    for (const y of [112, 120, 128]) {
+      expect(
+        hitTest(l, SW, CONTAINER, targets, midX, y)?.result,
+        `y=${y}`,
+      ).toMatchObject({ kind: "merge", targetGroupId: "s" });
+    }
   });
 
   it("thin top/bottom edges -> split; over a row -> insertTab", () => {
@@ -1314,6 +1424,60 @@ describe("floating snap zones", () => {
     };
     const out = run(layout, [tgt], 420, 225)!;
     expect(out.result.kind).toBe("insertTab");
+  });
+});
+
+// ===========================================================================
+// P11/D4 on the bottom split band: the band is 25% of the content height,
+// so on a short cell it dips under the 8px zone minimum -- and a sub-minimum
+// zone is REMOVED, not shrunk (misfire converter). Short cell -> no bottom
+// zone (the body stays merge); tall cell -> zone present. Applies to both
+// variants that share the band math: the docked bottom-split and the
+// floating snap-below.
+// ===========================================================================
+describe("P11: sub-8px bottom split band is removed, not shrunk", () => {
+  it("docked short cell (band would be <8px): bottom edge merges, no split", () => {
+    // Cell 70px tall: strip [112..142], content [142..172] -> ch=28,
+    // 25% = 7px < 8px floor -> zone removed.
+    const tree = leaf("g");
+    const layout = layoutWith({ left: tree });
+    const tgt = dockedTarget(
+      "g",
+      leafIdOf(tree),
+      "left",
+      rect(0, 100, 300, 70),
+    );
+    const out = run(layout, [tgt], 150, 170)!;
+    expect(out.result).toEqual({ kind: "merge", targetGroupId: "g" });
+  });
+
+  it("docked tall cell: the bottom split band is present", () => {
+    // Cell 442px tall: content [142..542] -> ch=400, band = 100px (capped).
+    const tree = leaf("g");
+    const layout = layoutWith({ left: tree });
+    const tgt = dockedTarget(
+      "g",
+      leafIdOf(tree),
+      "left",
+      rect(0, 100, 300, 442),
+    );
+    const out = run(layout, [tgt], 150, 535)!;
+    expect(out.result).toMatchObject({ kind: "split", region: "bottom" });
+  });
+
+  it("floating short cell: no snap-below band, bottom edge merges", () => {
+    const layout = layoutWith({});
+    // 70px cell: content [242..270] -> ch=28 -> band removed.
+    const tgt = floatingTarget("g", "w1", 0, rect(400, 200, 300, 70));
+    const out = run(layout, [tgt], 550, 268)!;
+    expect(out.result).toEqual({ kind: "merge", targetGroupId: "g" });
+  });
+
+  it("floating tall cell: the snap-below band is present (existing behavior)", () => {
+    const layout = layoutWith({});
+    const tgt = floatingTarget("g", "w1", 0, rect(400, 200, 300, 300));
+    const out = run(layout, [tgt], 550, 490)!;
+    expect(out.result).toEqual({ kind: "snap", windowId: "w1", index: 1 });
   });
 });
 

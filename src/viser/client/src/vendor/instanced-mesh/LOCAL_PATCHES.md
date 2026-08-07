@@ -96,3 +96,26 @@ lists every divergence from upstream.
 - **Re-apply check:** if upstream resolves its "fix shadowMap sorting"
   TODO by skipping sorts during shadow rendering in the non-LOD path, this
   patch may be redundant -- the shadow-pass tests verify either way.
+
+### 5. Make a frame drawn in the dispose->unmount window safe
+
+- **File:** `core/InstancedMesh2.ts`
+- **What:** three additions on top of patch 1's dispose hardening:
+  `dispose()` nulls `instanceIndex` and deletes the geometry's
+  `instanceIndex` attribute -- for the main mesh AND every LOD level's own
+  geometry (LOD levels are separate meshes with per-level geometries);
+  `onBeforeShadow()` gains the same `!this.instanceIndex` early-return that
+  `onBeforeRender()` already had.
+- **Why:** React commits the swap to a new mesh asynchronously, so a frame can
+  render the old mesh after `dispose()`. Without the nulling, that frame binds
+  the freed GL buffer (undefined behavior); without the shadow gate, it
+  crashes -- the shadow pass runs BEFORE the main pass, `onBeforeShadow` only
+  guarded its culling call with `instanceIndex &&`, and the unconditional
+  `instanceIndex.update(...)` below it dereferences null (any shadow-casting
+  batched mesh under a shadow-mapped light). `onAfterRender`'s re-init branch
+  then restores a valid attribute for any later frames, at the accepted cost
+  of one fresh buffer. Covered by `core/InstancedMesh2.dispose.test.ts`.
+- **Re-apply check:** if upstream restructures the render/shadow hooks, the
+  invariant to preserve is "every `instanceIndex` dereference in a hook is
+  behind a null gate, and dispose leaves no geometry (main or LOD) retaining
+  the attribute."

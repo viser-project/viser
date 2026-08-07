@@ -128,6 +128,15 @@ export function makeRegionResizeHandlers(
     runProgrammatic,
   } = deps;
   const layout0 = layoutRef.current;
+  // Pre-gesture float x positions, for the Escape restore (P2 / spec §4:
+  // "Escape ... restores the exact pre-gesture layout" -- pushed floats
+  // included). pushFloatsAheadOfSeam is stateless and grow-only, so the
+  // cancel's width-restore frame cannot un-push floats the drag displaced --
+  // and when the drag had SHRUNK the region, that restore frame is itself a
+  // grow that pushes floats the drag never touched. `x` is the only float
+  // field the gesture writes, so `x` is what the snapshot restores (a
+  // concurrent programmatic move of anything else is left alone, P6).
+  const floatX0 = new Map(layout0.floating.map((w) => [w.id, w.x]));
   // Per-frame width writes must land instantly: suppress the D34 width/flex
   // transitions under the whole dock for the drag's duration
   // (regionWidthAnim/collapseAnim read the [data-dock-resizing] ancestor), or
@@ -135,11 +144,35 @@ export function makeRegionResizeHandlers(
   containerRef.current?.setAttribute("data-dock-resizing", "");
   const onEnd = (cancelled: boolean) => {
     containerRef.current?.removeAttribute("data-dock-resizing");
-    // Skip on cancel (Escape restored the start widths) and on a click without
-    // motion (no frame committed, layout unchanged). Otherwise fire one
-    // user-attributed commit spanning the whole drag: layout state is already
-    // final, this only informs the host's ownership diff.
-    if (cancelled || layout0 === layoutRef.current) return;
+    if (cancelled) {
+      // Escape: put every float back where the gesture found it. Runs AFTER
+      // the resizer's width-restore frame (RegionResizer replays
+      // onFrame(startWidth) before calling onEnd(true)), so this is the
+      // gesture's last write and cannot be re-pushed by that frame. A
+      // programmatic commit (an Escape-cancel must leave no user-attributed
+      // trace), like the per-frame commits.
+      const cur = layoutRef.current;
+      let changed = false;
+      const floating = cur.floating.map((w) => {
+        const x0 = floatX0.get(w.id);
+        if (x0 === undefined || x0 === w.x) return w;
+        changed = true;
+        return { ...w, x: x0 };
+      });
+      if (changed) {
+        // Same clone rule as pushFloatsAheadOfSeam: the draft flows into
+        // applyOp, whose normalize/reconcile steps mutate their input.
+        const next = ops.cloneLayout(cur);
+        next.floating = floating;
+        runProgrammatic(() => applyOp(next));
+      }
+      return;
+    }
+    // Skip on a click without motion (no frame committed, layout unchanged).
+    // Otherwise fire one user-attributed commit spanning the whole drag:
+    // layout state is already final, this only informs the host's ownership
+    // diff.
+    if (layout0 === layoutRef.current) return;
     onCommitRef.current?.(layout0, layoutRef.current, false);
   };
   const tree0 = layout0.docked[edge];
