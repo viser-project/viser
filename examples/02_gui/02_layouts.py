@@ -5,6 +5,7 @@ Organize GUI controls using folders, forms, tabs, and nested structures for bett
 **Features:**
 
 * :meth:`viser.GuiApi.add_folder` for grouping related controls
+* :meth:`viser.GuiApi.add_row` for side-by-side controls
 * :meth:`viser.GuiApi.add_form` for groups that commit together on submit
 * :meth:`viser.GuiApi.add_tab_group` and :meth:`viser.GuiTabGroupHandle.add_tab` for tabbed interfaces
 * :meth:`viser.GuiApi.add_divider` for separating sections with a horizontal line
@@ -48,8 +49,9 @@ def main() -> None:
 
         server.gui.add_divider()
 
-        show_axes = server.gui.add_checkbox("Show Coordinate Axes", initial_value=True)
-        server.gui.add_checkbox("Show Grid", initial_value=False)
+        with server.gui.add_row():
+            show_axes = server.gui.add_checkbox("Show Coordinate Axes", initial_value=True)
+            server.gui.add_checkbox("Show Grid", initial_value=False)
 
         with server.gui.add_folder("Sphere"):
             sphere_radius = server.gui.add_slider(
