@@ -1224,6 +1224,53 @@ class GaussianSplatHandle(
 
         self.buffer = new_buffer
 
+    def set_gaussians(
+        self,
+        centers: np.ndarray,
+        covariances: np.ndarray,
+        rgbs: np.ndarray,
+        opacities: np.ndarray,
+    ) -> None:
+        """Atomically update all Gaussian attributes, including count changes.
+
+        This is the preferred fast path when per-frame updates may change the
+        number of Gaussians. It performs at most one resize and emits one buffer
+        update, preventing transient mixed-state frames from sequential property
+        assignments (centers/covariances/colors/opacities one-by-one).
+        """
+        from ._assignable_props_api import colors_to_uint8
+
+        assert centers.ndim == 2 and centers.shape[1] == 3, (
+            f"centers must have shape (N, 3), got {centers.shape}"
+        )
+        num_gaussians = centers.shape[0]
+        assert covariances.ndim == 3 and covariances.shape == (num_gaussians, 3, 3), (
+            f"covariances must have shape ({num_gaussians}, 3, 3), got {covariances.shape}"
+        )
+        assert rgbs.ndim == 2 and rgbs.shape == (num_gaussians, 3), (
+            f"rgbs must have shape ({num_gaussians}, 3), got {rgbs.shape}"
+        )
+        assert opacities.ndim == 2 and opacities.shape == (num_gaussians, 1), (
+            f"opacities must have shape ({num_gaussians}, 1), got {opacities.shape}"
+        )
+
+        self._ensure_buffer_size(num_gaussians)
+
+        buffer = self.buffer
+        buffer[:, 0:3] = np.ascontiguousarray(centers, dtype=np.float32).view(np.uint32)
+
+        cov_triu = covariances.reshape((-1, 9))[:, np.array([0, 1, 2, 4, 5, 8])]
+        cov_triu_f16 = np.ascontiguousarray(cov_triu, dtype=np.float16)
+        buffer[:, 4:7] = cov_triu_f16.view(np.uint32)
+
+        rgba = buffer[:, 7:8].view(np.uint8).reshape(-1, 4)
+        rgba[:, :3] = colors_to_uint8(rgbs)
+        rgba[:, 3:4] = colors_to_uint8(opacities)
+        buffer[:, 7:8] = rgba.view(np.uint32)
+
+        # Queue exactly one snapshot for this update.
+        self._queue_update("buffer", buffer.copy())
+
     @property
     def centers(self) -> npt.NDArray[np.float32]:
         """Centers of the Gaussians. Shape: (N, 3). Synchronized automatically when assigned."""
