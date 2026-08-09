@@ -55,14 +55,23 @@ change small: no per-variant tree, no parent-edge resolution rules.
 
 ### Virtual intermediates
 
-Ancestor auto-creation (`_ensure_ancestors_exist`) creates plain frames for
-missing ancestors. Under the display rule those must not shadow: a client
-auto-ancestor for `/a` would otherwise silently hide the server's real `/a`
-(its axes, its pose visuals). Auto-created intermediates are therefore
-flagged **virtual** -- a field on the create message -- and virtual variants
-yield to real ones in the display rule. A later explicit add of the same name
-from the same scope supersedes the virtual variant with a real one (ordinary
-within-scope supersede).
+Ancestor auto-creation (`_ensure_ancestors_exist`) becomes **unconditional
+per scope**: every add creates anchors for all missing *same-scope*
+ancestors, even when another scope's variant of that name exists. These
+anchors are flagged **virtual** -- a field on the create message -- and:
+
+- Virtual variants yield to real ones in the display rule, so a client
+  auto-ancestor for `/a` never shadows the server's real `/a` (its axes, its
+  pose visuals). A later explicit add of the same name from the same scope
+  supersedes the virtual variant with a real one (ordinary within-scope
+  supersede).
+- Virtual variants render nothing and are never interactive; while a real
+  variant of the name exists, the anchor is pure lifecycle bookkeeping.
+
+Unconditional anchors give every node a complete same-scope ancestor chain,
+which is what makes scope-local cascade (below) orphan-free: the two scopes
+are two complete overlaid trees, merged per name by the display rule. The
+cost is a handful of tiny anchor messages per deep add.
 
 Virtual intermediates also dissolve the audience-subset rule: a broadcast add
 of `/a/b` where `/a` exists only in some client's scope auto-creates a
@@ -117,14 +126,28 @@ owners. Pay the schema sweep once:
 ## Python side
 
 - The `SceneNameIndex` keeps its bookkeeping roles (ancestor-existence
-  checks, cross-scope cascade lookup, disconnect cleanup) and loses both
-  claim-time rejections.
-- Cascade: when the **last** variant of a name is removed, removal cascades
-  into other-scope children of that name exactly as shipped today (Python
-  handles invalidated; the machinery carries over). While any variant of the
-  parent name remains, children stay put. Alternative considered and
-  rejected: auto-spawning a virtual anchor to keep orphaned children alive
-  -- the anchor would sit at identity pose, teleporting the children.
+  checks, disconnect cleanup) and loses both claim-time rejections -- and,
+  with scope-local cascade, its cross-scope cascade lookup.
+- **Cascade is scope-local**: a server remove cascades through broadcast
+  descendants only; a client remove cascades through that client's
+  descendants only. Neither scope can destroy the other's state -- both
+  scopes are driven by the same Python program, so when coupled teardown is
+  wanted (a per-client annotation that should die with the mesh it
+  annotates), the author removes it explicitly rather than the design doing
+  it behind their back. Unconditional same-scope virtual anchors (above)
+  guarantee no orphans: the surviving scope's subtree keeps a complete
+  ancestor chain. This also deletes the cross-scope handle-invalidation
+  machinery from the current branch -- the zombie problem is solved from
+  the other side, by keeping the frontend node alive so handle and frontend
+  agree by construction.
+- **Frozen-pose inheritance**: children compose pose through the parent
+  name's *effective* variant; virtual anchors contribute nothing while a
+  real variant exists. When the effective variant is removed and a virtual
+  anchor becomes effective, the anchor inherits the departing variant's
+  last pose (a frontend-local copy) -- surviving children stay where they
+  were instead of teleporting to identity. Accepted caveat: a client child
+  can outlive the broadcast object it annotated, frozen in place, until its
+  author removes it.
 - `client.scene.add_frame("/WorldAxes")` becomes the sanctioned per-client
   world-axes override (shadowing the server's node), replacing the removed
   `client.scene.world_axes` handle.
@@ -137,10 +160,12 @@ owners. Pay the schema sweep once:
    cross-scope `atomic()`. Independent of this design but shares the
    filtered-window machinery.
 3. This design: owner + virtual fields, variant slots + display rule on the
-   frontend, both `ValueError`s relaxed, cascade rewired to last-variant
-   semantics. The branch's rejection tests flip to coexistence/shadowing
-   assertions. Client/server version gating already forces matched deploys;
-   no wire compatibility shims needed.
+   frontend, both `ValueError`s relaxed, cascade rewired to scope-local
+   semantics (the interim cross-scope cascade + handle invalidation from
+   step 1 is deleted; handles that used to be invalidated stay valid, so the
+   change is again a relaxation). The branch's rejection tests flip to
+   coexistence/shadowing assertions. Client/server version gating already
+   forces matched deploys; no wire compatibility shims needed.
 4. Audience sets: `audience=` on add, per-client filtering in the window
    generator, audience mutation on live elements. Owner ids from step 3 are
    the identity substrate; the display rule generalizes by ranking owner
