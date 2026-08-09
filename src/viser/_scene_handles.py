@@ -329,8 +329,12 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                     had_drag=bool(old_handle._impl.drag_cb),
                 )
 
-            # Send message, stamped with this scope's owner id.
+            # Send message, stamped with this scope's owner id -- and marked
+            # virtual when this create is an auto-generated ancestor anchor
+            # (see SceneApi._creating_virtual_anchors).
             assert isinstance(message, _messages.Message)
+            if api._creating_virtual_anchors:
+                message.virtual = True  # type: ignore[attr-defined]
             api._queue_scene_message(message)
 
             # Shallow copy is enough to decouple the handle from the queued

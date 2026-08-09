@@ -275,6 +275,12 @@ class SceneApi:
             str, TransformControlsHandle
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
+        self._creating_virtual_anchors = False
+        """True only while _ensure_ancestors_exist creates intermediate
+        frames; _make stamps `virtual=True` on create messages queued while
+        set. An api-level flag (rather than a parameter) keeps the marker
+        out of the public add_frame signature; the lifecycle lock makes it
+        race-free."""
         if isinstance(owner, ViserServer):
             self._owner_id = ""
             """Opaque owner id stamped on every outgoing scene message: ""
@@ -522,11 +528,21 @@ class SceneApi:
         if parent == "" or parent in self._handle_from_node_name:
             return
         parts = name.split("/")
-        for i in range(2, len(parts)):  # skip root ("") and the node itself
-            ancestor = "/".join(parts[:i])
-            if ancestor not in self._handle_from_node_name:
-                # Recurses into _make under the reentrant lifecycle lock.
-                self.add_frame(ancestor, show_axes=False, _virtual=True)
+        # The anchors are ordinary add_frame() calls; the flag below makes
+        # _make stamp their create messages virtual, keeping the marker out
+        # of add_frame's public signature. Safe without save/restore
+        # subtleties: the lifecycle lock serializes adds, and the nested
+        # _ensure_ancestors_exist calls that add_frame triggers all hit the
+        # fast path above (ancestors are created parent-first).
+        self._creating_virtual_anchors = True
+        try:
+            for i in range(2, len(parts)):  # skip root ("") and the node itself
+                ancestor = "/".join(parts[:i])
+                if ancestor not in self._handle_from_node_name:
+                    # Recurses into _make under the reentrant lifecycle lock.
+                    self.add_frame(ancestor, show_axes=False)
+        finally:
+            self._creating_virtual_anchors = False
 
     def set_up_direction(
         self,
@@ -1743,7 +1759,6 @@ class SceneApi:
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
-        _virtual: bool = False,
     ) -> FrameHandle:
         """Add a coordinate frame to the scene.
 
@@ -1785,9 +1800,6 @@ class SceneApi:
                 scale=scale,
             ),
         )
-        # Internal: auto-created ancestor anchors are marked virtual so they
-        # yield to real variants in the client's display rule.
-        message.virtual = _virtual
         return FrameHandle._make(self, message, name, wxyz, position, visible)
 
     @deprecated_positional_shim
