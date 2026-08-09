@@ -276,34 +276,33 @@ class SceneApi:
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
         if isinstance(owner, ViserServer):
-            self._scope_key = None
-            """Which scope this API's elements belong to: ``None`` for the
-            broadcast scope, a client id for a per-client scope."""
+            self._owner_id = ""
+            """Opaque owner id stamped on every outgoing scene message: ""
+            for the broadcast scope, otherwise a per-client identifier. Each
+            scene-tree name holds at most one variant per owner on the
+            frontend; the effective (rendered, interactive) variant follows
+            the display rule: real client > real broadcast > virtual client
+            > virtual broadcast. Scene state is fully scope-local -- adds,
+            updates, and removals from one scope never touch the other
+            scope's variant of the same name."""
             server_owner = owner
         else:
-            self._scope_key = cast("ClientId", owner.client_id)
+            self._owner_id = str(owner.client_id)
             server_owner = owner._viser_server
-        self._name_index = server_owner._scene_name_index
-        """Server-wide index of claimed scene-node names across scopes. Scene
-        names share one namespace per viewer (the frontend's scene tree is
-        keyed by name with no notion of scope), so adds must be checked
-        against every scope the same viewer can see -- not just this API's
-        own registry. Only touched under ``_node_lifecycle_lock``."""
         self._node_lifecycle_lock = server_owner._scene_lifecycle_lock
         """Serializes scene-node lifecycle transitions (remove, same-name
         supersede) against interaction-callback (de)registration. All
         critical sections are short and synchronous (no awaits inside).
-        SERVER-WIDE and shared by every SceneApi (server- and client-scoped):
-        lifecycle transitions consult and mutate the cross-scope name index,
-        and broadcast removals cascade into per-client subtrees, so per-scope
-        locks would deadlock or race. Reentrant: ancestor auto-creation and
-        cross-scope cascade removal re-enter by design, and subclass
-        _on_remove hooks run under the lock and must stay safe to extend.
-        Without this lock, a registration racing a remove/supersede from
-        another thread could publish a name-keyed binding into the
-        persistent buffer AFTER the teardown's empty-bindings emit -- a
-        ghost a same-name successor would inherit on late-joining
-        clients."""
+        Shared server-wide by every SceneApi: scene lifecycle is scope-local,
+        so per-scope locks would also be correct, but one lock keeps the
+        invariants easy to reason about and costs nothing (lifecycle ops are
+        rare and short). Reentrant: ancestor auto-creation re-enters by
+        design, and subclass _on_remove hooks run under the lock and must
+        stay safe to extend. Without this lock, a registration racing a
+        remove/supersede from another thread could publish a name-keyed
+        binding into the persistent buffer AFTER the teardown's
+        empty-bindings emit -- a ghost a same-name successor would inherit
+        on late-joining clients."""
         self._children_from_node_name: dict[str, set[str]] = {}
         # Tracks handles with an in-flight drag gesture, plus the last
         # message we processed for that drag. Populated on
@@ -338,14 +337,14 @@ class SceneApi:
         self._scene_pointer_cb: list[_PointerCallbackEntry] = []
         self._scene_pointer_done_cb: list[Callable[[], None | Coroutine]] = []
 
-        # Set up world axes handle. Only the SERVER scope creates (and owns)
-        # the node: the world axes are one shared scene node, and a
-        # client-scoped duplicate would collide with the server's claim in
-        # the name index (each ClientHandle used to re-add /WorldAxes over
-        # its own connection, racing the broadcast replay). Client-scoped
-        # SceneApis expose no world_axes -- see the property below.
+        # Set up world axes handle. Only the SERVER scope creates one by
+        # default (each ClientHandle used to re-add /WorldAxes over its own
+        # connection, racing the broadcast replay). Client-scoped SceneApis
+        # expose no world_axes handle -- see the property below; a client
+        # that wants different axes adds its own "/WorldAxes" frame, which
+        # shadows the server's variant for that one client.
         self._world_axes: FrameHandle | None = None
-        if self._scope_key is None:
+        if self._owner_id == "":
             self._world_axes = self.add_frame(
                 "/WorldAxes",
                 axes_radius=0.0125,
@@ -381,19 +380,30 @@ class SceneApi:
         """Handle for the world axes, which are created by default. Hidden
         until made visible via ``server.scene.world_axes.visible = True``.
 
-        Only available on the server's scene API: the world axes are a single
-        shared (broadcast) scene node, so per-client handles would hold stale
-        caches of state that broadcast writers also mutate. Accessing this on
-        a client handle's ``client.scene`` raises ``AttributeError``."""
+        Only available on the server's scene API; accessing this on a client
+        handle's ``client.scene`` raises ``AttributeError``. To show
+        different axes for one client, add a client-scoped frame named
+        ``"/WorldAxes"`` -- the client's variant shadows the server's for
+        that one viewer."""
         if self._world_axes is None:
             raise AttributeError(
                 "world_axes is only available on the server's scene API "
-                "(server.scene.world_axes): the world axes are a single "
-                "shared scene node owned by the server scope. To show or "
-                "hide them for every client, assign "
-                "server.scene.world_axes.visible."
+                "(server.scene.world_axes). To show or hide the shared axes "
+                "for every client, assign server.scene.world_axes.visible; "
+                "to override them for one client, add a client-scoped frame "
+                'named "/WorldAxes" (it shadows the server\'s node for that '
+                "client)."
             )
         return self._world_axes
+
+    def _queue_scene_message(self, message: _messages.Message) -> None:
+        """Queue a name-keyed scene message, stamped with this scope's owner
+        id. Every scene message that targets a node by name MUST go through
+        here (or stamp ``owner`` itself): an unstamped message defaults to
+        the broadcast owner and would be routed to the wrong variant on the
+        client."""
+        message.owner = self._owner_id  # type: ignore[attr-defined]
+        self._websock_interface.queue_message(message)
 
     def _is_drag_active_for(self, name: str) -> bool:
         """Whether the named scene node currently has any in-flight drag
@@ -456,20 +466,44 @@ class SceneApi:
                 print_awaited_callback_error(exc)
 
     def _ensure_ancestors_exist(self, name: str) -> None:
-        """Create intermediate frame nodes for any missing ancestors of `name`.
+        """Create VIRTUAL intermediate frames for any ancestors of ``name``
+        missing from THIS scope's registry.
 
-        "Missing" is judged against the cross-scope name index, not just this
-        scope's registry: a per-client child under a broadcast parent must
-        NOT re-create the parent in the client scope (the frontend keys nodes
-        by name, so the duplicate would clobber the shared parent for that
-        client). Runs under the lifecycle lock so the visibility check and
-        the creates are atomic against concurrent adds/removes."""
+        Unconditional per scope: an anchor is created even when another
+        scope has a (real) variant of the ancestor name. Virtual variants
+        yield to real ones in the client's display rule, so the anchor never
+        shadows anything -- it exists so every node has a complete
+        same-scope ancestor chain, which is what makes scope-local cascade
+        removal orphan-free (a client child survives a broadcast parent's
+        removal by hanging from its own scope's anchor, which inherits the
+        departing variant's pose client-side). Runs under the lifecycle lock
+        so the existence checks and creates are atomic against concurrent
+        adds/removes."""
         with self._node_lifecycle_lock:
             parts = name.split("/")
             for i in range(2, len(parts)):  # skip root ("") and the node itself
                 ancestor = "/".join(parts[:i])
-                if not self._name_index.exists_visible(ancestor, self._scope_key):
-                    self.add_frame(ancestor, show_axes=False)
+                if ancestor not in self._handle_from_node_name:
+                    message = _messages.FrameMessage(
+                        name=ancestor,
+                        props=_messages.FrameProps(
+                            show_axes=False,
+                            axes_length=0.5,
+                            axes_radius=0.025,
+                            origin_radius=0.05,
+                            origin_color=(236, 236, 0),
+                            scale=1.0,
+                        ),
+                    )
+                    message.virtual = True
+                    FrameHandle._make(
+                        self,
+                        message,
+                        ancestor,
+                        wxyz=(1.0, 0.0, 0.0, 0.0),
+                        position=(0.0, 0.0, 0.0),
+                        visible=True,
+                    )
 
     def set_up_direction(
         self,
@@ -539,8 +573,10 @@ class SceneApi:
         )
 
         if not np.any(np.isnan(R_threeworld_world.wxyz)):
-            # Set the orientation of the root node.
-            self._websock_interface.queue_message(
+            # Set the orientation of the root node. The root ("") is a
+            # singleton on the client -- name-empty messages apply to it
+            # regardless of the stamped owner.
+            self._queue_scene_message(
                 _messages.SetOrientationMessage(
                     "", cast_vector(R_threeworld_world.wxyz, 4)
                 )
@@ -557,9 +593,7 @@ class SceneApi:
         Args:
             visible: Whether or not all scene nodes should be visible.
         """
-        self._websock_interface.queue_message(
-            _messages.SetSceneNodeVisibilityMessage("", visible)
-        )
+        self._queue_scene_message(_messages.SetSceneNodeVisibilityMessage("", visible))
 
     @deprecated_positional_shim
     def add_light_directional(
@@ -2990,14 +3024,14 @@ class SceneApi:
                 wxyz=tuple(map(float, state._impl.wxyz)),  # type: ignore
             )
             message_orientation.excluded_self_client = client_id
-            self._websock_interface.queue_message(message_orientation)
+            self._queue_scene_message(message_orientation)
 
             message_position = _messages.SetPositionMessage(
                 name=name,
                 position=tuple(map(float, state._impl.position)),  # type: ignore
             )
             message_position.excluded_self_client = client_id
-            self._websock_interface.queue_message(message_position)
+            self._queue_scene_message(message_position)
 
         node_handle = SceneNodeHandle._make(
             self, message, name, wxyz, position, visible
@@ -3059,6 +3093,11 @@ class SceneApi:
         self, client_id: ClientId, message: _messages.TransformControlsUpdateMessage
     ) -> None:
         """Apply pose update and fire `update_cb` with phase="update"."""
+        # Node-keyed messages carry the effective variant's owner; only the
+        # owning scope's SceneApi handles them (incoming messages fan out to
+        # both the server's and the connection's handler lists).
+        if message.owner != self._owner_id:
+            return
         # Prefer the active-drag map so a late update still resolves after the
         # gizmo was removed mid-drag (which pops it from the live registry).
         handle = self._active_transform_drag_handles.get(
@@ -3084,6 +3123,8 @@ class SceneApi:
     async def _handle_transform_controls_drag_start(
         self, client_id: ClientId, message: _messages.TransformControlsDragStartMessage
     ) -> None:
+        if message.owner != self._owner_id:
+            return
         handle = self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
@@ -3093,6 +3134,8 @@ class SceneApi:
     async def _handle_transform_controls_drag_end(
         self, client_id: ClientId, message: _messages.TransformControlsDragEndMessage
     ) -> None:
+        if message.owner != self._owner_id:
+            return
         handle = self._active_transform_drag_handles.pop(
             (client_id, message.name), None
         ) or self._handle_from_transform_controls_name.get(message.name, None)
@@ -3142,6 +3185,8 @@ class SceneApi:
         self, client_id: ClientId, message: _messages.SceneNodeClickMessage
     ) -> None:
         """Callback for handling click messages."""
+        if message.owner != self._owner_id:
+            return
         handle = self._handle_from_node_name.get(message.name, None)
         if handle is None or handle._impl.click_cb is None:
             return
@@ -3180,6 +3225,8 @@ class SceneApi:
         have this issue, so for stateful gestures define your callbacks
         as ``async def`` (with no internal ``await`` s, so each runs
         atomically on the event loop)."""
+        if message.owner != self._owner_id:
+            return
         # On phase="start", look up the handle in the live registry and
         # remember it (with the message, so a synthetic end on
         # disconnect can carry the latest positions). On update, refresh

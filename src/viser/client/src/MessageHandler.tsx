@@ -20,7 +20,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Button, Progress } from "@mantine/core";
 import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
-import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
+import { ownerOf, rootNodeTemplate, SceneNode } from "./SceneTreeState";
 import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
@@ -81,7 +81,6 @@ function useMessageHandler() {
   const viewer = useContext(ViewerContext)!;
   const viewerMutable = viewer.mutable.current;
 
-  const removeSceneNode = viewer.sceneTreeActions.removeSceneNode;
   const addSceneNode = viewer.sceneTreeActions.addSceneNode;
   const setTheme = viewer.guiActions.setTheme;
 
@@ -107,7 +106,9 @@ function useMessageHandler() {
     // Make sure scene node is in attributes.
     const currentNode = viewer.useSceneTree.get(message.name);
 
-    // Make sure parents exists.
+    // Make sure parents exists. (Rarely needed on the live wire -- the
+    // server sends same-scope virtual anchors for missing ancestors before
+    // the child -- but kept for old recordings.)
     const parentName = message.name.split("/").slice(0, -1).join("/");
     if (viewer.useSceneTree.get(parentName)?.message === undefined) {
       addSceneNodeMakeParents({
@@ -123,8 +124,13 @@ function useMessageHandler() {
     // If the object is new or changed, we need to wait until it's created
     // before updating its pose. Updating the pose too early can cause
     // flickering when we replace objects (old object will take the pose of the new
-    // object while it's being loaded/mounted).
-    if (message !== currentNode?.message) {
+    // object while it's being loaded/mounted). Skipped when the add was
+    // parked in the shadow slot (lower-ranked variant): the EFFECTIVE node
+    // did not change, and freezing its pose on waitForMakeObject would wait
+    // for a remount that never happens.
+    const becameEffective =
+      viewer.useSceneTree.get(message.name)?.message === message;
+    if (becameEffective && message !== currentNode?.message) {
       const pose = viewerMutable.nodePoseData[message.name];
       if (pose) {
         pose.poseUpdateState = "waitForMakeObject";
@@ -136,6 +142,15 @@ function useMessageHandler() {
         };
       }
     }
+  }
+
+  /** Whether a node-keyed message (carrying `owner`) targets the EFFECTIVE
+   * variant of its name. Returns false when it targets the shadowed variant
+   * (or nothing) -- callers then route through updateShadowedVariant, whose
+   * own owner check drops updates with no matching parked variant. */
+  function targetsEffectiveVariant(name: string, owner: string): boolean {
+    const node = viewer.useSceneTree.get(name);
+    return node !== undefined && ownerOf(node.message) === owner;
   }
 
   const fileDownloadHandler = useFileDownloadHandler();
@@ -242,6 +257,14 @@ function useMessageHandler() {
 
     switch (message.type) {
       case "SceneNodeUpdateMessage": {
+        if (!targetsEffectiveVariant(message.name, message.owner ?? "")) {
+          viewer.sceneTreeActions.updateShadowedVariant(
+            message.name,
+            message.owner ?? "",
+            { propsUpdates: message.updates },
+          );
+          return;
+        }
         return {
           kind: "sceneNodePropsUpdate",
           targetNode: message.name,
@@ -622,6 +645,15 @@ function useMessageHandler() {
             updates: { wxyz: message.wxyz },
           };
         }
+        // Shadowed variant: accumulate its pose in the shadow slot.
+        if (!targetsEffectiveVariant(message.name, message.owner ?? "")) {
+          viewer.sceneTreeActions.updateShadowedVariant(
+            message.name,
+            message.owner ?? "",
+            { wxyz: message.wxyz },
+          );
+          return;
+        }
         // All other nodes: write pose to mutable ref (no React re-render).
         const pose = viewerMutable.nodePoseData[message.name];
         if (pose) {
@@ -639,6 +671,17 @@ function useMessageHandler() {
         return;
       }
       case "SetPositionMessage": {
+        if (
+          message.name !== "" &&
+          !targetsEffectiveVariant(message.name, message.owner ?? "")
+        ) {
+          viewer.sceneTreeActions.updateShadowedVariant(
+            message.name,
+            message.owner ?? "",
+            { position: message.position },
+          );
+          return;
+        }
         // Write pose to mutable ref (no React re-render).
         const pose = viewerMutable.nodePoseData[message.name];
         if (pose) {
@@ -656,6 +699,17 @@ function useMessageHandler() {
         return;
       }
       case "SetSceneNodeVisibilityMessage": {
+        if (
+          message.name !== "" &&
+          !targetsEffectiveVariant(message.name, message.owner ?? "")
+        ) {
+          viewer.sceneTreeActions.updateShadowedVariant(
+            message.name,
+            message.owner ?? "",
+            { visibility: message.visible },
+          );
+          return;
+        }
         return {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
@@ -710,28 +764,32 @@ function useMessageHandler() {
         }
         return;
       }
-      // Remove a scene node and its children by name.
+      // Remove one scope's variant of a scene node. Scope-local, and NOT
+      // recursive: the server sends one message per same-scope descendant,
+      // and the other scope's variants of these names must survive.
       case "RemoveSceneNodeMessage": {
-        if (viewer.useSceneTree.get(message.name) === undefined) {
-          console.log("(OK) Skipping scene node removal for " + message.name);
-          return;
-        }
-        removeSceneNode(message.name);
+        const owner = message.owner ?? "";
+        const wasEffective = targetsEffectiveVariant(message.name, owner);
+        viewer.sceneTreeActions.removeSceneNodeVariant(message.name, owner);
 
-        // Clear skinned-mesh state for the removed node AND its descendants.
-        // `removeSceneNode` recurses the subtree, and this map is keyed by node
-        // name, so deleting only the exact name leaks any skinned mesh nested
-        // under a removed ancestor.
-        const subtreePrefix = message.name + "/";
-        for (const key of Object.keys(viewerMutable.skinnedMeshState)) {
-          if (key === message.name || key.startsWith(subtreePrefix)) {
-            delete viewerMutable.skinnedMeshState[key];
-          }
+        // Clear skinned-mesh state for the removed node. Exact name only:
+        // descendants arrive as their own removal messages, and a surviving
+        // other-scope variant of a descendant name must keep its state.
+        if (wasEffective) {
+          delete viewerMutable.skinnedMeshState[message.name];
         }
         return;
       }
       // Set the drag-binding set for a particular scene node.
       case "SetSceneNodeDragBindingsMessage": {
+        if (!targetsEffectiveVariant(message.name, message.owner ?? "")) {
+          viewer.sceneTreeActions.updateShadowedVariant(
+            message.name,
+            message.owner ?? "",
+            { dragBindings: [...message.bindings] },
+          );
+          return;
+        }
         return {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
@@ -739,6 +797,14 @@ function useMessageHandler() {
         };
       }
       case "SetSceneNodeClickBindingsMessage": {
+        if (!targetsEffectiveVariant(message.name, message.owner ?? "")) {
+          viewer.sceneTreeActions.updateShadowedVariant(
+            message.name,
+            message.owner ?? "",
+            { clickBindings: [...message.bindings] },
+          );
+          return;
+        }
         return {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,

@@ -1,11 +1,12 @@
 """E2E tests for cross-scope (server vs. client handle) scene/GUI semantics.
 
-Scene and GUI elements can be added through two scopes: ``server.scene`` /
-``server.gui`` (broadcast, persistent buffer, replayed to late joiners) and
-``client.scene`` / ``client.gui`` (one connection, ephemeral buffer). The
-frontend merges both scopes into single stores -- the scene tree is keyed by
-user-chosen node name with no record of which scope created an entry -- while
-the Python side keeps disjoint per-scope registries and buffers.
+Scene and GUI elements can be created through two scopes: ``server.scene`` /
+``server.gui`` (broadcast, persistent) and ``client.scene`` / ``client.gui``
+(one connection, ephemeral). Scene nodes are identified by (owner, name):
+each scene-tree name holds at most one variant per scope, fed independently
+by its scope's messages, and the client renders the effective variant chosen
+by the display rule (real client > real broadcast > virtual client > virtual
+broadcast).
 
 This suite pins that seam from both directions:
 
@@ -14,15 +15,14 @@ This suite pins that seam from both directions:
   client-scoped elements across reconnects, and the deliberate cross-scope
   exclusivity of scene pointer callbacks.
 
-- **Rule tests** cover the cross-scope name discipline enforced by the
-  server-wide ``SceneNameIndex``: overlapping-scope name reuse is rejected
-  at the add site, a child's audience must be a subset of its parent's,
-  broadcast removals cascade into per-client subtrees (Python handles
-  included, matching the frontend's name-keyed cascade), and disconnects
-  free a client's names. Fast Python-level coverage of the same rules lives
-  in ``tests/test_scene_name_index.py``; here they run against a real
-  browser so the frontend-observable halves (node state, click dispatch,
-  world-axes overrides) are exercised too.
+- **Variant/shadowing tests** cover the display rule end to end: a client
+  variant shadows the server's and un-shadows with the server's LATEST
+  state, clicks dispatch to exactly the effective variant's scope, removal
+  cascades are scope-local (client children survive broadcast parent
+  removal, anchored at the parent's frozen pose), and virtual anchors never
+  shadow real nodes. Fast Python-side coverage of the same rules lives in
+  ``tests/test_scene_scopes.py``; the frontend store logic is unit-tested in
+  ``src/viser/client/src/SceneTreeState.test.ts``.
 """
 
 from __future__ import annotations
@@ -48,13 +48,13 @@ from .utils import (
     wait_for_server_ready,
 )
 
-JS_GET_NODE_POSITION = """
+JS_GET_EFFECTIVE_OWNER = """
 (nodeName) => {
-    const m = window.__viserMutable;
-    if (!m || !m.nodeRefFromName) return null;
-    const obj = m.nodeRefFromName[nodeName];
-    if (!obj) return null;
-    return [obj.position.x, obj.position.y, obj.position.z];
+    const tree = window.__viserSceneTree;
+    if (!tree) return null;
+    const node = tree.getState()[nodeName];
+    if (!node) return null;
+    return node.message.owner ?? "";
 }
 """
 
@@ -176,8 +176,7 @@ def test_per_client_namespaces_are_isolated(two_client_setup: dict) -> None:
 
 def test_same_name_coexists_across_different_clients(two_client_setup: dict) -> None:
     """Two clients may each own a node with the SAME name, with independent
-    state. Any single-namespace redesign must key identity by (audience,
-    name), not name alone, to keep this working."""
+    state."""
     page1: Page = two_client_setup["page1"]
     page2: Page = two_client_setup["page2"]
     client1: viser.ClientHandle = two_client_setup["client1"]
@@ -195,27 +194,28 @@ def test_client_scope_elements_do_not_survive_reconnect(
 ) -> None:
     """Server-scoped elements are replayed after a reconnect; client-scoped
     elements are not (the per-client buffer is ephemeral and the reconnected
-    browser is a brand-new ClientHandle). This is the documented contract --
-    client state is ephemeral, rebuilt in on_client_connect; durable state
-    lives client-side or in application code (see the ClientHandle
-    docstring). The server never retains per-client element state."""
+    browser is a brand-new ClientHandle). This includes shadowing variants:
+    after a reconnect, the server's variant of a previously-shadowed name is
+    the one shown."""
     client = get_client_handle(viser_server)
 
-    viser_server.scene.add_box("/shared_box", dimensions=(1.0, 1.0, 1.0))
+    viser_server.scene.add_box(
+        "/shared_box", dimensions=(1.0, 1.0, 1.0), position=(2.0, 0.0, 0.0)
+    )
     client.scene.add_icosphere("/client_sphere", radius=0.3)
-    wait_for_scene_node(viser_page, "/shared_box")
+    # A client variant shadowing a server name.
+    client.scene.add_box("/shared_box", dimensions=(0.5, 0.5, 0.5))
     wait_for_scene_node(viser_page, "/client_sphere")
+    wait_for_node_position(viser_page, "/shared_box", (0.0, 0.0, 0.0))
 
     viser_server._websock_server.disconnect_all_clients()
 
     # The frontend reconnects automatically, resets its stores, and replays
-    # the broadcast backlog.
+    # the broadcast backlog: the client sphere is gone, and the server's
+    # variant of /shared_box (at ITS position) is effective again.
     wait_for_scene_node_removed(viser_page, "/client_sphere")
-    wait_for_scene_node(viser_page, "/shared_box", timeout=15_000)
-    time.sleep(0.5)
-    assert viser_page.evaluate(
-        "() => window.__viserSceneTree.getState()['/client_sphere'] === undefined"
-    ), "client-scoped node unexpectedly survived (or was replayed after) reconnect"
+    wait_for_node_position(viser_page, "/shared_box", (2.0, 0.0, 0.0), timeout=15_000)
+    assert viser_page.evaluate(JS_GET_EFFECTIVE_OWNER, "/shared_box") == ""
 
 
 def test_scene_pointer_callbacks_are_cross_scope_exclusive(
@@ -273,51 +273,52 @@ def test_gui_container_context_does_not_span_scopes(
 
 
 # ---------------------------------------------------------------------------
-# Cross-scope name rules (enforced by SceneNameIndex).
+# Variant slots + display rule (shadowing).
 # ---------------------------------------------------------------------------
 
 
-def test_cross_scope_same_name_add_raises(
+def test_client_variant_shadows_and_unshadows_with_latest_state(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """A name claimed by one scope cannot be re-added from an overlapping
-    scope: both scopes share one name-keyed scene tree on the frontend, so
-    the second add would silently corrupt the first node's state. The add
-    raises instead, leaving the existing node untouched."""
+    """The core shadowing round trip: a client-scoped add of a server-owned
+    name shadows it for that client; server updates keep accumulating in the
+    hidden variant; removing the client variant promotes the server's node
+    with its LATEST state -- no resurrection round trip."""
     client = get_client_handle(viser_server)
 
     viser_server.scene.add_icosphere("/dup", radius=0.3, position=(1.0, 2.0, 0.0))
     wait_for_node_position(viser_page, "/dup", (1.0, 2.0, 0.0))
 
-    with pytest.raises(ValueError, match="already used"):
-        client.scene.add_icosphere("/dup", radius=0.3, position=(0.0, 0.0, 0.0))
+    # Client-scoped variant at the origin: shadows the server's node.
+    client_variant = client.scene.add_icosphere(
+        "/dup", radius=0.3, position=(0.0, 0.0, 0.0)
+    )
+    wait_for_node_position(viser_page, "/dup", (0.0, 0.0, 0.0))
+    assert viser_page.evaluate(JS_GET_EFFECTIVE_OWNER, "/dup") == str(client.client_id)
 
-    # The rejected add left no trace: no client-scope registry entry, and the
-    # frontend node keeps the server's state.
-    assert "/dup" not in client.scene._handle_from_node_name
-    time.sleep(0.3)
-    wait_for_node_position(viser_page, "/dup", (1.0, 2.0, 0.0))
+    # Server keeps writing while shadowed; the display doesn't budge.
+    viser_server.scene._handle_from_node_name["/dup"].position = (3.0, 3.0, 0.0)
+    time.sleep(0.5)
+    wait_for_node_position(viser_page, "/dup", (0.0, 0.0, 0.0))
 
-    # And the reverse direction: a client-owned name rejects a broadcast add.
-    client.scene.add_icosphere("/own", radius=0.3)
-    wait_for_scene_node(viser_page, "/own")
-    with pytest.raises(ValueError, match="already used"):
-        viser_server.scene.add_icosphere("/own", radius=0.3)
+    # Un-shadow: the server's variant shows again, at its LATEST position.
+    client_variant.remove()
+    wait_for_node_position(viser_page, "/dup", (3.0, 3.0, 0.0))
+    assert viser_page.evaluate(JS_GET_EFFECTIVE_OWNER, "/dup") == ""
 
 
-def test_click_dispatches_to_single_scope(
+def test_click_dispatches_to_effective_variant_only(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """One physical click reaches exactly one scope's callbacks. (Before the
-    name index, a cross-scope name collision made one click fire BOTH
-    scopes' handlers; collisions are now rejected at the add site, so
-    dispatch is unique by construction.)"""
+    """A click on a shadowing client variant reaches the client scope's
+    callback and never the shadowed server variant's."""
     viser_server.initial_camera.position = (0.0, 0.0, 4.0)
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
     client = get_client_handle(viser_server)
 
-    server_clicks: list[int] = []
     server_clicked = threading.Event()
+    client_clicks: list[int] = []
+    client_clicked = threading.Event()
 
     server_box = viser_server.scene.add_box(
         "/dup_click", dimensions=(4.0, 4.0, 0.2), color=(200, 60, 60)
@@ -325,16 +326,23 @@ def test_click_dispatches_to_single_scope(
 
     @server_box.on_click
     def _(_event: viser.SceneNodePointerEvent[viser.BoxHandle]) -> None:
-        server_clicks.append(1)
         server_clicked.set()
 
-    # The conflicting client-scoped twin is rejected...
-    with pytest.raises(ValueError, match="already used"):
-        client.scene.add_box(
-            "/dup_click", dimensions=(4.0, 4.0, 0.2), color=(60, 200, 60)
-        )
+    client_box = client.scene.add_box(
+        "/dup_click", dimensions=(4.0, 4.0, 0.2), color=(60, 200, 60)
+    )
+
+    @client_box.on_click
+    def _(_event: viser.SceneNodePointerEvent[viser.BoxHandle]) -> None:
+        client_clicks.append(1)
+        client_clicked.set()
 
     wait_for_scene_node(viser_page, "/dup_click")
+    viser_page.wait_for_function(
+        JS_GET_EFFECTIVE_OWNER + "",
+        arg="/dup_click",
+        timeout=5_000,
+    )
     time.sleep(0.5)  # Let click bindings reach the frontend.
 
     cx, cy = canvas_center(viser_page)
@@ -342,97 +350,109 @@ def test_click_dispatches_to_single_scope(
     viser_page.mouse.down()
     viser_page.mouse.up()
 
-    # ...and the click reaches the server-scoped handle exactly once.
-    assert server_clicked.wait(5.0), "click did not reach the server-scoped handle"
+    assert client_clicked.wait(5.0), "click did not reach the client-scoped handle"
     time.sleep(0.5)
-    assert len(server_clicks) == 1
+    assert not server_clicked.is_set(), (
+        "click dispatched to the shadowed server-scoped handle too"
+    )
+    assert len(client_clicks) == 1
 
 
-def test_broadcast_remove_invalidates_client_scope_child(
+def test_scope_local_cascade_client_child_survives(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """Removing a server-scoped parent invalidates a client-scoped child
-    handle parented under it: the frontend's name-keyed cascade already
-    deleted the child node, so the Python handle must not stay live."""
+    """Removing a broadcast parent removes only broadcast descendants: a
+    client-scoped child survives, hanging from its own scope's virtual
+    anchor, which inherits the departing parent's pose (children don't
+    teleport)."""
     client = get_client_handle(viser_server)
 
-    parent = viser_server.scene.add_frame("/parent", show_axes=False)
+    parent = viser_server.scene.add_frame(
+        "/parent", show_axes=False, position=(1.0, 0.0, 1.0)
+    )
     child = client.scene.add_icosphere("/parent/child", radius=0.3)
     wait_for_scene_node(viser_page, "/parent/child")
 
-    # The client scope did not re-create the broadcast parent for itself.
-    assert "/parent" not in client.scene._handle_from_node_name
-
     parent.remove()
 
-    # The frontend cascade removes the client-scoped child...
-    wait_for_scene_node_removed(viser_page, "/parent/child")
-    # ...and the Python handle agrees; later writes fail loudly.
-    assert child._impl.removed, (
-        "client-scoped child handle still live after its node was removed "
-        "by a broadcast cascade"
+    # The child's entry survives on the frontend...
+    time.sleep(0.5)
+    wait_for_scene_node(viser_page, "/parent/child")
+    # ...hanging from the client's promoted virtual anchor...
+    assert viser_page.evaluate(JS_GET_EFFECTIVE_OWNER, "/parent") == str(
+        client.client_id
     )
-    with pytest.raises(RuntimeError, match="removed"):
-        child.position = (1.0, 0.0, 0.0)
+    # ...which inherited the departed parent's pose (frozen-pose
+    # inheritance -- the child stays where it was).
+    viser_page.wait_for_function(
+        """(expected) => {
+            const m = window.__viserMutable;
+            const pose = m && m.nodePoseData && m.nodePoseData["/parent"];
+            if (!pose) return false;
+            return (
+                Math.abs(pose.position[0] - expected[0]) < 1e-4 &&
+                Math.abs(pose.position[1] - expected[1]) < 1e-4 &&
+                Math.abs(pose.position[2] - expected[2]) < 1e-4
+            );
+        }""",
+        arg=[1.0, 0.0, 1.0],
+        timeout=5_000,
+    )
+    # The Python handle is still live; the author removes it explicitly.
+    assert not child._impl.removed
+    child.remove()
+    wait_for_scene_node_removed(viser_page, "/parent/child")
 
 
-def test_client_parent_rejects_broadcast_child(
+def test_virtual_anchor_does_not_shadow_real_broadcast_node(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """A child's audience must be a subset of its parent's: a broadcast
-    child under a per-client parent would dangle for every other viewer."""
+    """A client's auto-created ancestor anchor must not hide the server's
+    real node of the same name."""
     client = get_client_handle(viser_server)
 
-    client.scene.add_frame("/client_parent", show_axes=False)
-    wait_for_scene_node(viser_page, "/client_parent")
+    viser_server.scene.add_frame("/anchor_parent", show_axes=True)
+    wait_for_scene_node(viser_page, "/anchor_parent")
 
-    with pytest.raises(ValueError, match="audience"):
-        viser_server.scene.add_icosphere("/client_parent/child", radius=0.3)
+    # Deep client add auto-creates client-scoped anchors for /anchor_parent.
+    client.scene.add_icosphere("/anchor_parent/mine", radius=0.3)
+    wait_for_scene_node(viser_page, "/anchor_parent/mine")
 
-
-def test_disconnect_frees_client_names(browser: Browser) -> None:
-    """A disconnect releases the client's name claims, so the names become
-    available to other scopes again."""
-    viser._client_autobuild.ensure_client_is_built = lambda: None
-
-    max_retries = 3
-    server: viser.ViserServer | None = None
-    for attempt in range(max_retries):
-        port = find_free_port()
-        try:
-            server = viser.ViserServer(port=port, verbose=False)
-            break
-        except OSError:
-            if attempt == max_retries - 1:
-                raise
-    assert server is not None
-    wait_for_server_ready(server.get_port())
-
-    context = browser.new_context()
-    page = context.new_page()
-    wait_for_connection(page, server.get_port())
-    client = get_client_handle(server)
-
-    client.scene.add_icosphere("/mine", radius=0.3)
-    with pytest.raises(ValueError, match="already used"):
-        server.scene.add_icosphere("/mine", radius=0.3)
-
-    context.close()
-    deadline = time.monotonic() + 10.0
-    while server.get_clients() and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert not server.get_clients(), "client never disconnected"
-
-    server.scene.add_icosphere("/mine", radius=0.3)
-    server.stop()
+    # The server's real frame is still the effective variant.
+    assert viser_page.evaluate(JS_GET_EFFECTIVE_OWNER, "/anchor_parent") == ""
 
 
-def test_world_axes_toggle_reaches_connected_client(
+def test_broadcast_child_under_client_parent_coexists(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """server.scene.world_axes is the only world-axes handle (client scopes
-    have none -- accessing client.scene.world_axes raises), and its toggles
-    reach an already-connected client in both directions."""
+    """A server add under a client-owned name is legal: the server's chain
+    hangs from its own virtual anchor, which is shadowed by the client's
+    real node on this client."""
+    client = get_client_handle(viser_server)
+
+    client.scene.add_frame("/cp", show_axes=False)
+    wait_for_scene_node(viser_page, "/cp")
+
+    viser_server.scene.add_icosphere("/cp/child", radius=0.3)
+    wait_for_scene_node(viser_page, "/cp/child")
+
+    # The client's real frame stays effective over the server's virtual
+    # anchor for /cp.
+    assert viser_page.evaluate(JS_GET_EFFECTIVE_OWNER, "/cp") == str(client.client_id)
+    assert viser_page.evaluate(JS_GET_EFFECTIVE_OWNER, "/cp/child") == ""
+
+
+# ---------------------------------------------------------------------------
+# World axes.
+# ---------------------------------------------------------------------------
+
+
+def test_world_axes_client_shadow_override(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """The sanctioned per-client world-axes override: a client-scoped
+    "/WorldAxes" frame shadows the server's, and removing it restores the
+    server's state. (client.scene.world_axes itself raises AttributeError.)"""
     client = get_client_handle(viser_server)
     with pytest.raises(AttributeError, match="server.scene.world_axes"):
         _ = client.scene.world_axes
@@ -440,8 +460,11 @@ def test_world_axes_toggle_reaches_connected_client(
     viser_server.scene.world_axes.visible = True
     wait_for_scene_node_visible(viser_page, "/WorldAxes")
 
-    viser_server.scene.world_axes.visible = False
+    override = client.scene.add_frame("/WorldAxes", show_axes=True, visible=False)
     wait_for_scene_node_hidden(viser_page, "/WorldAxes")
+
+    override.remove()
+    wait_for_scene_node_visible(viser_page, "/WorldAxes")
 
 
 def test_world_axes_server_state_deterministic_for_new_client(
