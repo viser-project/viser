@@ -23,7 +23,6 @@ import pytest
 
 import viser
 import viser._client_autobuild
-from viser import _messages as m
 from viser._scene_name_index import SceneNameIndex
 from viser._viser import ClientHandle
 from viser.infra import ClientId
@@ -312,45 +311,33 @@ def test_server_reset_cascades_client_subtrees_only(
 
 
 # ---------------------------------------------------------------------------
-# World-axes view handle (client scope).
+# World axes (server-owned; no client-scope handle).
 # ---------------------------------------------------------------------------
 
 
-def test_client_world_axes_sends_nothing_at_construction(
+def test_client_scene_construction_sends_nothing(
     server: viser.ViserServer,
 ) -> None:
     client = _make_synthetic_client(server, 0)
     buffer = client._websock_connection._state.message_buffer
     assert len(buffer.message_from_id) == 0, (
-        "client SceneApi construction queued messages; the world-axes view "
-        "handle must not re-add the shared node"
+        "client SceneApi construction queued messages; it must not re-add "
+        "/WorldAxes (or anything else) over the per-client connection"
     )
-    # And the view handle holds no claim: the server owns the name.
     assert "/WorldAxes" not in client.scene._handle_from_node_name
 
 
-def test_client_world_axes_setters_never_skip(server: viser.ViserServer) -> None:
+def test_client_world_axes_raises_with_pointer_to_server(
+    server: viser.ViserServer,
+) -> None:
+    """The world axes are one shared broadcast node; there is no per-client
+    handle for them. The error message points at server.scene.world_axes."""
     client = _make_synthetic_client(server, 0)
-    buffer = client._websock_connection._state.message_buffer
-
-    def visibility_messages() -> list[m.Message]:
-        return [
-            msg
-            for msg in buffer.message_from_id.values()
-            if isinstance(msg, m.SetSceneNodeVisibilityMessage)
-        ]
-
-    # The cached value is False, but the write must send anyway: the cache is
-    # non-authoritative (broadcast writers also mutate this node).
-    client.scene.world_axes.visible = False
-    assert len(visibility_messages()) == 1
-
-    # Redundant same-value writes coalesce in the buffer (same redundancy
-    # key) but must still be QUEUED -- verify by flipping and re-flipping.
-    client.scene.world_axes.visible = True
-    assert visibility_messages()[-1].visible is True
-    client.scene.world_axes.visible = False
-    assert visibility_messages()[-1].visible is False
+    with pytest.raises(AttributeError, match="server.scene.world_axes"):
+        _ = client.scene.world_axes
+    # The server-side handle is unaffected.
+    server.scene.world_axes.visible = True
+    assert server.scene.world_axes.visible
 
 
 def test_client_add_world_axes_name_raises(server: viser.ViserServer) -> None:

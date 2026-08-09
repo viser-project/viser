@@ -49,8 +49,6 @@ def _set_pose_vector(
     length: int,
     websock: WebsockMessageHandler,
     make_message: Callable[[_PoseTupleT], _messages.Message],
-    *,
-    force: bool = False,
 ) -> None:
     """Shared write path for the scene-node and skinned-bone pose setters.
 
@@ -58,15 +56,12 @@ def _set_pose_vector(
     ``current``, and otherwise writes it into ``current`` in place and queues the
     message built from the cast value. Keeping this in one place stops the four
     near-identical wxyz/position setters from drifting apart.
-
-    ``force`` skips the unchanged-value no-op; used by non-authoritative view
-    handles, whose cached value may not match the node's actual state.
     """
     from ._scene_api import cast_vector
 
     value_cast: _PoseTupleT = cast_vector(value, length)
     value_arr = np.asarray(value_cast)
-    if not force and np.allclose(value_arr, current):
+    if np.allclose(value_arr, current):
         return
     current[:] = value_arr
     websock.queue_message(make_message(value_cast))
@@ -232,12 +227,6 @@ class _SceneNodeHandleState:
     click_cb: list[_ClickCallbackEntry] = dataclasses.field(default_factory=list)
     drag_cb: list[_DragCallbackEntry] = dataclasses.field(default_factory=list)
     removed: bool = False
-    authoritative: bool = True
-    """Whether this handle's cached state is the source of truth for the
-    node. False for per-client VIEW handles onto a shared (broadcast) node,
-    e.g. ``client.scene.world_axes``: broadcast writers also mutate the node,
-    so the cache can be stale, and setters must send unconditionally instead
-    of early-returning when the new value equals the cached one."""
     # Last bindings tuple published to the client. Used to dedup
     # redundant ``SetSceneNodeClickBindingsMessage`` emits — without
     # this, a no-op ``remove_click_callback("foo")`` for an
@@ -414,7 +403,6 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             4,
             self._impl.api._websock_interface,
             lambda v: _messages.SetOrientationMessage(self._impl.name, v),
-            force=not self._impl.authoritative,
         )
 
     @property
@@ -432,7 +420,6 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             3,
             self._impl.api._websock_interface,
             lambda v: _messages.SetPositionMessage(self._impl.name, v),
-            force=not self._impl.authoritative,
         )
 
     @property
@@ -442,11 +429,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     @visible.setter
     def visible(self, visible: bool) -> None:
-        # Non-authoritative view handles must not equality-skip: their cache
-        # can be stale relative to broadcast writers, and a skipped send here
-        # silently drops the override (world_axes.visible = False after the
-        # server broadcast True was exactly this bug).
-        if visible == self._impl.visible and self._impl.authoritative:
+        if visible == self._impl.visible:
             return
         self._impl.api._websock_interface.queue_message(
             _messages.SetSceneNodeVisibilityMessage(self._impl.name, visible)

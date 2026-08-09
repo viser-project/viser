@@ -427,23 +427,21 @@ def test_disconnect_frees_client_names(browser: Browser) -> None:
     server.stop()
 
 
-def test_world_axes_per_client_override_after_server_show(
+def test_world_axes_toggle_reaches_connected_client(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """Hiding the world axes through a client handle takes effect even after
-    the server made them visible (the client-side handle is a
-    non-authoritative view: it never equality-skips sends), and the override
-    can be lifted again."""
+    """server.scene.world_axes is the only world-axes handle (client scopes
+    have none -- accessing client.scene.world_axes raises), and its toggles
+    reach an already-connected client in both directions."""
     client = get_client_handle(viser_server)
+    with pytest.raises(AttributeError, match="server.scene.world_axes"):
+        _ = client.scene.world_axes
 
     viser_server.scene.world_axes.visible = True
     wait_for_scene_node_visible(viser_page, "/WorldAxes")
 
-    client.scene.world_axes.visible = False
+    viser_server.scene.world_axes.visible = False
     wait_for_scene_node_hidden(viser_page, "/WorldAxes")
-
-    client.scene.world_axes.visible = True
-    wait_for_scene_node_visible(viser_page, "/WorldAxes")
 
 
 def test_world_axes_server_state_deterministic_for_new_client(

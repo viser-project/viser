@@ -72,7 +72,6 @@ from ._scene_handles import (
     _DragInput,
     _normalize_node_name,
     _RaycastSupportedSceneNodeHandle,
-    _SceneNodeHandleState,
     _TransformControlsState,
 )
 from ._threadpool_exceptions import (
@@ -340,41 +339,18 @@ class SceneApi:
         self._scene_pointer_done_cb: list[Callable[[], None | Coroutine]] = []
 
         # Set up world axes handle. Only the SERVER scope creates (and owns)
-        # the node; the name index would reject a second overlapping claim.
+        # the node: the world axes are one shared scene node, and a
+        # client-scoped duplicate would collide with the server's claim in
+        # the name index (each ClientHandle used to re-add /WorldAxes over
+        # its own connection, racing the broadcast replay). Client-scoped
+        # SceneApis expose no world_axes -- see the property below.
+        self._world_axes: FrameHandle | None = None
         if self._scope_key is None:
-            self.world_axes: FrameHandle = self.add_frame(
+            self._world_axes = self.add_frame(
                 "/WorldAxes",
                 axes_radius=0.0125,
             )
-            """Handle for the world axes, which are created by default."""
-
-            self.world_axes.visible = False
-        else:
-            # Client scope: a NON-AUTHORITATIVE view onto the shared node.
-            # No messages are sent at construction (the broadcast replay
-            # already delivers the server's node + state), and the handle is
-            # not registered in this scope's registry or the name index --
-            # it is a write-through override, not a claim. Because broadcast
-            # writers also mutate the node, this handle's cached state can
-            # be stale, so authoritative=False makes every setter send
-            # unconditionally instead of early-returning on cached equality.
-            # Reads reflect only writes made through THIS handle.
-            self.world_axes = FrameHandle(
-                _SceneNodeHandleState(
-                    "/WorldAxes",
-                    _messages.FrameProps(
-                        show_axes=True,
-                        axes_length=0.5,
-                        axes_radius=0.0125,
-                        origin_radius=0.025,
-                        origin_color=(236, 236, 0),
-                        scale=1.0,
-                    ),
-                    api=self,
-                    visible=False,
-                    authoritative=False,
-                )
-            )
+            self._world_axes.visible = False
 
         self._websock_interface.register_handler(
             _messages.TransformControlsUpdateMessage,
@@ -399,6 +375,25 @@ class SceneApi:
             _messages.ScenePointerMessage,
             self._handle_scene_pointer_updates,
         )
+
+    @property
+    def world_axes(self) -> FrameHandle:
+        """Handle for the world axes, which are created by default. Hidden
+        until made visible via ``server.scene.world_axes.visible = True``.
+
+        Only available on the server's scene API: the world axes are a single
+        shared (broadcast) scene node, so per-client handles would hold stale
+        caches of state that broadcast writers also mutate. Accessing this on
+        a client handle's ``client.scene`` raises ``AttributeError``."""
+        if self._world_axes is None:
+            raise AttributeError(
+                "world_axes is only available on the server's scene API "
+                "(server.scene.world_axes): the world axes are a single "
+                "shared scene node owned by the server scope. To show or "
+                "hide them for every client, assign "
+                "server.scene.world_axes.visible."
+            )
+        return self._world_axes
 
     def _is_drag_active_for(self, name: str) -> bool:
         """Whether the named scene node currently has any in-flight drag
