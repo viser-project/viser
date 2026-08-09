@@ -31,6 +31,8 @@ class AsyncMessageBuffer:
     window_duration_sec: float = 1.0 / 60.0
     done: bool = False
     atomic_counter: int = 0
+    _warned_push_after_done: bool = False
+    """One-shot latch for the dead-connection write warning in push()."""
 
     generator_cursors: Dict[int, int] = dataclasses.field(default_factory=dict)
     """Per-active-connection consumption cursors (client id -> last message id
@@ -57,6 +59,23 @@ class AsyncMessageBuffer:
         """Push a new message to our buffer, and remove old redundant ones."""
 
         assert isinstance(message, Message)
+
+        # A done buffer has no producer left to drain it: for a per-client
+        # buffer this means the client disconnected, and anything pushed via
+        # a stale handle silently accumulates forever. Warn ONCE per buffer
+        # so the dead-handle write is diagnosable without spamming loops
+        # that keep animating a departed client's elements.
+        if self.done and not self._warned_push_after_done:
+            self._warned_push_after_done = True
+            import warnings
+
+            warnings.warn(
+                f"Queued a {type(message).__name__} on a closed connection "
+                "(e.g. via a handle owned by a disconnected client); it will "
+                "never be delivered. Further messages on this connection "
+                "will be dropped silently.",
+                stacklevel=4,
+            )
 
         # Add message to buffer.
         redundancy_key = message.redundancy_key()

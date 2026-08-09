@@ -379,6 +379,7 @@ function useMessageHandler() {
       case "ScenePointerEnableMessage": {
         viewer.interaction.scenePointer.applyFiltersDelta(
           message.event_type,
+          message.owner ?? "",
           message.modifiers,
         );
         return;

@@ -12,8 +12,10 @@ This suite pins that seam from both directions:
 
 - **Contract tests** lock in cross-scope behavior that any future redesign
   must preserve: per-client namespace isolation, the ephemeral lifecycle of
-  client-scoped elements across reconnects, and the deliberate cross-scope
-  exclusivity of scene pointer callbacks.
+  client-scoped elements across reconnects, and scene pointer callback
+  coexistence (both scopes may register; a gesture matching both scopes'
+  filters fires both scopes' callbacks; one scope's disable never
+  deactivates the other's).
 
 - **Variant/shadowing tests** cover the display rule end to end: a client
   variant shadows the server's and un-shadows with the server's LATEST
@@ -200,57 +202,74 @@ def test_client_scope_elements_do_not_survive_reconnect(
     assert viser_page.evaluate(JS_GET_EFFECTIVE_OWNER, "/shared_box") == ""
 
 
-def test_scene_pointer_callbacks_are_cross_scope_exclusive(
+def test_scene_pointer_callbacks_coexist_across_scopes(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """Scene pointer callbacks (scene-level on_click) enforce cross-scope
-    exclusivity: registering on the server scope tears down every client
-    scope's registrations, and vice versa. This is a deliberate workaround
-    for the shared client-side enable toggle -- pin it so the
-    action-at-a-distance stays visible."""
+    """Scene pointer callbacks coexist across scopes: filters are kept per
+    owner on the frontend and gesture engagement uses the union, so both
+    scopes' registrations fire on one physical click and one scope's
+    disable never deactivates the other's. (This replaced the interim
+    cross-scope exclusivity rule.)"""
     client = get_client_handle(viser_server)
+
+    server_clicked = threading.Event()
+    client_clicked = threading.Event()
 
     @client.scene.on_click()
     def _(_event: viser.SceneClickEvent) -> None:
-        pass
-
-    assert len(client.scene._scene_pointer_cb) == 1
+        client_clicked.set()
 
     @viser_server.scene.on_click()
     def _(_event: viser.SceneClickEvent) -> None:
-        pass
+        server_clicked.set()
 
-    # Server-scope registration reached into the client scope and removed
-    # its callback.
+    # Registration in one scope leaves the other's callbacks alone.
     assert len(viser_server.scene._scene_pointer_cb) == 1
-    assert len(client.scene._scene_pointer_cb) == 0
-
-    # And the reverse: a client-scope registration tears down the server's.
-    @client.scene.on_click()
-    def _(_event: viser.SceneClickEvent) -> None:
-        pass
-
     assert len(client.scene._scene_pointer_cb) == 1
-    assert len(viser_server.scene._scene_pointer_cb) == 0
+
+    time.sleep(0.5)  # Let both enable messages reach the frontend.
+    cx, cy = canvas_center(viser_page)
+    viser_page.mouse.move(cx, cy)
+    viser_page.mouse.down()
+    viser_page.mouse.up()
+
+    # One physical click, both scopes' callbacks.
+    assert server_clicked.wait(5.0), "server-scope scene click did not fire"
+    assert client_clicked.wait(5.0), "client-scope scene click did not fire"
+
+    # One scope disabling its filters must not deactivate the other's: after
+    # the client scope clears, a click still reaches the server callback.
+    client.scene.remove_click_callback()
+    server_clicked.clear()
+    client_clicked.clear()
+    time.sleep(0.5)  # Let the disable reach the frontend.
+    viser_page.mouse.move(cx, cy)
+    viser_page.mouse.down()
+    viser_page.mouse.up()
+    assert server_clicked.wait(5.0), (
+        "server-scope scene click stopped firing after the client scope "
+        "cleared its own filters"
+    )
+    time.sleep(0.3)
+    assert not client_clicked.is_set()
 
 
 def test_gui_container_context_does_not_span_scopes(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """A ``with server.gui.add_folder(...)`` block does NOT capture elements
-    added through a client handle's GuiApi: the container context is
-    per-GuiApi-instance, so the button silently lands at the client's root.
-    Characterization -- if cross-scope nesting is ever supported (or made an
-    error), this should change deliberately."""
+    """A ``with server.gui.add_folder(...)`` block cannot capture elements
+    added through a client handle's GuiApi: cross-scope container nesting
+    raises instead of silently landing the element at the other scope's
+    root (the historical behavior). Adds outside the block work normally."""
     client = get_client_handle(viser_server)
 
     with viser_server.gui.add_folder("SrvFolder"):
-        stray = client.gui.add_button("StrayBtn")
+        with pytest.raises(RuntimeError, match="cannot span"):
+            client.gui.add_button("StrayBtn")
 
-    assert stray._impl.parent_container_id == "root"
-
-    # The button still renders for the client (at the root, not the folder).
-    button = viser_page.get_by_role("button", name="StrayBtn")
+    # Outside the server's container context, client adds work normally.
+    client.gui.add_button("OkBtn")
+    button = viser_page.get_by_role("button", name="OkBtn")
     button.wait_for(state="visible", timeout=5_000)
 
 

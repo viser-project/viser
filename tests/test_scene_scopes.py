@@ -244,3 +244,45 @@ def test_client_world_axes_property_raises(server: viser.ViserServer) -> None:
     override = client.scene.add_frame("/WorldAxes", show_axes=True)
     assert not override._impl.removed
     assert not server.scene.world_axes._impl.removed
+
+
+# ---------------------------------------------------------------------------
+# Cross-scope GUI containers + dead-client writes.
+# ---------------------------------------------------------------------------
+
+
+def test_gui_container_cannot_span_scopes(server: viser.ViserServer) -> None:
+    """Nesting a client-scope GUI add inside a server-scope container (or
+    vice versa) raises instead of silently landing the element at the other
+    scope's root."""
+    client = make_synthetic_client(server, 0)
+
+    with server.gui.add_folder("SrvFolder"):
+        with pytest.raises(RuntimeError, match="cannot span"):
+            client.gui.add_button("stray")
+    # Outside the context, adds work normally in both scopes.
+    client.gui.add_button("ok")
+
+    with client.gui.add_folder("CliFolder"):
+        with pytest.raises(RuntimeError, match="cannot span"):
+            server.gui.add_button("stray")
+    server.gui.add_button("ok")
+
+
+def test_dead_connection_write_warns_once(server: viser.ViserServer) -> None:
+    """Writes through handles owned by a disconnected client warn exactly
+    once per connection, instead of accumulating silently forever."""
+    import warnings as warnings_module
+
+    client = make_synthetic_client(server, 0)
+    handle = client.scene.add_icosphere("/mine", radius=0.1)
+
+    # Simulate the disconnect teardown's buffer shutdown.
+    client._websock_connection._state.message_buffer.set_done()
+
+    with warnings_module.catch_warnings(record=True) as caught:
+        warnings_module.simplefilter("always")
+        handle.position = (1.0, 0.0, 0.0)
+        handle.position = (2.0, 0.0, 0.0)  # Second write: no second warning.
+    dead_warnings = [w for w in caught if "closed connection" in str(w.message)]
+    assert len(dead_warnings) == 1
