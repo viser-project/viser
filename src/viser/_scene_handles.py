@@ -49,6 +49,8 @@ def _set_pose_vector(
     length: int,
     websock: WebsockMessageHandler,
     make_message: Callable[[_PoseTupleT], _messages.Message],
+    *,
+    force: bool = False,
 ) -> None:
     """Shared write path for the scene-node and skinned-bone pose setters.
 
@@ -56,12 +58,15 @@ def _set_pose_vector(
     ``current``, and otherwise writes it into ``current`` in place and queues the
     message built from the cast value. Keeping this in one place stops the four
     near-identical wxyz/position setters from drifting apart.
+
+    ``force`` skips the unchanged-value no-op; used by non-authoritative view
+    handles, whose cached value may not match the node's actual state.
     """
     from ._scene_api import cast_vector
 
     value_cast: _PoseTupleT = cast_vector(value, length)
     value_arr = np.asarray(value_cast)
-    if np.allclose(value_arr, current):
+    if not force and np.allclose(value_arr, current):
         return
     current[:] = value_arr
     websock.queue_message(make_message(value_cast))
@@ -227,6 +232,12 @@ class _SceneNodeHandleState:
     click_cb: list[_ClickCallbackEntry] = dataclasses.field(default_factory=list)
     drag_cb: list[_DragCallbackEntry] = dataclasses.field(default_factory=list)
     removed: bool = False
+    authoritative: bool = True
+    """Whether this handle's cached state is the source of truth for the
+    node. False for per-client VIEW handles onto a shared (broadcast) node,
+    e.g. ``client.scene.world_axes``: broadcast writers also mutate the node,
+    so the cache can be stale, and setters must send unconditionally instead
+    of early-returning when the new value equals the cached one."""
     # Last bindings tuple published to the client. Used to dedup
     # redundant ``SetSceneNodeClickBindingsMessage`` emits — without
     # this, a no-op ``remove_click_callback("foo")`` for an
@@ -275,9 +286,6 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         name = _normalize_node_name(name)
         message.name = name
 
-        # Ensure all ancestor nodes exist (creates intermediate frames as needed).
-        api._ensure_ancestors_exist(name)
-
         # Snapshot array props before the message is queued and persisted for
         # replay. The add_* methods use np.asarray casts that may alias the
         # caller's array; without a copy here, a caller mutating that array
@@ -296,6 +304,22 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         # is marked removed but still registered, where its remove() would
         # tear down the replacement's fresh state.
         with api._node_lifecycle_lock:
+            # Cross-scope checks come FIRST, before any side effect: names
+            # share one namespace per viewer (the frontend's tree is keyed by
+            # name, scope-blind), so an add that collides with an overlapping
+            # scope -- or violates the audience-subset parenting rule -- is
+            # rejected here with nothing queued and nothing registered.
+            # Within-scope re-adds pass this check and take the supersede
+            # path below.
+            api._name_index.check_claimable(name, api._scope_key)
+
+            # Ensure all ancestor nodes exist (creates intermediate frames as
+            # needed; re-enters _make under the reentrant lifecycle lock).
+            # Index-aware: an ancestor owned by a scope this viewer already
+            # sees (e.g. a broadcast parent of a per-client child) is not
+            # re-created.
+            api._ensure_ancestors_exist(name)
+
             old_handle = api._handle_from_node_name.get(name)
             if old_handle is not None and not old_handle._impl.removed:
                 # 1. The old Python handle goes inert. Removal resolves by NAME,
@@ -344,6 +368,10 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             api._children_from_node_name.setdefault(parent, set()).add(name)
             api._children_from_node_name.setdefault(name, set())
 
+            # Publish the claim in the cross-scope name index (idempotent for
+            # same-scope supersedes).
+            api._name_index.commit(name, api._scope_key, api)
+
         out.wxyz = wxyz
         out.position = position
         if old_handle is not None:
@@ -386,6 +414,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             4,
             self._impl.api._websock_interface,
             lambda v: _messages.SetOrientationMessage(self._impl.name, v),
+            force=not self._impl.authoritative,
         )
 
     @property
@@ -403,6 +432,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             3,
             self._impl.api._websock_interface,
             lambda v: _messages.SetPositionMessage(self._impl.name, v),
+            force=not self._impl.authoritative,
         )
 
     @property
@@ -412,7 +442,11 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     @visible.setter
     def visible(self, visible: bool) -> None:
-        if visible == self._impl.visible:
+        # Non-authoritative view handles must not equality-skip: their cache
+        # can be stale relative to broadcast writers, and a skipped send here
+        # silently drops the override (world_axes.visible = False after the
+        # server broadcast True was exactly this bug).
+        if visible == self._impl.visible and self._impl.authoritative:
             return
         self._impl.api._websock_interface.queue_message(
             _messages.SetSceneNodeVisibilityMessage(self._impl.name, visible)
@@ -495,6 +529,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         for node_name in to_remove:
             handle = api._handle_from_node_name.pop(node_name, None)
             api._children_from_node_name.pop(node_name, None)
+            api._name_index.release(node_name, api._scope_key)
             if handle is None:
                 continue
             handle._impl.removed = True
@@ -512,6 +547,26 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             api._websock_interface.queue_message(
                 _messages.RemoveSceneNodeMessage(node_name)
             )
+
+        # Cascade into OTHER scopes' subtrees. The frontend's scene tree is
+        # keyed by name with no notion of scope, so its cascade already
+        # deletes e.g. a per-client child parented under this broadcast node;
+        # without this, that child's Python handle would stay live in its
+        # scope's registry -- a zombie whose later writes silently target a
+        # nonexistent node. Only the broadcast scope can have foreign
+        # descendants (the audience-subset rule forbids a broader child under
+        # a narrower parent). Each foreign teardown runs the full
+        # _remove_locked path on its own scope (reentrant lifecycle lock),
+        # including a Remove message on that client's connection -- redundant
+        # with the frontend cascade but harmless, and it keeps the buffer
+        # purge + binding-reset logic on the one shared path.
+        if api._scope_key is None:
+            for foreign_api, foreign_name in api._name_index.foreign_descendants(
+                self._impl.name, api._scope_key
+            ):
+                foreign_handle = foreign_api._handle_from_node_name.get(foreign_name)
+                if foreign_handle is not None and not foreign_handle._impl.removed:
+                    foreign_handle._remove_locked()
 
     def _on_remove(self) -> None:
         """Release any subclass-specific registries for this node.

@@ -9,16 +9,20 @@ the Python side keeps disjoint per-scope registries and buffers.
 
 This suite pins that seam from both directions:
 
-- **Contract tests** (plain asserts) lock in cross-scope behavior that any
-  future redesign must preserve: per-client namespace isolation, the
-  ephemeral lifecycle of client-scoped elements across reconnects, and the
-  deliberate cross-scope exclusivity of scene pointer callbacks.
+- **Contract tests** lock in cross-scope behavior that any future redesign
+  must preserve: per-client namespace isolation, the ephemeral lifecycle of
+  client-scoped elements across reconnects, and the deliberate cross-scope
+  exclusivity of scene pointer callbacks.
 
-- **Bug demonstrations** (``xfail(strict=True)``) assert the *intended*
-  semantics -- generally "the cross-scope case should behave like the
-  documented within-scope case" -- and fail deterministically today. Fixing
-  the underlying issue flips them to XPASS, which strict mode reports as a
-  hard failure until the marker is removed.
+- **Rule tests** cover the cross-scope name discipline enforced by the
+  server-wide ``SceneNameIndex``: overlapping-scope name reuse is rejected
+  at the add site, a child's audience must be a subset of its parent's,
+  broadcast removals cascade into per-client subtrees (Python handles
+  included, matching the frontend's name-keyed cascade), and disconnects
+  free a client's names. Fast Python-level coverage of the same rules lives
+  in ``tests/test_scene_name_index.py``; here they run against a real
+  browser so the frontend-observable halves (node state, click dispatch,
+  world-axes overrides) are exercised too.
 """
 
 from __future__ import annotations
@@ -269,58 +273,51 @@ def test_gui_container_context_does_not_span_scopes(
 
 
 # ---------------------------------------------------------------------------
-# Bug demonstrations: strict xfails asserting intended semantics.
+# Cross-scope name rules (enforced by SceneNameIndex).
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Cross-scope same-name supersede does not reset pose: the "
-        "within-scope re-add path force-broadcasts the new node's pose "
-        "(_scene_handles.py SceneNodeHandle._make), but a client-scope "
-        "re-add of a server-scope name misses the other scope's registry, "
-        "so the frontend keeps the OLD node's position."
-    ),
-)
-def test_cross_scope_same_name_readd_resets_pose(
+def test_cross_scope_same_name_add_raises(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """Re-adding a name from the other scope should behave like the
-    documented within-scope replacement: the new add's pose wins."""
+    """A name claimed by one scope cannot be re-added from an overlapping
+    scope: both scopes share one name-keyed scene tree on the frontend, so
+    the second add would silently corrupt the first node's state. The add
+    raises instead, leaving the existing node untouched."""
     client = get_client_handle(viser_server)
 
     viser_server.scene.add_icosphere("/dup", radius=0.3, position=(1.0, 2.0, 0.0))
     wait_for_node_position(viser_page, "/dup", (1.0, 2.0, 0.0))
 
-    # Client-scoped re-add at the origin. Within one scope this resets the
-    # node's pose; cross-scope it should too.
-    client.scene.add_icosphere("/dup", radius=0.3, position=(0.0, 0.0, 0.0))
+    with pytest.raises(ValueError, match="already used"):
+        client.scene.add_icosphere("/dup", radius=0.3, position=(0.0, 0.0, 0.0))
 
-    wait_for_node_position(viser_page, "/dup", (0.0, 0.0, 0.0))
+    # The rejected add left no trace: no client-scope registry entry, and the
+    # frontend node keeps the server's state.
+    assert "/dup" not in client.scene._handle_from_node_name
+    time.sleep(0.3)
+    wait_for_node_position(viser_page, "/dup", (1.0, 2.0, 0.0))
+
+    # And the reverse direction: a client-owned name rejects a broadcast add.
+    client.scene.add_icosphere("/own", radius=0.3)
+    wait_for_scene_node(viser_page, "/own")
+    with pytest.raises(ValueError, match="already used"):
+        viser_server.scene.add_icosphere("/own", radius=0.3)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Incoming SceneNodeClickMessages are dispatched by name into BOTH "
-        "scopes' registries (infra handle_incoming fans out to server and "
-        "connection handlers), so one physical click fires callbacks on two "
-        "handles even though only one node exists on the frontend."
-    ),
-)
-def test_cross_scope_same_name_click_dispatches_once(
+def test_click_dispatches_to_single_scope(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """When a client-scoped node has superseded a server-scoped node of the
-    same name, a click should dispatch only to the surviving (client-scoped)
-    handle."""
+    """One physical click reaches exactly one scope's callbacks. (Before the
+    name index, a cross-scope name collision made one click fire BOTH
+    scopes' handlers; collisions are now rejected at the add site, so
+    dispatch is unique by construction.)"""
     viser_server.initial_camera.position = (0.0, 0.0, 4.0)
     viser_server.initial_camera.look_at = (0.0, 0.0, 0.0)
     client = get_client_handle(viser_server)
 
+    server_clicks: list[int] = []
     server_clicked = threading.Event()
-    client_clicked = threading.Event()
 
     server_box = viser_server.scene.add_box(
         "/dup_click", dimensions=(4.0, 4.0, 0.2), color=(200, 60, 60)
@@ -328,15 +325,14 @@ def test_cross_scope_same_name_click_dispatches_once(
 
     @server_box.on_click
     def _(_event: viser.SceneNodePointerEvent[viser.BoxHandle]) -> None:
+        server_clicks.append(1)
         server_clicked.set()
 
-    client_box = client.scene.add_box(
-        "/dup_click", dimensions=(4.0, 4.0, 0.2), color=(60, 200, 60)
-    )
-
-    @client_box.on_click
-    def _(_event: viser.SceneNodePointerEvent[viser.BoxHandle]) -> None:
-        client_clicked.set()
+    # The conflicting client-scoped twin is rejected...
+    with pytest.raises(ValueError, match="already used"):
+        client.scene.add_box(
+            "/dup_click", dimensions=(4.0, 4.0, 0.2), color=(60, 200, 60)
+        )
 
     wait_for_scene_node(viser_page, "/dup_click")
     time.sleep(0.5)  # Let click bindings reach the frontend.
@@ -346,65 +342,138 @@ def test_cross_scope_same_name_click_dispatches_once(
     viser_page.mouse.down()
     viser_page.mouse.up()
 
-    assert client_clicked.wait(5.0), "click did not reach the client-scoped handle"
-    # Give the (incorrect) second dispatch a chance to land.
+    # ...and the click reaches the server-scoped handle exactly once.
+    assert server_clicked.wait(5.0), "click did not reach the server-scoped handle"
     time.sleep(0.5)
-    assert not server_clicked.is_set(), (
-        "click dispatched to the superseded server-scoped handle too"
-    )
+    assert len(server_clicks) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A broadcast remove cascades on the frontend into client-scoped "
-        "descendants (single name-keyed tree), but the client scope's "
-        "Python registry never learns: the child handle stays live and "
-        "later writes silently target a nonexistent node."
-    ),
-)
 def test_broadcast_remove_invalidates_client_scope_child(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """Removing a server-scoped parent should invalidate a client-scoped
-    child handle parented under it, since the frontend already deleted the
-    child node."""
+    """Removing a server-scoped parent invalidates a client-scoped child
+    handle parented under it: the frontend's name-keyed cascade already
+    deleted the child node, so the Python handle must not stay live."""
     client = get_client_handle(viser_server)
 
     parent = viser_server.scene.add_frame("/parent", show_axes=False)
     child = client.scene.add_icosphere("/parent/child", radius=0.3)
     wait_for_scene_node(viser_page, "/parent/child")
 
+    # The client scope did not re-create the broadcast parent for itself.
+    assert "/parent" not in client.scene._handle_from_node_name
+
     parent.remove()
 
     # The frontend cascade removes the client-scoped child...
     wait_for_scene_node_removed(viser_page, "/parent/child")
-    # ...so the Python handle must not still claim the node exists.
+    # ...and the Python handle agrees; later writes fail loudly.
     assert child._impl.removed, (
         "client-scoped child handle still live after its node was removed "
         "by a broadcast cascade"
     )
+    with pytest.raises(RuntimeError, match="removed"):
+        child.position = (1.0, 0.0, 0.0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Every ClientHandle's SceneApi re-adds /WorldAxes with its own "
-        "cached visible=False; after the server broadcasts visible=True, "
-        "the client handle's stale cache makes `visible = False` a no-op "
-        "(equality early-out in SceneNodeHandle.visible), so no message is "
-        "sent and the axes stay visible."
-    ),
-)
+def test_client_parent_rejects_broadcast_child(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """A child's audience must be a subset of its parent's: a broadcast
+    child under a per-client parent would dangle for every other viewer."""
+    client = get_client_handle(viser_server)
+
+    client.scene.add_frame("/client_parent", show_axes=False)
+    wait_for_scene_node(viser_page, "/client_parent")
+
+    with pytest.raises(ValueError, match="audience"):
+        viser_server.scene.add_icosphere("/client_parent/child", radius=0.3)
+
+
+def test_disconnect_frees_client_names(browser: Browser) -> None:
+    """A disconnect releases the client's name claims, so the names become
+    available to other scopes again."""
+    viser._client_autobuild.ensure_client_is_built = lambda: None
+
+    max_retries = 3
+    server: viser.ViserServer | None = None
+    for attempt in range(max_retries):
+        port = find_free_port()
+        try:
+            server = viser.ViserServer(port=port, verbose=False)
+            break
+        except OSError:
+            if attempt == max_retries - 1:
+                raise
+    assert server is not None
+    wait_for_server_ready(server.get_port())
+
+    context = browser.new_context()
+    page = context.new_page()
+    wait_for_connection(page, server.get_port())
+    client = get_client_handle(server)
+
+    client.scene.add_icosphere("/mine", radius=0.3)
+    with pytest.raises(ValueError, match="already used"):
+        server.scene.add_icosphere("/mine", radius=0.3)
+
+    context.close()
+    deadline = time.monotonic() + 10.0
+    while server.get_clients() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not server.get_clients(), "client never disconnected"
+
+    server.scene.add_icosphere("/mine", radius=0.3)
+    server.stop()
+
+
 def test_world_axes_per_client_override_after_server_show(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    """Hiding the world axes through a client handle should take effect even
-    after the server made them visible."""
+    """Hiding the world axes through a client handle takes effect even after
+    the server made them visible (the client-side handle is a
+    non-authoritative view: it never equality-skips sends), and the override
+    can be lifted again."""
     client = get_client_handle(viser_server)
 
     viser_server.scene.world_axes.visible = True
     wait_for_scene_node_visible(viser_page, "/WorldAxes")
 
     client.scene.world_axes.visible = False
-    wait_for_scene_node_hidden(viser_page, "/WorldAxes", timeout=5_000)
+    wait_for_scene_node_hidden(viser_page, "/WorldAxes")
+
+    client.scene.world_axes.visible = True
+    wait_for_scene_node_visible(viser_page, "/WorldAxes")
+
+
+def test_world_axes_server_state_deterministic_for_new_client(
+    browser: Browser,
+) -> None:
+    """A client connecting after the server showed the world axes sees them
+    visible. (Previously each ClientHandle re-added /WorldAxes with
+    visible=False over the per-client connection, racing the broadcast
+    replay -- the axes' state at connect was nondeterministic.)"""
+    viser._client_autobuild.ensure_client_is_built = lambda: None
+
+    max_retries = 3
+    server: viser.ViserServer | None = None
+    for attempt in range(max_retries):
+        port = find_free_port()
+        try:
+            server = viser.ViserServer(port=port, verbose=False)
+            break
+        except OSError:
+            if attempt == max_retries - 1:
+                raise
+    assert server is not None
+    wait_for_server_ready(server.get_port())
+
+    server.scene.world_axes.visible = True
+
+    context = browser.new_context()
+    page = context.new_page()
+    wait_for_connection(page, server.get_port())
+    wait_for_scene_node_visible(page, "/WorldAxes")
+
+    context.close()
+    server.stop()
