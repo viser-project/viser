@@ -568,6 +568,15 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
     these are used, for example via a client's
     :meth:`SceneApi.add_point_cloud()` method, created elements are local to
     only one specific client.
+
+    **Client state is ephemeral.** A client handle corresponds to a single
+    websocket connection: when the browser disconnects or reloads, elements
+    created through the handle are gone, and the reconnected browser is a new
+    client (new handle, new ``client_id``). Per-client state should therefore
+    be (re)built in :meth:`ViserServer.on_client_connect`, which fires again
+    on reconnect. State that must outlive a connection belongs client-side
+    (browser storage) or in application code keyed however the application
+    identifies its users; the server never retains per-client element state.
     """
 
     def __init__(
@@ -1508,6 +1517,10 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self, cb: Callable[[ClientHandle], NoneOrCoroutine]
     ) -> Callable[[ClientHandle], NoneOrCoroutine]:
         """Attach a callback to run for newly connected clients.
+
+        This is also where per-client state should be (re)built: client state
+        is ephemeral (see :class:`ClientHandle`), and a browser that
+        reconnects or reloads arrives here as a brand-new client.
 
         The callback can be either a standard function or an async function:
         - Standard functions (def) will be executed in a threadpool.

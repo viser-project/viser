@@ -191,9 +191,10 @@ def test_client_scope_elements_do_not_survive_reconnect(
 ) -> None:
     """Server-scoped elements are replayed after a reconnect; client-scoped
     elements are not (the per-client buffer is ephemeral and the reconnected
-    browser is a brand-new ClientHandle). This lifecycle asymmetry is
-    currently implicit in the architecture; pin it so a change is a
-    deliberate decision."""
+    browser is a brand-new ClientHandle). This is the documented contract --
+    client state is ephemeral, rebuilt in on_client_connect; durable state
+    lives client-side or in application code (see the ClientHandle
+    docstring). The server never retains per-client element state."""
     client = get_client_handle(viser_server)
 
     viser_server.scene.add_box("/shared_box", dimensions=(1.0, 1.0, 1.0))
