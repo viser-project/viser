@@ -600,8 +600,8 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
 
         # Public attributes.
         # client_id is assigned BEFORE the scene/gui APIs: SceneApi.__init__
-        # reads it (per-client scope key for the scene name index), and an
-        # attribute miss during construction would recurse through
+        # reads it (the owner id stamped on this scope's scene messages), and
+        # an attribute miss during construction would recurse through
         # DeprecatedAttributeShim.__getattr__ (whose `self.scene` lookup is
         # also unset at that point).
         self.client_id: int = conn.client_id

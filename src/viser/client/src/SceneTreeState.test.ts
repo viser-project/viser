@@ -89,7 +89,7 @@ describe("variant slots and the display rule", () => {
     const { store, nodePoseData, actions } = setup();
 
     const broadcastMsg = makeFrameMessage("/x", "");
-    actions.addSceneNode(broadcastMsg);
+    expect(actions.addSceneNode(broadcastMsg)).toBe("effective");
     nodePoseData["/x"] = {
       wxyz: [0, 0, 0, 1],
       position: [1, 2, 3],
@@ -97,7 +97,7 @@ describe("variant slots and the display rule", () => {
     };
 
     const clientMsg = makeFrameMessage("/x", "7");
-    actions.addSceneNode(clientMsg);
+    expect(actions.addSceneNode(clientMsg)).toBe("effective");
 
     const node = store.get("/x")!;
     expect(node.message).toBe(clientMsg);
@@ -114,7 +114,7 @@ describe("variant slots and the display rule", () => {
     const broadcastMsg = makeFrameMessage("/x", "");
     actions.addSceneNode(broadcastMsg);
     const anchorMsg = makeFrameMessage("/x", "7", true);
-    actions.addSceneNode(anchorMsg);
+    expect(actions.addSceneNode(anchorMsg)).toBe("shadowed");
 
     const node = store.get("/x")!;
     expect(node.message).toBe(broadcastMsg); // Still effective.
@@ -140,10 +140,17 @@ describe("variant slots and the display rule", () => {
     actions.addSceneNode(makeFrameMessage("/x", ""));
     actions.addSceneNode(makeFrameMessage("/x", "7")); // Shadows broadcast.
 
-    // Broadcast keeps updating while shadowed.
-    actions.updateShadowedVariant("/x", "", { position: [4, 5, 6] });
+    // Broadcast keeps updating while shadowed; the router consumes the
+    // update (returns true) instead of letting it hit the effective path.
+    expect(actions.routeShadowedUpdate("/x", "", { position: [4, 5, 6] })).toBe(
+      true,
+    );
+    // An update for the EFFECTIVE variant is not consumed.
+    expect(
+      actions.routeShadowedUpdate("/x", "7", { position: [0, 0, 9] }),
+    ).toBe(false);
 
-    actions.removeSceneNodeVariant("/x", "7");
+    expect(actions.removeSceneNodeVariant("/x", "7")).toBe("promoted");
     const node = store.get("/x")!;
     expect(node.message.owner).toBe("");
     expect(node.shadowed).toBeUndefined();

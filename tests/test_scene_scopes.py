@@ -15,7 +15,6 @@ anchors, scope-local cascade, and coexistence in the registries.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Generator
 
 import pytest
@@ -24,8 +23,8 @@ import viser
 import viser._client_autobuild
 from viser import _messages as m
 from viser._viser import ClientHandle
-from viser.infra._async_message_buffer import AsyncMessageBuffer
-from viser.infra._infra import WebsockClientConnection, _ClientHandleState
+
+from .infra_utils import make_synthetic_client
 
 
 @pytest.fixture()
@@ -34,25 +33,6 @@ def server() -> Generator[viser.ViserServer, None, None]:
     server = viser.ViserServer(port=0, verbose=False)
     yield server
     server.stop()
-
-
-def _make_synthetic_client(server: viser.ViserServer, client_id: int) -> ClientHandle:
-    """In-process ClientHandle with a real per-client message buffer but no
-    websocket (mirrors how WebsockServer builds per-client state; same
-    pattern as tests/test_panel.py). Buffer construction hops to the server's
-    loop thread because AsyncMessageBuffer's asyncio primitives bind to the
-    running loop."""
-
-    async def _make_buffer() -> AsyncMessageBuffer:
-        return AsyncMessageBuffer(server._event_loop, persistent_messages=False)
-
-    buffer = asyncio.run_coroutine_threadsafe(
-        _make_buffer(), server._event_loop
-    ).result(timeout=5.0)
-    conn = WebsockClientConnection(
-        client_id, _ClientHandleState(buffer, server._event_loop)
-    )
-    return ClientHandle(conn, server)
 
 
 def _client_buffer_messages(client: ClientHandle) -> list[m.Message]:
@@ -81,7 +61,7 @@ def test_owner_stamped_on_broadcast_messages(server: viser.ViserServer) -> None:
 
 
 def test_owner_stamped_on_client_messages(server: viser.ViserServer) -> None:
-    client = _make_synthetic_client(server, 3)
+    client = make_synthetic_client(server, 3)
     handle = client.scene.add_icosphere("/ball", radius=0.1, position=(1.0, 0.0, 0.0))
     handle.visible = False
     handle.color = (10, 20, 30)
@@ -101,7 +81,7 @@ def test_owner_stamped_on_client_messages(server: viser.ViserServer) -> None:
 
 
 def test_same_name_coexists_across_scopes(server: viser.ViserServer) -> None:
-    client = _make_synthetic_client(server, 0)
+    client = make_synthetic_client(server, 0)
 
     server_handle = server.scene.add_icosphere("/dup", radius=0.1)
     client_handle = client.scene.add_icosphere("/dup", radius=0.2)
@@ -119,8 +99,8 @@ def test_same_name_coexists_across_scopes(server: viser.ViserServer) -> None:
 
 
 def test_same_name_across_clients_coexists(server: viser.ViserServer) -> None:
-    client0 = _make_synthetic_client(server, 0)
-    client1 = _make_synthetic_client(server, 1)
+    client0 = make_synthetic_client(server, 0)
+    client1 = make_synthetic_client(server, 1)
 
     h0 = client0.scene.add_icosphere("/own", radius=0.1)
     h1 = client1.scene.add_icosphere("/own", radius=0.2)
@@ -142,7 +122,7 @@ def test_same_scope_supersede_still_works(server: viser.ViserServer) -> None:
 
 
 def test_virtual_anchors_created_per_scope(server: viser.ViserServer) -> None:
-    client = _make_synthetic_client(server, 0)
+    client = make_synthetic_client(server, 0)
 
     # Broadcast parent exists; the client's deep add still creates a
     # same-scope anchor chain (which does not shadow: anchors are virtual).
@@ -187,7 +167,7 @@ def test_real_add_supersedes_virtual_anchor(server: viser.ViserServer) -> None:
 
 
 def test_cascade_is_scope_local(server: viser.ViserServer) -> None:
-    client = _make_synthetic_client(server, 0)
+    client = make_synthetic_client(server, 0)
 
     parent = server.scene.add_frame("/parent", show_axes=False)
     server_child = server.scene.add_icosphere("/parent/shared", radius=0.1)
@@ -209,7 +189,7 @@ def test_cascade_is_scope_local(server: viser.ViserServer) -> None:
 
 
 def test_client_cascade_does_not_touch_broadcast(server: viser.ViserServer) -> None:
-    client = _make_synthetic_client(server, 0)
+    client = make_synthetic_client(server, 0)
 
     server.scene.add_frame("/parent", show_axes=False)
     server_child = server.scene.add_icosphere("/parent/shared", radius=0.1)
@@ -247,7 +227,7 @@ def test_remove_messages_enumerate_descendants(server: viser.ViserServer) -> Non
 
 
 def test_client_scene_construction_sends_nothing(server: viser.ViserServer) -> None:
-    client = _make_synthetic_client(server, 0)
+    client = make_synthetic_client(server, 0)
     assert len(_client_buffer_messages(client)) == 0, (
         "client SceneApi construction queued messages; it must not re-add "
         "/WorldAxes (or anything else) over the per-client connection"
@@ -256,7 +236,7 @@ def test_client_scene_construction_sends_nothing(server: viser.ViserServer) -> N
 
 
 def test_client_world_axes_property_raises(server: viser.ViserServer) -> None:
-    client = _make_synthetic_client(server, 0)
+    client = make_synthetic_client(server, 0)
     with pytest.raises(AttributeError, match="server.scene.world_axes"):
         _ = client.scene.world_axes
     # The sanctioned per-client override: a client-scoped "/WorldAxes" frame

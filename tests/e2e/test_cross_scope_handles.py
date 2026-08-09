@@ -40,6 +40,7 @@ import viser._client_autobuild
 from .utils import (
     canvas_center,
     find_free_port,
+    get_client_handle,
     wait_for_connection,
     wait_for_scene_node,
     wait_for_scene_node_hidden,
@@ -57,25 +58,6 @@ JS_GET_EFFECTIVE_OWNER = """
     return node.message.owner ?? "";
 }
 """
-
-
-def get_client_handle(
-    server: viser.ViserServer, expected_count: int = 1, timeout: float = 10.0
-) -> viser.ClientHandle:
-    """Wait until ``expected_count`` clients are registered, return the newest.
-
-    Client handles register on the first camera message, which can trail
-    the websocket handshake that ``wait_for_connection`` observes.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        clients = server.get_clients()
-        if len(clients) >= expected_count:
-            return clients[max(clients.keys())]
-        time.sleep(0.05)
-    raise TimeoutError(
-        f"Expected {expected_count} connected client(s) within {timeout}s."
-    )
 
 
 def wait_for_node_position(
@@ -338,8 +320,14 @@ def test_click_dispatches_to_effective_variant_only(
         client_clicked.set()
 
     wait_for_scene_node(viser_page, "/dup_click")
+    # Wait until the client-scoped variant is the effective one (non-empty
+    # owner) before clicking.
     viser_page.wait_for_function(
-        JS_GET_EFFECTIVE_OWNER + "",
+        """(nodeName) => {
+            const tree = window.__viserSceneTree;
+            const node = tree && tree.getState()[nodeName];
+            return node !== undefined && (node.message.owner ?? "") !== "";
+        }""",
         arg="/dup_click",
         timeout=5_000,
     )

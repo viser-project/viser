@@ -217,11 +217,6 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         viewer,
         activeDrag.endPointerXy,
       );
-      // Echo the effective variant's owner so the server routes the drag
-      // to exactly one scope's registry.
-      const draggedMessage = viewer.useSceneTree.get(
-        activeDrag.nodeName,
-      )?.message;
       return {
         type: "SceneNodeDragMessage",
         phase,
@@ -233,7 +228,9 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         end_screen_pos: [endScreenPos.x, endScreenPos.y],
         button: activeDrag.input.button,
         modifier: activeDrag.input.modifier,
-        owner: draggedMessage === undefined ? "" : ownerOf(draggedMessage),
+        // Echo the effective variant's owner so the server routes the drag
+        // to exactly one scope's registry.
+        owner: ownerOf(viewer.useSceneTree.get(activeDrag.nodeName)?.message),
       };
     },
     [

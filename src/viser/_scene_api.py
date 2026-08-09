@@ -351,25 +351,36 @@ class SceneApi:
             )
             self._world_axes.visible = False
 
-        self._websock_interface.register_handler(
+        # Node-keyed interaction messages echo the effective variant's owner,
+        # and every incoming message fans out to BOTH the server's and the
+        # connection's handler lists -- so these handlers are registered
+        # through the owner-scoping wrapper, which makes exactly one scope's
+        # SceneApi act on each message. Registering one of these directly
+        # would not fail; it would silently double-dispatch callbacks in
+        # both scopes.
+        self._register_owner_scoped_handler(
             _messages.TransformControlsUpdateMessage,
             self._handle_transform_controls_updates,
         )
-        self._websock_interface.register_handler(
+        self._register_owner_scoped_handler(
             _messages.TransformControlsDragStartMessage,
             self._handle_transform_controls_drag_start,
         )
-        self._websock_interface.register_handler(
+        self._register_owner_scoped_handler(
             _messages.TransformControlsDragEndMessage,
             self._handle_transform_controls_drag_end,
         )
-        self._websock_interface.register_handler(
+        self._register_owner_scoped_handler(
             _messages.SceneNodeClickMessage,
             self._handle_node_click_updates,
         )
-        self._websock_interface.register_handler(
+        self._register_owner_scoped_handler(
             _messages.SceneNodeDragMessage, self._handle_node_drag
         )
+        # Deliberately NOT owner-scoped: scene pointer events are scene-level
+        # (no target node, no owner), and cross-scope arbitration is handled
+        # by the registration-time exclusivity in
+        # _register_scene_pointer_callback instead.
         self._websock_interface.register_handler(
             _messages.ScenePointerMessage,
             self._handle_scene_pointer_updates,
@@ -402,8 +413,31 @@ class SceneApi:
         here (or stamp ``owner`` itself): an unstamped message defaults to
         the broadcast owner and would be routed to the wrong variant on the
         client."""
+        # A message class without a declared `owner` field would accept the
+        # assignment below but silently DROP it at serialization (only
+        # declared fields go over the wire) -- the client would then route
+        # the message to the wrong variant. Catch that at the first test
+        # that exercises the new message instead.
+        assert hasattr(message, "owner"), (
+            f"{type(message).__name__} is queued as a scene message but "
+            "declares no `owner` field."
+        )
         message.owner = self._owner_id  # type: ignore[attr-defined]
         self._websock_interface.queue_message(message)
+
+    def _register_owner_scoped_handler(self, message_cls, handler) -> None:
+        """Register an incoming-message handler that only fires when the
+        message's echoed ``owner`` matches this scope. This is the dispatch
+        rule that makes the fan-out registration model safe: node-keyed
+        interaction messages reach both the server's and the connection's
+        handler lists, and exactly one scope may act on each."""
+
+        async def owner_scoped(client_id: ClientId, message) -> None:
+            if message.owner != self._owner_id:
+                return
+            await handler(client_id, message)
+
+        self._websock_interface.register_handler(message_cls, owner_scoped)
 
     def _is_drag_active_for(self, name: str) -> bool:
         """Whether the named scene node currently has any in-flight drag
@@ -476,34 +510,23 @@ class SceneApi:
         same-scope ancestor chain, which is what makes scope-local cascade
         removal orphan-free (a client child survives a broadcast parent's
         removal by hanging from its own scope's anchor, which inherits the
-        departing variant's pose client-side). Runs under the lifecycle lock
-        so the existence checks and creates are atomic against concurrent
+        departing variant's pose client-side).
+
+        Caller (``SceneNodeHandle._make``) holds the lifecycle lock, so the
+        existence checks and creates are atomic against concurrent
         adds/removes."""
-        with self._node_lifecycle_lock:
-            parts = name.split("/")
-            for i in range(2, len(parts)):  # skip root ("") and the node itself
-                ancestor = "/".join(parts[:i])
-                if ancestor not in self._handle_from_node_name:
-                    message = _messages.FrameMessage(
-                        name=ancestor,
-                        props=_messages.FrameProps(
-                            show_axes=False,
-                            axes_length=0.5,
-                            axes_radius=0.025,
-                            origin_radius=0.05,
-                            origin_color=(236, 236, 0),
-                            scale=1.0,
-                        ),
-                    )
-                    message.virtual = True
-                    FrameHandle._make(
-                        self,
-                        message,
-                        ancestor,
-                        wxyz=(1.0, 0.0, 0.0, 0.0),
-                        position=(0.0, 0.0, 0.0),
-                        visible=True,
-                    )
+        # Fast path: a registered parent implies a complete ancestor chain
+        # (every add ensures its own chain; cascade removes whole same-scope
+        # subtrees), so per-add cost is one rsplit + dict lookup.
+        parent = name.rsplit("/", 1)[0]
+        if parent == "" or parent in self._handle_from_node_name:
+            return
+        parts = name.split("/")
+        for i in range(2, len(parts)):  # skip root ("") and the node itself
+            ancestor = "/".join(parts[:i])
+            if ancestor not in self._handle_from_node_name:
+                # Recurses into _make under the reentrant lifecycle lock.
+                self.add_frame(ancestor, show_axes=False, _virtual=True)
 
     def set_up_direction(
         self,
@@ -1720,6 +1743,7 @@ class SceneApi:
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
+        _virtual: bool = False,
     ) -> FrameHandle:
         """Add a coordinate frame to the scene.
 
@@ -1761,6 +1785,9 @@ class SceneApi:
                 scale=scale,
             ),
         )
+        # Internal: auto-created ancestor anchors are marked virtual so they
+        # yield to real variants in the client's display rule.
+        message.virtual = _virtual
         return FrameHandle._make(self, message, name, wxyz, position, visible)
 
     @deprecated_positional_shim
@@ -3092,12 +3119,11 @@ class SceneApi:
     async def _handle_transform_controls_updates(
         self, client_id: ClientId, message: _messages.TransformControlsUpdateMessage
     ) -> None:
-        """Apply pose update and fire `update_cb` with phase="update"."""
-        # Node-keyed messages carry the effective variant's owner; only the
-        # owning scope's SceneApi handles them (incoming messages fan out to
-        # both the server's and the connection's handler lists).
-        if message.owner != self._owner_id:
-            return
+        """Apply pose update and fire `update_cb` with phase="update".
+
+        Registered via _register_owner_scoped_handler, like every node-keyed
+        handler below: only the scope whose owner the message echoes runs it.
+        """
         # Prefer the active-drag map so a late update still resolves after the
         # gizmo was removed mid-drag (which pops it from the live registry).
         handle = self._active_transform_drag_handles.get(
@@ -3123,8 +3149,6 @@ class SceneApi:
     async def _handle_transform_controls_drag_start(
         self, client_id: ClientId, message: _messages.TransformControlsDragStartMessage
     ) -> None:
-        if message.owner != self._owner_id:
-            return
         handle = self._handle_from_transform_controls_name.get(message.name, None)
         if handle is None:
             return
@@ -3134,8 +3158,6 @@ class SceneApi:
     async def _handle_transform_controls_drag_end(
         self, client_id: ClientId, message: _messages.TransformControlsDragEndMessage
     ) -> None:
-        if message.owner != self._owner_id:
-            return
         handle = self._active_transform_drag_handles.pop(
             (client_id, message.name), None
         ) or self._handle_from_transform_controls_name.get(message.name, None)
@@ -3185,8 +3207,6 @@ class SceneApi:
         self, client_id: ClientId, message: _messages.SceneNodeClickMessage
     ) -> None:
         """Callback for handling click messages."""
-        if message.owner != self._owner_id:
-            return
         handle = self._handle_from_node_name.get(message.name, None)
         if handle is None or handle._impl.click_cb is None:
             return
@@ -3225,8 +3245,6 @@ class SceneApi:
         have this issue, so for stateful gestures define your callbacks
         as ``async def`` (with no internal ``await`` s, so each runs
         atomically on the event loop)."""
-        if message.owner != self._owner_id:
-            return
         # On phase="start", look up the handle in the live registry and
         # remember it (with the message, so a synthetic end on
         # disconnect can carry the latest positions). On update, refresh
