@@ -4,7 +4,6 @@ import asyncio
 import dataclasses
 import io
 import math
-import threading
 import time
 import warnings
 from collections.abc import Coroutine
@@ -73,6 +72,7 @@ from ._scene_handles import (
     _DragInput,
     _normalize_node_name,
     _RaycastSupportedSceneNodeHandle,
+    _SceneNodeHandleState,
     _TransformControlsState,
 )
 from ._threadpool_exceptions import (
@@ -276,12 +276,29 @@ class SceneApi:
             str, TransformControlsHandle
         ] = {}
         self._handle_from_node_name: dict[str, SceneNodeHandle] = {}
-        self._node_lifecycle_lock = threading.RLock()
+        if isinstance(owner, ViserServer):
+            self._scope_key = None
+            """Which scope this API's elements belong to: ``None`` for the
+            broadcast scope, a client id for a per-client scope."""
+            server_owner = owner
+        else:
+            self._scope_key = cast("ClientId", owner.client_id)
+            server_owner = owner._viser_server
+        self._name_index = server_owner._scene_name_index
+        """Server-wide index of claimed scene-node names across scopes. Scene
+        names share one namespace per viewer (the frontend's scene tree is
+        keyed by name with no notion of scope), so adds must be checked
+        against every scope the same viewer can see -- not just this API's
+        own registry. Only touched under ``_node_lifecycle_lock``."""
+        self._node_lifecycle_lock = server_owner._scene_lifecycle_lock
         """Serializes scene-node lifecycle transitions (remove, same-name
         supersede) against interaction-callback (de)registration. All
         critical sections are short and synchronous (no awaits inside).
-        Reentrant defensively: no current teardown path re-enters (a 3D GUI
-        container's _on_remove removes GUI children only), but subclass
+        SERVER-WIDE and shared by every SceneApi (server- and client-scoped):
+        lifecycle transitions consult and mutate the cross-scope name index,
+        and broadcast removals cascade into per-client subtrees, so per-scope
+        locks would deadlock or race. Reentrant: ancestor auto-creation and
+        cross-scope cascade removal re-enter by design, and subclass
         _on_remove hooks run under the lock and must stay safe to extend.
         Without this lock, a registration racing a remove/supersede from
         another thread could publish a name-keyed binding into the
@@ -322,14 +339,42 @@ class SceneApi:
         self._scene_pointer_cb: list[_PointerCallbackEntry] = []
         self._scene_pointer_done_cb: list[Callable[[], None | Coroutine]] = []
 
-        # Set up world axes handle.
-        self.world_axes: FrameHandle = self.add_frame(
-            "/WorldAxes",
-            axes_radius=0.0125,
-        )
-        """Handle for the world axes, which are created by default."""
+        # Set up world axes handle. Only the SERVER scope creates (and owns)
+        # the node; the name index would reject a second overlapping claim.
+        if self._scope_key is None:
+            self.world_axes: FrameHandle = self.add_frame(
+                "/WorldAxes",
+                axes_radius=0.0125,
+            )
+            """Handle for the world axes, which are created by default."""
 
-        self.world_axes.visible = False
+            self.world_axes.visible = False
+        else:
+            # Client scope: a NON-AUTHORITATIVE view onto the shared node.
+            # No messages are sent at construction (the broadcast replay
+            # already delivers the server's node + state), and the handle is
+            # not registered in this scope's registry or the name index --
+            # it is a write-through override, not a claim. Because broadcast
+            # writers also mutate the node, this handle's cached state can
+            # be stale, so authoritative=False makes every setter send
+            # unconditionally instead of early-returning on cached equality.
+            # Reads reflect only writes made through THIS handle.
+            self.world_axes = FrameHandle(
+                _SceneNodeHandleState(
+                    "/WorldAxes",
+                    _messages.FrameProps(
+                        show_axes=True,
+                        axes_length=0.5,
+                        axes_radius=0.0125,
+                        origin_radius=0.025,
+                        origin_color=(236, 236, 0),
+                        scale=1.0,
+                    ),
+                    api=self,
+                    visible=False,
+                    authoritative=False,
+                )
+            )
 
         self._websock_interface.register_handler(
             _messages.TransformControlsUpdateMessage,
@@ -416,12 +461,20 @@ class SceneApi:
                 print_awaited_callback_error(exc)
 
     def _ensure_ancestors_exist(self, name: str) -> None:
-        """Create intermediate frame nodes for any missing ancestors of `name`."""
-        parts = name.split("/")
-        for i in range(2, len(parts)):  # skip root ("") and the node itself
-            ancestor = "/".join(parts[:i])
-            if ancestor not in self._handle_from_node_name:
-                self.add_frame(ancestor, show_axes=False)
+        """Create intermediate frame nodes for any missing ancestors of `name`.
+
+        "Missing" is judged against the cross-scope name index, not just this
+        scope's registry: a per-client child under a broadcast parent must
+        NOT re-create the parent in the client scope (the frontend keys nodes
+        by name, so the duplicate would clobber the shared parent for that
+        client). Runs under the lifecycle lock so the visibility check and
+        the creates are atomic against concurrent adds/removes."""
+        with self._node_lifecycle_lock:
+            parts = name.split("/")
+            for i in range(2, len(parts)):  # skip root ("") and the node itself
+                ancestor = "/".join(parts[:i])
+                if not self._name_index.exists_visible(ancestor, self._scope_key):
+                    self.add_frame(ancestor, show_axes=False)
 
     def set_up_direction(
         self,

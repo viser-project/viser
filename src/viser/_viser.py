@@ -26,6 +26,7 @@ from ._gui_api import GuiApi, LiteralColor
 from ._gui_handles import _make_uuid
 from ._notification_handle import NotificationHandle, _NotificationHandleState
 from ._scene_api import SceneApi, cast_vector
+from ._scene_name_index import SceneNameIndex
 from ._threadpool_exceptions import (
     print_awaited_callback_error,
     print_task_error,
@@ -577,6 +578,16 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
     on reconnect. State that must outlive a connection belongs client-side
     (browser storage) or in application code keyed however the application
     identifies its users; the server never retains per-client element state.
+
+    **Scene names are shared with the server scope.** The scene tree shown to
+    a client merges server-scoped and client-scoped elements into one
+    namespace, so adding a client-scoped scene node under a name the server
+    already uses (or vice versa) raises ``ValueError`` -- remove the existing
+    node first or pick a different name. Different clients may reuse the same
+    name freely. A client-scoped node may be parented under a server-scoped
+    node (e.g. per-client annotations under a shared frame), and is removed
+    with it; the reverse -- a server-scoped child under a client-scoped
+    parent -- is rejected, since other clients cannot see the parent.
     """
 
     def __init__(
@@ -587,6 +598,13 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._viser_server = server
 
         # Public attributes.
+        # client_id is assigned BEFORE the scene/gui APIs: SceneApi.__init__
+        # reads it (per-client scope key for the scene name index), and an
+        # attribute miss during construction would recurse through
+        # DeprecatedAttributeShim.__getattr__ (whose `self.scene` lookup is
+        # also unset at that point).
+        self.client_id: int = conn.client_id
+        """Unique ID for this client."""
         self.scene: SceneApi = SceneApi(
             self, thread_executor=server._thread_executor, event_loop=server._event_loop
         )
@@ -595,8 +613,6 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             self, thread_executor=server._thread_executor, event_loop=server._event_loop
         )
         """Handle for interacting with the GUI."""
-        self.client_id: int = conn.client_id
-        """Unique ID for this client."""
         self.camera: CameraHandle = CameraHandle(self)
         """Handle for reading from and manipulating the client's viewport camera."""
 
@@ -1015,6 +1031,15 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._connection = server
         self._connected_clients: dict[int, ClientHandle] = {}
         self._client_lock = threading.Lock()
+        # Scene-node names live in ONE namespace per viewer even though
+        # server.scene and each client.scene keep separate registries; the
+        # index is the cross-scope view, and the lifecycle lock is shared by
+        # every SceneApi (server- and client-scoped) so lifecycle transitions
+        # are serialized across scopes. Created BEFORE server.start(): a
+        # client can connect (and build its SceneApi) as soon as the server
+        # thread runs, which may be before `self.scene` exists below.
+        self._scene_lifecycle_lock = threading.RLock()
+        self._scene_name_index = SceneNameIndex()
         self._client_connect_cb: list[Callable[[ClientHandle], None | Coroutine]] = []
         self._client_disconnect_cb: list[
             Callable[[ClientHandle], None | Coroutine]
@@ -1126,6 +1151,15 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             await self.scene._drop_active_drags_for_client(
                 cast(infra.ClientId, conn.client_id), event_client=handle
             )
+
+            # Release the client's scene-name claims: its elements died with
+            # the connection (client state is ephemeral), so the names become
+            # available again -- e.g. for a broadcast add, which would
+            # otherwise be rejected by the cross-scope overlap rule forever.
+            # No messages are needed; the frontend is gone.
+            with self._scene_lifecycle_lock:
+                self._scene_name_index.drop_scope(cast(infra.ClientId, conn.client_id))
+
             await self._dispatch_client_callbacks(disconnect_cbs, handle)
 
         # Start the server.

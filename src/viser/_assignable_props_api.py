@@ -121,13 +121,20 @@ def props_setattr(self, name: str, value: Any) -> None:
         value = self._cast_value_recursive(self._prop_hints[name], value, name)
         current_value = getattr(self._impl.props, name)
 
+        # Non-authoritative view handles (e.g. a client scope's view of the
+        # shared world axes) never equality-skip: their cached props can be
+        # stale relative to other writers, so a "no-op" write may in fact be
+        # a needed override.
+        authoritative = getattr(self._impl, "authoritative", True)
+
         # Skip update if value hasn't changed.
-        try:
-            hash(current_value)
-            if current_value == value:
-                return
-        except (TypeError, ValueError):
-            pass
+        if authoritative:
+            try:
+                hash(current_value)
+                if current_value == value:
+                    return
+            except (TypeError, ValueError):
+                pass
 
         # Update the value based on type.
         if isinstance(value, np.ndarray):
@@ -135,7 +142,7 @@ def props_setattr(self, name: str, value: Any) -> None:
                 # Ensure consistent dtype.
                 if value.dtype != current_value.dtype:
                     value = value.astype(current_value.dtype)
-                if np.array_equal(current_value, value):
+                if authoritative and np.array_equal(current_value, value):
                     return
 
             # In-place update for same shape arrays.
