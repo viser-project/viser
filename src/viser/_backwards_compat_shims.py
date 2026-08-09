@@ -103,6 +103,19 @@ class DeprecatedAttributeShim:
     `<=0.1.30`."""
 
     def __getattr__(self, name: str) -> Any:
+        # During partial construction (or an attribute miss on a
+        # partially-torn-down object), `self.scene` / `self.gui` don't exist
+        # yet -- and looking them up would land back in THIS __getattr__,
+        # recursing until RecursionError. Bail out to a plain AttributeError
+        # instead, so init-ordering mistakes fail legibly. (Both attributes
+        # are plain instance attributes on ViserServer and ClientHandle, so
+        # __dict__ is the right place to check.)
+        if "scene" not in self.__dict__ or "gui" not in self.__dict__:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}' "
+                "(object is partially constructed: scene/gui APIs not set up "
+                "yet)"
+            )
         fixed_name = {
             # Map from old method names (viser v0.1.*) to new methods names.
             "reset_scene": "reset",

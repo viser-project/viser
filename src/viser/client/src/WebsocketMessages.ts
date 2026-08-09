@@ -1333,10 +1333,16 @@ export interface ScenePointerMessage {
 /** Set the modifier-filter set for a scene pointer ``event_type``.
  *
  * An empty ``modifiers`` tuple disables all callbacks for that
- * ``event_type``. A non-empty tuple enables them, and the client uses
- * the filter list to gate gesture engagement: a pointerdown whose
- * held-modifier state doesn't match any filter is treated as if no
- * callback were registered (no rectangle drawn, no message sent).
+ * ``event_type`` in the sending scope. A non-empty tuple enables them,
+ * and the client uses the filter list to gate gesture engagement: a
+ * pointerdown whose held-modifier state doesn't match any filter is
+ * treated as if no callback were registered (no rectangle drawn, no
+ * message sent).
+ *
+ * Filters are kept per ``owner`` on the client and engagement uses the
+ * union across owners, so the broadcast scope and a client scope can
+ * register pointer callbacks independently -- one scope clearing its
+ * filters never deactivates the other's.
  *
  * (automatically generated)
  */
@@ -1353,6 +1359,7 @@ export interface ScenePointerEnableMessage {
     | "cmd/ctrl+alt+shift"
     | null
   )[];
+  owner: string;
 }
 /** Fog message.
  *

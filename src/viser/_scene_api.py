@@ -384,9 +384,12 @@ class SceneApi:
             _messages.SceneNodeDragMessage, self._handle_node_drag
         )
         # Deliberately NOT owner-scoped: scene pointer events are scene-level
-        # (no target node, no owner), and cross-scope arbitration is handled
-        # by the registration-time exclusivity in
-        # _register_scene_pointer_callback instead.
+        # (no target node). The client engages a gesture when the held
+        # modifiers match the UNION of both scopes' filters and sends ONE
+        # message; every scope's handler then dispatches its own matching
+        # registrations -- coexistence, with per-owner filter state on the
+        # client (ScenePointerEnableMessage.owner) so one scope's disable
+        # never deactivates the other's callbacks.
         self._websock_interface.register_handler(
             _messages.ScenePointerMessage,
             self._handle_scene_pointer_updates,
@@ -3110,23 +3113,19 @@ class SceneApi:
         # Clear the background image.
         self.set_background_image(image=None)
 
-    def _get_client_handle(self, client_id: ClientId) -> ClientHandle:
-        """Private helper for getting a client handle from its ID."""
+    def _get_client_handle(self, client_id: ClientId) -> ClientHandle | None:
+        """Resolve the ClientHandle for a given client_id. Returns ``None``
+        when the client disconnected between queueing and dispatch --
+        callers early-return, dropping the event. Mirrors
+        ``GuiApi._resolve_client`` so the two APIs treat the same race the
+        same way."""
         # Avoid circular imports.
         from ._viser import ViserServer
 
-        # Implementation-wise, note that MessageApi is never directly instantiated.
-        # Instead, it serves as a mixin/base class for either ViserServer, which
-        # maintains a registry of connected clients, or ClientHandle, which should
-        # only ever be dealing with its own client_id.
         if isinstance(self._owner, ViserServer):
-            handle = self._owner._connected_clients.get(client_id)
-            if handle is None:
-                raise KeyError(f"No connected client with id {client_id}.")
-            return handle
-        else:
-            assert client_id == self._owner.client_id
-            return self._owner
+            return self._owner._connected_clients.get(client_id)
+        assert client_id == self._owner.client_id
+        return self._owner
 
     async def _handle_transform_controls_updates(
         self, client_id: ClientId, message: _messages.TransformControlsUpdateMessage
@@ -3184,6 +3183,10 @@ class SceneApi:
         phase: DragPhase,
         event_client: ClientHandle | None = None,
     ) -> None:
+        # Unlike the click/drag/pointer events (whose `client` field is
+        # non-Optional, so an unresolvable client drops the event),
+        # TransformControlsEvent.client is Optional by contract: gizmo
+        # lifecycle callbacks still fire when the client can't be resolved.
         event = TransformControlsEvent(
             client=event_client
             if event_client is not None
@@ -3222,8 +3225,12 @@ class SceneApi:
         handle = self._handle_from_node_name.get(message.name, None)
         if handle is None or handle._impl.click_cb is None:
             return
+        client = self._get_client_handle(client_id)
+        if client is None:
+            # Client disconnected between queueing and dispatch; drop.
+            return
         event = SceneNodePointerEvent(
-            client=self._get_client_handle(client_id),
+            client=client,
             client_id=client_id,
             event="click",
             target=cast(_RaycastSupportedSceneNodeHandle, handle),
@@ -3302,10 +3309,16 @@ class SceneApi:
         if not matching:
             return
 
-        event = SceneNodeDragEvent(
-            client=event_client
+        client = (
+            event_client
             if event_client is not None
-            else self._get_client_handle(client_id),
+            else self._get_client_handle(client_id)
+        )
+        if client is None:
+            # Client disconnected between queueing and dispatch; drop.
+            return
+        event = SceneNodeDragEvent(
+            client=client,
             client_id=client_id,
             target=cast(_RaycastSupportedSceneNodeHandle, handle),
             phase=message.phase,
@@ -3328,6 +3341,9 @@ class SceneApi:
         if not self._scene_pointer_cb:
             return
         client = self._get_client_handle(client_id)
+        if client is None:
+            # Client disconnected between queueing and dispatch; drop.
+            return
         modifier = message.modifier
 
         # Build the typed event once for the actual gesture; the legacy
@@ -3470,19 +3486,7 @@ class SceneApi:
     ) -> Any:
         normalized_modifier = _messages._normalize_key_modifier(modifier)
 
-        from ._viser import ClientHandle, ViserServer
-
         def decorator(func: Callable[[Any], None]) -> Callable[[Any], None]:
-            # Server-scope and client-scope share the same client-side
-            # enable toggle. Coexistence would let one scope's
-            # disable silently deactivate the other's callbacks;
-            # enforce exclusivity instead.
-            if isinstance(self._owner, ViserServer):
-                for client in self._owner.get_clients().values():
-                    client.scene._remove_all_pointer_callbacks()
-            elif isinstance(self._owner, ClientHandle):
-                self._owner._viser_server.scene._remove_all_pointer_callbacks()
-
             self._scene_pointer_cb.append(
                 _PointerCallbackEntry(
                     callback=func,
@@ -3513,7 +3517,7 @@ class SceneApi:
                 }
             ),
         )
-        self._websock_interface.queue_message(
+        self._queue_scene_message(
             _messages.ScenePointerEnableMessage(
                 event_type=event_type, modifiers=modifiers
             )

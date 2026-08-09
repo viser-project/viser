@@ -197,6 +197,11 @@ class _RootGuiContainer:
 
 _global_order_counter = 0
 
+_thread_container_context = threading.local()
+"""Tracks, per thread, which GuiApi instance currently has an active
+(non-root) container context. Used to make cross-scope container nesting an
+error instead of a silent misplace -- see GuiApi._get_container_uuid."""
+
 
 def _apply_default_order(order: float | None) -> float:
     """Apply default ordering logic for GUI elements.
@@ -236,9 +241,11 @@ class GuiApi:
 
     _target_container_from_thread_id: dict[int, str]
     """ID of container to put GUI elements into. Per-instance (NOT a shared
-    class attribute) -- otherwise a thread inside a ``with some_gui.add_folder()``
-    block would leak that container target into a *different* GuiApi instance
-    (e.g. server.gui vs a client.gui) and raise KeyError on the foreign uuid."""
+    class attribute): container targets never span GuiApi instances. A
+    cross-instance nesting attempt (``with server.gui.add_folder()`` around a
+    ``client.gui`` add, or vice versa) raises via _get_container_uuid's
+    thread-context check instead of silently landing at the other scope's
+    root."""
 
     def __init__(
         self,
@@ -648,12 +655,53 @@ class GuiApi:
                 ).add_done_callback(print_threadpool_errors)
 
     def _get_container_uuid(self) -> str:
-        """Get container ID associated with the current thread."""
+        """Get container ID associated with the current thread.
+
+        Raises when a container context from a DIFFERENT GuiApi (e.g. a
+        ``with server.gui.add_folder(...)`` block while adding through
+        ``client.gui``) is active on this thread: GUI containers cannot span
+        scopes, and silently placing the element at this scope's root --
+        the historical behavior -- hid the mistake."""
+        owner_api = getattr(_thread_container_context, "api", None)
+        if (
+            owner_api is not None
+            and owner_api is not self
+            # Only guard scopes of the SAME server: two independent
+            # ViserServers in one process are unrelated worlds, and a
+            # container context on one has never affected (and should not
+            # constrain) adds on the other.
+            and owner_api._root_server() is self._root_server()
+        ):
+            raise RuntimeError(
+                "A GUI container context from a different scope is active on "
+                "this thread (e.g. `with server.gui.add_folder(...)` around "
+                "an add through `client.gui`, or vice versa). GUI containers "
+                "cannot span the server and client scopes; create the "
+                "container through the same handle that adds its contents."
+            )
         return self._target_container_from_thread_id.get(threading.get_ident(), "root")
 
+    def _root_server(self):
+        """The ViserServer this GuiApi ultimately belongs to (itself for the
+        broadcast scope, the owning server for a client scope)."""
+        from ._viser import ViserServer
+
+        return (
+            self._owner
+            if isinstance(self._owner, ViserServer)
+            else self._owner._viser_server
+        )
+
     def _set_container_uuid(self, container_uuid: str) -> None:
-        """Set container ID associated with the current thread."""
+        """Set container ID associated with the current thread, tracking
+        which GuiApi currently owns an active (non-root) container context
+        so cross-scope nesting fails loudly (see _get_container_uuid)."""
         self._target_container_from_thread_id[threading.get_ident()] = container_uuid
+        if container_uuid == "root":
+            if getattr(_thread_container_context, "api", None) is self:
+                _thread_container_context.api = None
+        else:
+            _thread_container_context.api = self
 
     def _next_layout_counter(self) -> int:
         """Bump and return the layout-update counter. THE single home of the
