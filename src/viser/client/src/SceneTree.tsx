@@ -1194,12 +1194,6 @@ export function SceneNodeThreeObject(props: { name: string }) {
                     getPointerXy(e.clientX, e.clientY),
                   );
 
-                  // Echo the EFFECTIVE variant's owner: only the mounted
-                  // variant is interactive, and the server routes the event
-                  // to that scope's registry alone.
-                  const clickedMessage = viewer.useSceneTree.get(
-                    props.name,
-                  )?.message;
                   sendClicksThrottled({
                     type: "SceneNodeClickMessage",
                     name: props.name,
@@ -1216,10 +1210,12 @@ export function SceneNodeThreeObject(props: { name: string }) {
                     ],
                     screen_pos: [mouseVectorOpenCV.x, mouseVectorOpenCV.y],
                     modifier: keyModifierFromEvent(e),
-                    owner:
-                      clickedMessage === undefined
-                        ? ""
-                        : ownerOf(clickedMessage),
+                    // Echo the EFFECTIVE variant's owner: only the mounted
+                    // variant is interactive, and the server routes the
+                    // event to that scope's registry alone.
+                    owner: ownerOf(
+                      viewer.useSceneTree.get(props.name)?.message,
+                    ),
                   });
                 }
           }

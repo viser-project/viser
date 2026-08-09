@@ -25,7 +25,7 @@ from playwright.sync_api import Browser
 import viser
 import viser._client_autobuild
 
-from .utils import find_free_port, wait_for_connection, wait_for_server_ready
+from .utils import center_mean, connect_client, find_free_port, wait_for_server_ready
 
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
@@ -49,57 +49,29 @@ def own_server() -> Generator[viser.ViserServer, None, None]:
     server.stop()
 
 
-def _connect_client(own_server: viser.ViserServer, browser: Browser):
-    captured: list[viser.ClientHandle] = []
-    seen_ids = {c.client_id for c in own_server.get_clients().values()}
-    own_server.on_client_connect(
-        lambda client: (
-            captured.append(client) if client.client_id not in seen_ids else None
-        )
-    )
-    context = browser.new_context()
-    page = context.new_page()
-    wait_for_connection(page, own_server.get_port())
-    deadline = time.monotonic() + 10
-    while not captured and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert captured, "client never connected"
-    client = captured[-1]
-    while client.camera._state.update_timestamp == 0.0 and (
-        time.monotonic() < deadline
-    ):
-        time.sleep(0.05)
-    assert client.camera._state.update_timestamp != 0.0, "camera never synced"
-    return client, page, context
-
-
-def _center_mean(img: np.ndarray) -> np.ndarray:
-    h, w = img.shape[:2]
-    return img[
-        h // 2 - h // 8 : h // 2 + h // 8,
-        w // 2 - w // 8 : w // 2 + w // 8,
-        :3,
-    ].mean(axis=(0, 1))
-
-
 def _capture_center(client: viser.ClientHandle) -> np.ndarray:
     img = client.get_render(height=96, width=128, timeout=30.0)
-    return _center_mean(img)
+    return center_mean(img)
 
 
 def _assert_dominant(
     client: viser.ClientHandle, color: tuple[int, int, int], label: str
 ) -> None:
     """The center patch's dominant channel must match `color`. Captures can
-    race the ~1-frame shadow remount, so retry briefly before failing."""
-    deadline = time.monotonic() + 5.0
-    center = _capture_center(client)
-    while time.monotonic() < deadline:
+    race the ~1-frame shadow remount, so retry briefly before failing. Every
+    capture is evaluated BEFORE the deadline check: a single software-WebGL
+    capture can exceed the whole retry budget under load, and a passing
+    frame must not be discarded just because it arrived late."""
+    deadline = time.monotonic() + 10.0
+    while True:
+        center = _capture_center(client)
         if int(np.argmax(center)) == int(np.argmax(color)) and center.max() > 60:
             return
+        if time.monotonic() > deadline:
+            raise AssertionError(
+                f"{label}: expected dominant {color}, captured {center}"
+            )
         time.sleep(0.2)
-        center = _capture_center(client)
-    raise AssertionError(f"{label}: expected dominant {color}, captured {center}")
 
 
 def test_shadowing_pixels_round_trip(
@@ -107,7 +79,7 @@ def test_shadowing_pixels_round_trip(
 ) -> None:
     """RED server box -> GREEN client variant shadows it -> server recolors
     its hidden variant BLUE (display unchanged) -> un-shadow reveals BLUE."""
-    client, page, context = _connect_client(own_server, browser)
+    client, page, context = connect_client(own_server, browser)
     try:
         server_box = own_server.scene.add_box(
             "/box", color=RED, dimensions=(2.0, 2.0, 2.0)
@@ -138,8 +110,8 @@ def test_two_clients_see_their_own_variant(
 ) -> None:
     """A shadowing variant is per-client: the shadowing client sees GREEN
     while a second client keeps seeing the server's RED."""
-    client1, page1, context1 = _connect_client(own_server, browser)
-    client2, page2, context2 = _connect_client(own_server, browser)
+    client1, page1, context1 = connect_client(own_server, browser)
+    client2, page2, context2 = connect_client(own_server, browser)
     assert client1.client_id != client2.client_id
     try:
         own_server.scene.add_box("/box", color=RED, dimensions=(2.0, 2.0, 2.0))
@@ -162,7 +134,7 @@ def test_scope_local_cascade_child_stays_on_screen(
     """A client child under a broadcast parent remains VISIBLE (not just in
     the store) after the parent is removed, then disappears when its own
     scope removes it."""
-    client, page, context = _connect_client(own_server, browser)
+    client, page, context = connect_client(own_server, browser)
     try:
         parent = own_server.scene.add_frame("/parent", show_axes=False)
         child = client.scene.add_box(
