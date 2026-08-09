@@ -5,10 +5,16 @@ import { createKeyedStore } from "./store";
 import { FrameMessage } from "./WebsocketMessages";
 import { NodePoseDataMap } from "./ViewerContext";
 
-function makeFrameMessage(name: string): FrameMessage {
+function makeFrameMessage(
+  name: string,
+  owner: string = "",
+  virtual: boolean = false,
+): FrameMessage {
   return {
     type: "FrameMessage",
     name,
+    owner,
+    virtual,
     props: {
       show_axes: true,
       axes_length: 0.5,
@@ -32,7 +38,7 @@ function setup() {
   const nodeRefFromName: { [name: string]: undefined | THREE.Object3D } = {};
   const nodePoseData: NodePoseDataMap = {};
   const actions = createSceneTreeActions(store, nodeRefFromName, nodePoseData);
-  return { store, nodeRefFromName, actions };
+  return { store, nodeRefFromName, nodePoseData, actions };
 }
 
 describe("addSceneNode ref handling", () => {
@@ -75,5 +81,130 @@ describe("addSceneNode ref handling", () => {
     // fires during mount) must survive the initial add.
     actions.addSceneNode(makeFrameMessage("/node"));
     expect(nodeRefFromName["/node"]).toBe(obj);
+  });
+});
+
+describe("variant slots and the display rule", () => {
+  it("client variant shadows a broadcast variant, preserving its state", () => {
+    const { store, nodePoseData, actions } = setup();
+
+    const broadcastMsg = makeFrameMessage("/x", "");
+    actions.addSceneNode(broadcastMsg);
+    nodePoseData["/x"] = {
+      wxyz: [0, 0, 0, 1],
+      position: [1, 2, 3],
+      poseUpdateState: "updated",
+    };
+
+    const clientMsg = makeFrameMessage("/x", "7");
+    actions.addSceneNode(clientMsg);
+
+    const node = store.get("/x")!;
+    expect(node.message).toBe(clientMsg);
+    // The broadcast variant is parked with its pose snapshot.
+    expect(node.shadowed?.message).toBe(broadcastMsg);
+    expect(node.shadowed?.position).toEqual([1, 2, 3]);
+    // The fresh client variant starts from identity pose.
+    expect(nodePoseData["/x"]!.position).toEqual([0, 0, 0]);
+  });
+
+  it("a virtual client anchor does not shadow a real broadcast node", () => {
+    const { store, actions } = setup();
+
+    const broadcastMsg = makeFrameMessage("/x", "");
+    actions.addSceneNode(broadcastMsg);
+    const anchorMsg = makeFrameMessage("/x", "7", true);
+    actions.addSceneNode(anchorMsg);
+
+    const node = store.get("/x")!;
+    expect(node.message).toBe(broadcastMsg); // Still effective.
+    expect(node.shadowed?.message).toBe(anchorMsg); // Parked.
+  });
+
+  it("a real broadcast node arriving late does not displace a real client node", () => {
+    const { store, actions } = setup();
+
+    const clientMsg = makeFrameMessage("/x", "7");
+    actions.addSceneNode(clientMsg);
+    const broadcastMsg = makeFrameMessage("/x", "");
+    actions.addSceneNode(broadcastMsg);
+
+    const node = store.get("/x")!;
+    expect(node.message).toBe(clientMsg);
+    expect(node.shadowed?.message).toBe(broadcastMsg);
+  });
+
+  it("removing the effective variant promotes the shadowed one with accumulated state", () => {
+    const { store, nodePoseData, actions } = setup();
+
+    actions.addSceneNode(makeFrameMessage("/x", ""));
+    actions.addSceneNode(makeFrameMessage("/x", "7")); // Shadows broadcast.
+
+    // Broadcast keeps updating while shadowed.
+    actions.updateShadowedVariant("/x", "", { position: [4, 5, 6] });
+
+    actions.removeSceneNodeVariant("/x", "7");
+    const node = store.get("/x")!;
+    expect(node.message.owner).toBe("");
+    expect(node.shadowed).toBeUndefined();
+    // Promotion restores the broadcast variant's LATEST pose.
+    expect(nodePoseData["/x"]!.position).toEqual([4, 5, 6]);
+  });
+
+  it("a promoted virtual anchor inherits the departing variant's pose", () => {
+    const { store, nodePoseData, actions } = setup();
+
+    actions.addSceneNode(makeFrameMessage("/a", "")); // Real broadcast parent.
+    actions.addSceneNode(makeFrameMessage("/a", "7", true)); // Client anchor, parked.
+    nodePoseData["/a"] = {
+      wxyz: [1, 0, 0, 0],
+      position: [9, 9, 9],
+      poseUpdateState: "updated",
+    };
+
+    actions.removeSceneNodeVariant("/a", "");
+    const node = store.get("/a")!;
+    expect(node.message.virtual).toBe(true);
+    // Frozen-pose inheritance: children of /a stay where they were.
+    expect(nodePoseData["/a"]!.position).toEqual([9, 9, 9]);
+  });
+
+  it("variant removal is scope-local and non-recursive", () => {
+    const { store, actions } = setup();
+
+    actions.addSceneNode(makeFrameMessage("/a", ""));
+    actions.addSceneNode(makeFrameMessage("/a/child", "7"));
+
+    // Broadcast /a removed; the client child's entry must survive (its own
+    // scope's anchor/removals are the only things that may touch it).
+    actions.removeSceneNodeVariant("/a", "");
+    expect(store.get("/a")).toBeUndefined();
+    expect(store.get("/a/child")).toBeDefined();
+  });
+
+  it("removing a shadowed variant leaves the effective one untouched", () => {
+    const { store, actions } = setup();
+
+    const clientMsg = makeFrameMessage("/x", "7");
+    actions.addSceneNode(makeFrameMessage("/x", ""));
+    actions.addSceneNode(clientMsg);
+
+    actions.removeSceneNodeVariant("/x", ""); // Drop the parked broadcast copy.
+    const node = store.get("/x")!;
+    expect(node.message).toBe(clientMsg);
+    expect(node.shadowed).toBeUndefined();
+  });
+
+  it("same-scope supersede preserves the shadow slot", () => {
+    const { store, actions } = setup();
+
+    actions.addSceneNode(makeFrameMessage("/x", "7")); // Client, effective.
+    actions.addSceneNode(makeFrameMessage("/x", "")); // Broadcast, parked.
+    const newClientMsg = makeFrameMessage("/x", "7");
+    actions.addSceneNode(newClientMsg); // Client supersede.
+
+    const node = store.get("/x")!;
+    expect(node.message).toBe(newClientMsg);
+    expect(node.shadowed?.message.owner).toBe("");
   });
 });

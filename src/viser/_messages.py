@@ -306,6 +306,19 @@ class _CreateSceneNodeMessage(
     include_in_scene_serialization=True,
 ):
     name: str
+    owner: str = dataclasses.field(default="", init=False)
+    """Scope that owns this node: "" for the broadcast scope
+    (``server.scene``), otherwise an opaque per-client identifier. Each
+    scene-tree name holds at most one variant per owner; the client renders
+    the effective variant chosen by the display rule (real client > real
+    broadcast > virtual client > virtual broadcast). ``init=False`` so
+    defaulted fields don't precede subclasses' non-default props on
+    Python < 3.10; stamped by the queueing SceneApi."""
+    virtual: bool = dataclasses.field(default=False, init=False)
+    """True for auto-created intermediate ancestor frames. Virtual variants
+    yield to real ones in the display rule and exist so every node has a
+    complete same-scope ancestor chain (which is what makes scope-local
+    cascade removal orphan-free)."""
 
 
 @dataclasses.dataclass
@@ -314,9 +327,13 @@ class RemoveSceneNodeMessage(
     entity=EntityLifecycle("scene", "remove", "name"),
     include_in_scene_serialization=True,
 ):
-    """Remove a particular node from the scene."""
+    """Remove a particular node's variant, for the scope stamped in
+    ``owner``, from the scene. Removal is scope-local: it never touches the
+    other scope's variant of the same name (the server enumerates one such
+    message per same-scope descendant; the client does not cascade)."""
 
     name: str
+    owner: str = dataclasses.field(default="", init=False)
 
 
 @dataclasses.dataclass
@@ -1178,6 +1195,7 @@ class SetBoneOrientationMessage(
     name: str
     bone_index: int
     wxyz: Tuple[float, float, float, float]
+    owner: str = dataclasses.field(default="", init=False)
 
     @override
     def redundancy_key(self) -> str:
@@ -1197,6 +1215,7 @@ class SetBonePositionMessage(
     name: str
     bone_index: int
     position: Tuple[float, float, float]
+    owner: str = dataclasses.field(default="", init=False)
 
     @override
     def redundancy_key(self) -> str:
@@ -1332,6 +1351,7 @@ class SetOrientationMessage(
 
     name: str
     wxyz: Tuple[float, float, float, float]
+    owner: str = dataclasses.field(default="", init=False)
 
 
 @dataclasses.dataclass
@@ -1346,6 +1366,7 @@ class SetPositionMessage(
 
     name: str
     position: Tuple[float, float, float]
+    owner: str = dataclasses.field(default="", init=False)
 
 
 @dataclasses.dataclass
@@ -1357,6 +1378,10 @@ class TransformControlsUpdateMessage(Message, include_in_scene_serialization=Fal
     name: str
     wxyz: Tuple[float, float, float, float]
     position: Tuple[float, float, float]
+    owner: str = ""
+    """Echo of the effective variant's owner, so the server dispatches to
+    exactly one scope's registry (regular init field: this message is
+    deserialized)."""
 
 
 @dataclasses.dataclass
@@ -1364,6 +1389,7 @@ class TransformControlsDragStartMessage(Message, include_in_scene_serialization=
     """Client -> server message when a transform control drag starts."""
 
     name: str
+    owner: str = ""
 
 
 @dataclasses.dataclass
@@ -1371,6 +1397,7 @@ class TransformControlsDragEndMessage(Message, include_in_scene_serialization=Fa
     """Client -> server message when a transform control drag ends."""
 
     name: str
+    owner: str = ""
 
 
 @dataclasses.dataclass
@@ -1420,6 +1447,7 @@ class SetSceneNodeVisibilityMessage(
 
     name: str
     visible: bool
+    owner: str = dataclasses.field(default="", init=False)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1449,6 +1477,7 @@ class SetSceneNodeDragBindingsMessage(Message, include_in_scene_serialization=Fa
 
     name: str
     bindings: Tuple[DragBinding, ...]
+    owner: str = dataclasses.field(default="", init=False)
 
 
 @dataclasses.dataclass
@@ -1466,6 +1495,7 @@ class SetSceneNodeClickBindingsMessage(Message, include_in_scene_serialization=F
 
     name: str
     bindings: Tuple[DragBinding, ...]
+    owner: str = dataclasses.field(default="", init=False)
 
 
 @dataclasses.dataclass
@@ -1479,6 +1509,9 @@ class SceneNodeClickMessage(Message, include_in_scene_serialization=False):
     ray_direction: Tuple[float, float, float]
     screen_pos: Tuple[float, float]
     modifier: Optional[KeyModifier]
+    owner: str = ""
+    """Echo of the clicked variant's owner, so the server dispatches to
+    exactly one scope's registry."""
 
 
 _DragPhase: TypeAlias = Literal["start", "update", "end"]
@@ -1509,6 +1542,9 @@ class SceneNodeDragMessage(Message, include_in_scene_serialization=False):
     """Current pointer in OpenCV screen-space coordinates."""
     button: Literal["left", "middle", "right"]
     modifier: Optional[KeyModifier]
+    owner: str = ""
+    """Echo of the dragged variant's owner, so the server dispatches to
+    exactly one scope's registry."""
 
 
 @dataclasses.dataclass
@@ -2196,6 +2232,10 @@ class SceneNodeUpdateMessage(
     name: str
     updates: Dict[str, Any]
     """Mapping from property name to new value."""
+    owner: str = ""
+    """Owning scope of the targeted variant. A regular init field (unlike
+    the other server->client owner stamps) so the message stays
+    deserializable in both directions."""
 
 
 @dataclasses.dataclass

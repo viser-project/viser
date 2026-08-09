@@ -20,7 +20,41 @@ export type SceneNode = {
   visibility?: boolean; // Visibility state from the server.
   overrideVisibility?: boolean; // Override from the GUI.
   effectiveVisibility?: boolean; // Computed visibility including parent chain.
+  /** The lower-ranked variant of this name, when both scopes (broadcast +
+   * this client) have one. Each scene-tree name holds at most one variant
+   * per scope; only the effective (higher-ranked) variant is mounted and
+   * interactive, but the shadowed variant keeps accumulating state from its
+   * scope's messages so that removing the effective variant promotes it
+   * with up-to-date state -- no resurrection round-trip needed. */
+  shadowed?: ShadowedVariant;
 };
+
+export type ShadowedVariant = {
+  message: SceneNodeMessage;
+  clickBindings: DragBinding[];
+  dragBindings: DragBinding[];
+  wxyz: [number, number, number, number];
+  position: [number, number, number];
+  visibility: boolean;
+};
+
+/** Owner id stamped on scene messages: "" is the broadcast scope
+ * (server.scene), anything else is a per-client scope. Old recordings
+ * predate the field; missing means broadcast. */
+export function ownerOf(message: SceneNodeMessage): string {
+  return (message as { owner?: string }).owner ?? "";
+}
+
+function isVirtual(message: SceneNodeMessage): boolean {
+  return (message as { virtual?: boolean }).virtual ?? false;
+}
+
+/** Display-rule rank: real client > real broadcast > virtual client >
+ * virtual broadcast. The higher-ranked variant of a name is effective
+ * (rendered, interactive); the other is shadowed. */
+function variantRank(message: SceneNodeMessage): number {
+  return (isVirtual(message) ? 0 : 2) + (ownerOf(message) !== "" ? 1 : 0);
+}
 
 function makeRootNodeTemplate(): SceneNode {
   // Default quaternion: 90 deg around X, 180 deg around Y, -90 deg around Z.
@@ -33,6 +67,8 @@ function makeRootNodeTemplate(): SceneNode {
     message: {
       type: "FrameMessage",
       name: "",
+      owner: "",
+      virtual: false,
       props: {
         show_axes: false,
         axes_length: 0.5,
@@ -57,6 +93,8 @@ function makeWorldAxesNodeTemplate(): SceneNode {
     message: {
       type: "FrameMessage",
       name: "/WorldAxes",
+      owner: "",
+      virtual: false,
       props: {
         show_axes: true,
         axes_length: 0.5,
@@ -93,6 +131,69 @@ export function createSceneTreeActions(
   const actions = {
     addSceneNode: (message: SceneNodeMessage) => {
       const existingNode = store.get(message.name);
+
+      // Cross-scope add: the name already has a variant from the OTHER
+      // scope. The display rule decides which becomes effective; the loser
+      // is parked in the shadow slot, where its scope's messages keep
+      // updating it.
+      if (
+        existingNode !== undefined &&
+        ownerOf(existingNode.message) !== ownerOf(message)
+      ) {
+        if (variantRank(message) >= variantRank(existingNode.message)) {
+          // Incoming variant shadows the current effective one. Snapshot the
+          // effective variant's state (including its live pose) into the
+          // shadow slot, then install the incoming variant fresh: a new
+          // variant starts at default pose/visibility, and its own Set*
+          // messages follow its create in the same buffer.
+          const pose = nodePoseData[message.name];
+          const shadowed: ShadowedVariant = {
+            message: existingNode.message,
+            clickBindings: existingNode.clickBindings,
+            dragBindings: existingNode.dragBindings,
+            wxyz: pose?.wxyz ?? [1, 0, 0, 0],
+            position: pose?.position ?? [0, 0, 0],
+            visibility: existingNode.visibility ?? true,
+          };
+          delete nodeRefFromName[message.name];
+          nodePoseData[message.name] = {
+            wxyz: [1, 0, 0, 0],
+            position: [0, 0, 0],
+            poseUpdateState: "needsUpdate",
+          };
+          store.set({
+            [message.name]: {
+              ...existingNode,
+              message,
+              shadowed,
+              clickBindings: [],
+              dragBindings: [],
+              visibility: true,
+            },
+          });
+          actions.computeEffectiveVisibility(message.name);
+        } else {
+          // Incoming variant is lower-ranked (e.g. a virtual anchor next to
+          // a real node): park it in the shadow slot, effective untouched.
+          store.set({
+            [message.name]: {
+              ...existingNode,
+              shadowed: {
+                message,
+                clickBindings: [],
+                dragBindings: [],
+                wxyz: [1, 0, 0, 0],
+                position: [0, 0, 0],
+                visibility: true,
+              },
+            },
+          });
+        }
+        return;
+      }
+
+      // Same-owner add (within-scope create or supersede), or a brand-new
+      // name. `...existingNode` carries any shadow slot across a supersede.
       const parentName = message.name.split("/").slice(0, -1).join("/");
       const parentNode = store.get(parentName);
 
@@ -123,6 +224,111 @@ export function createSceneTreeActions(
         delete nodeRefFromName[message.name];
       }
       store.set(updates);
+    },
+
+    /** Remove ONE scope's variant of a name. Scope-local by design: the
+     * server enumerates a message per same-scope descendant, and the other
+     * scope's variants (including children hanging from their own scope's
+     * virtual anchors) are untouched -- so unlike `removeSceneNode`, this
+     * does not recurse. Removing the effective variant promotes the
+     * shadowed one; a promoted VIRTUAL anchor inherits the departing
+     * variant's pose (frozen-pose inheritance), so surviving children stay
+     * where they were instead of teleporting to identity. */
+    removeSceneNodeVariant: (name: string, owner: string) => {
+      const node = store.get(name);
+      if (node === undefined) {
+        console.log(`(OK) Skipping variant removal for ${name}`);
+        return;
+      }
+      if (ownerOf(node.message) === owner) {
+        const shadowed = node.shadowed;
+        if (shadowed !== undefined) {
+          // Promote the shadowed variant, with the state its scope's
+          // messages have been accumulating while it was hidden.
+          delete nodeRefFromName[name];
+          if (!isVirtual(shadowed.message)) {
+            nodePoseData[name] = {
+              wxyz: shadowed.wxyz,
+              position: shadowed.position,
+              poseUpdateState: "needsUpdate",
+            };
+          }
+          store.set({
+            [name]: {
+              ...node,
+              message: shadowed.message,
+              clickBindings: shadowed.clickBindings,
+              dragBindings: shadowed.dragBindings,
+              visibility: isVirtual(shadowed.message)
+                ? true
+                : shadowed.visibility,
+              shadowed: undefined,
+            },
+          });
+          actions.computeEffectiveVisibility(name);
+          return;
+        }
+        // Last variant: drop the entry (no recursion -- see docstring).
+        const updates: Record<string, SceneNode | undefined> = {
+          [name]: undefined,
+        };
+        delete nodeRefFromName[name];
+        delete nodePoseData[name];
+        const parentName = name.split("/").slice(0, -1).join("/");
+        const parentNode = store.get(parentName);
+        if (parentNode) {
+          updates[parentName] = {
+            ...parentNode,
+            children: parentNode.children.filter(
+              (child_name) => child_name !== name,
+            ),
+          };
+        }
+        store.set(updates);
+        return;
+      }
+      if (node.shadowed && ownerOf(node.shadowed.message) === owner) {
+        store.set({ [name]: { ...node, shadowed: undefined } });
+      }
+    },
+
+    /** Merge state updates into the SHADOWED variant of a name, matched by
+     * owner. Used to route messages that target the non-effective variant;
+     * silently drops updates for owners with no parked variant (e.g. a
+     * remove raced the update). */
+    updateShadowedVariant: (
+      name: string,
+      owner: string,
+      updates: Partial<Omit<ShadowedVariant, "message">> & {
+        propsUpdates?: { [key: string]: any };
+      },
+    ) => {
+      const node = store.get(name);
+      const shadowed = node?.shadowed;
+      if (
+        node === undefined ||
+        shadowed === undefined ||
+        ownerOf(shadowed.message) !== owner
+      ) {
+        return;
+      }
+      const { propsUpdates, ...rest } = updates;
+      store.set({
+        [name]: {
+          ...node,
+          shadowed: {
+            ...shadowed,
+            ...rest,
+            message:
+              propsUpdates === undefined
+                ? shadowed.message
+                : ({
+                    ...shadowed.message,
+                    props: { ...shadowed.message.props, ...propsUpdates },
+                  } as SceneNodeMessage),
+          },
+        },
+      });
     },
 
     removeSceneNode: (name: string) => {

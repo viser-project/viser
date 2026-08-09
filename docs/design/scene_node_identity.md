@@ -1,24 +1,32 @@
 # Scene node identity: per-name variant slots with client-wins display
 
-Status: **proposed** (design for a future change; not implemented).
-Prerequisite reading: `src/viser/_scene_name_index.py` module docstring, which
-documents the rules this design would relax.
+Status: **implemented** (same branch, after an interim rejection-based
+design; the "where we are" section below describes the state this replaced).
+Code map: owner/virtual fields in `_messages.py`; owner stamping via
+`SceneApi._queue_scene_message` and virtual anchors via
+`_ensure_ancestors_exist` in `_scene_api.py` / `_scene_handles.py`; variant
+slots, display rule, and frozen-pose inheritance in the frontend's
+`SceneTreeState.ts` with owner routing in `MessageHandler.tsx`. Tests:
+`tests/test_scene_scopes.py`, `SceneTreeState.test.ts`,
+`tests/e2e/test_cross_scope_handles.py`. Not yet implemented: a scene-tree
+panel badge for shadowing/local variants (cosmetic follow-up).
 
-## Where we are
+## Where this started
 
-Scene nodes are identified by name alone, everywhere: the frontend scene tree
-is a single store keyed by node name with no record of which scope created an
-entry, and every name-keyed message (updates, removes, clicks, drags) resolves
-against that one namespace. Because `server.scene` (broadcast) and each
-`client.scene` (per-client) both feed the same tree, a name claimed by two
-scopes visible to the same viewer used to silently corrupt state.
+Scene nodes were identified by name alone, everywhere: the frontend scene
+tree was a single store keyed by node name with no record of which scope
+created an entry, and every name-keyed message (updates, removes, clicks,
+drags) resolved against that one namespace. Because `server.scene`
+(broadcast) and each `client.scene` (per-client) both feed the same tree, a
+name claimed by two scopes visible to the same viewer silently corrupted
+state.
 
-Today's fix (the `SceneNameIndex`) keeps name-only identity and **rejects**
-overlapping-scope claims at the add site (`ValueError`), with an
-audience-subset rule for cross-scope parenting and cross-scope cascade on
-broadcast removals. This is sound, but it makes the collision class
-*forbidden* rather than *unrepresentable*, and it forces server and client
-code to coordinate names.
+An interim fix (a `SceneNameIndex`, since removed) kept name-only identity
+and **rejected** overlapping-scope claims at the add site (`ValueError`),
+with an audience-subset rule for cross-scope parenting and cross-scope
+cascade on broadcast removals. That was sound, but it made the collision
+class *forbidden* rather than *unrepresentable*, and it forced server and
+client code to coordinate names.
 
 ## The model
 
