@@ -254,23 +254,41 @@ def test_scene_pointer_callbacks_coexist_across_scopes(
     assert not client_clicked.is_set()
 
 
-def test_gui_container_context_does_not_span_scopes(
-    viser_server: viser.ViserServer, viser_page: Page
-) -> None:
-    """A ``with server.gui.add_folder(...)`` block cannot capture elements
-    added through a client handle's GuiApi: cross-scope container nesting
-    raises instead of silently landing the element at the other scope's
-    root (the historical behavior). Adds outside the block work normally."""
-    client = get_client_handle(viser_server)
+def test_gui_container_nesting_is_directional(two_client_setup: dict) -> None:
+    """A ``with server.gui.add_folder(...)`` block CAN capture elements added
+    through a client handle's GuiApi: the client element renders inside the
+    shared folder for that client only, and dies with the folder. The
+    reverse (server element into a client container) raises instead of
+    silently landing the element at the other scope's root (the historical
+    behavior)."""
+    server = two_client_setup["server"]
+    page1: Page = two_client_setup["page1"]
+    page2: Page = two_client_setup["page2"]
+    client1 = two_client_setup["client1"]
 
-    with viser_server.gui.add_folder("SrvFolder"):
-        with pytest.raises(RuntimeError, match="cannot span"):
-            client.gui.add_button("StrayBtn")
+    with server.gui.add_folder("SrvFolder") as folder:
+        client1.gui.add_button("MineBtn")
 
-    # Outside the server's container context, client adds work normally.
-    client.gui.add_button("OkBtn")
-    button = viser_page.get_by_role("button", name="OkBtn")
-    button.wait_for(state="visible", timeout=5_000)
+    # Client 1 sees its button inside the shared folder; client 2 sees the
+    # folder but no button.
+    button1 = page1.get_by_role("button", name="MineBtn")
+    button1.wait_for(state="visible", timeout=5_000)
+    page2.get_by_text("SrvFolder").wait_for(state="visible", timeout=5_000)
+    assert page2.get_by_role("button", name="MineBtn").count() == 0
+
+    # Removing the server folder cascades into the cross-nested client
+    # element (the one deliberate exception to scope-local removal).
+    folder.remove()
+    button1.wait_for(state="hidden", timeout=5_000)
+
+    # Outside any server container context, client adds work normally...
+    client1.gui.add_button("OkBtn")
+    page1.get_by_role("button", name="OkBtn").wait_for(state="visible", timeout=5_000)
+
+    # ...and the reverse nesting direction raises.
+    with client1.gui.add_folder("CliFolder"):
+        with pytest.raises(RuntimeError, match="not vice versa"):
+            server.gui.add_button("StrayBtn")
 
 
 # ---------------------------------------------------------------------------
