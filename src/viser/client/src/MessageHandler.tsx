@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { TextureLoader } from "three";
 import { toMantineColor } from "./components/colorUtils";
 
-import { ViewerContext } from "./ViewerContext";
+import { ViewerContext, skinnedMeshStateKey } from "./ViewerContext";
 import {
   FileTransferPart,
   FileTransferStartDownload,
@@ -206,7 +206,9 @@ function useMessageHandler() {
         // bone update from the second loop onward. A real remove + re-add
         // deletes the entry first, so a NEW component still claims a fresh
         // object and the same-name re-add race stays protected.
-        const state = (viewerMutable.skinnedMeshState[message.name] ??= {
+        const state = (viewerMutable.skinnedMeshState[
+          skinnedMeshStateKey(message.owner, message.name)
+        ] ??= {
           initialized: false,
           claimed: false,
           poses: [],
@@ -446,23 +448,28 @@ function useMessageHandler() {
       // dereference throws inside the per-frame batch loop and drops the rest
       // of the batch.
       case "SetBoneOrientationMessage": {
-        const pose =
-          viewerMutable.skinnedMeshState[message.name]?.poses[
-            message.bone_index
+        // Keyed per variant: a bone update for a SHADOWED variant
+        // accumulates in that variant's own entry instead of corrupting
+        // the effective one.
+        const state =
+          viewerMutable.skinnedMeshState[
+            skinnedMeshStateKey(message.owner, message.name)
           ];
+        const pose = state?.poses[message.bone_index];
         if (pose === undefined) break;
         pose.wxyz = message.wxyz;
-        viewerMutable.skinnedMeshState[message.name].dirty = true;
+        state.dirty = true;
         break;
       }
       case "SetBonePositionMessage": {
-        const pose =
-          viewerMutable.skinnedMeshState[message.name]?.poses[
-            message.bone_index
+        const state =
+          viewerMutable.skinnedMeshState[
+            skinnedMeshStateKey(message.owner, message.name)
           ];
+        const pose = state?.poses[message.bone_index];
         if (pose === undefined) break;
         pose.position = message.position;
-        viewerMutable.skinnedMeshState[message.name].dirty = true;
+        state.dirty = true;
         break;
       }
       case "SetCameraLookAtMessage": {
@@ -748,21 +755,24 @@ function useMessageHandler() {
         }
         return;
       }
-      // Remove one scope's variant of a scene node. Scope-local, and NOT
-      // recursive: the server sends one message per same-scope descendant,
-      // and the other scope's variants of these names must survive.
+      // Remove one scope's variant of a scene node, plus its same-scope
+      // descendants (needed for recordings from older servers, which sent a
+      // single remove per subtree; current servers enumerate descendants,
+      // making the recursion a no-op). Other scopes' variants survive.
       case "RemoveSceneNodeMessage": {
-        const outcome = viewer.sceneTreeActions.removeSceneNodeVariant(
+        const owner = message.owner ?? "";
+        for (const removed of viewer.sceneTreeActions.removeSceneNodeVariantSubtree(
           message.name,
-          message.owner ?? "",
-        );
-
-        // Clear skinned-mesh state when the MOUNTED variant went away
-        // (removed or replaced by a promoted one). Exact name only:
-        // descendants arrive as their own removal messages, and a surviving
-        // other-scope variant of a descendant name must keep its state.
-        if (outcome === "removed-effective" || outcome === "promoted") {
-          delete viewerMutable.skinnedMeshState[message.name];
+          owner,
+        )) {
+          // Whatever the disposition, the removed VARIANT is gone; drop its
+          // own bone-state entry. Other variants of the name (including a
+          // just-promoted one) keep theirs.
+          if (removed.outcome !== "noop") {
+            delete viewerMutable.skinnedMeshState[
+              skinnedMeshStateKey(owner, removed.name)
+            ];
+          }
         }
         return;
       }
@@ -1044,30 +1054,61 @@ export function FrameSynchronizedMessageHandler() {
         // - attrUpdates: top-level SceneNode attributes (wxyz, position, visibility, etc.)
         // - propsUpdates: message.props fields (batched_wxyzs, colors, etc.)
         // - guiUpdates: GUI component property updates
-        const attrUpdates: { [name: string]: Partial<SceneNode> } = {};
-        const propsUpdates: { [name: string]: { [key: string]: any } } = {};
+        //
+        // Scene updates are parked per (owner, name) and RE-ROUTED through
+        // routeShadowedUpdate at flush time: a cross-scope add later in the
+        // SAME batch can flip a name's effective variant after an update was
+        // parked, and flushing by name alone would then write one scope's
+        // update onto the other scope's variant. (With a single scope per
+        // name -- the common case -- the re-route is the shadowedSlotCount
+        // fast path and flushing is unchanged.)
+        const attrUpdates: {
+          [ownerAndName: string]: {
+            name: string;
+            owner: string;
+            updates: Partial<SceneNode>;
+          };
+        } = {};
+        const propsUpdates: {
+          [ownerAndName: string]: {
+            name: string;
+            owner: string;
+            updates: { [key: string]: any };
+          };
+        } = {};
         const guiUpdates: { uuid: string; updates: { [key: string]: any } }[] =
           [];
 
         for (const msg of processBatch) {
+          const msgOwner: string = (msg as { owner?: string }).owner ?? "";
           const result = handleMessage(msg);
           if (result === undefined) continue;
           switch (result.kind) {
             case "sceneNodeAttrUpdate": {
-              const existing = attrUpdates[result.targetNode];
+              const key = `${msgOwner}\u0000${result.targetNode}`;
+              const existing = attrUpdates[key];
               if (existing) {
-                Object.assign(existing, result.updates);
+                Object.assign(existing.updates, result.updates);
               } else {
-                attrUpdates[result.targetNode] = { ...result.updates };
+                attrUpdates[key] = {
+                  name: result.targetNode,
+                  owner: msgOwner,
+                  updates: { ...result.updates },
+                };
               }
               break;
             }
             case "sceneNodePropsUpdate": {
-              const existing = propsUpdates[result.targetNode];
+              const key = `${msgOwner}\u0000${result.targetNode}`;
+              const existing = propsUpdates[key];
               if (existing) {
-                Object.assign(existing, result.propsUpdates);
+                Object.assign(existing.updates, result.propsUpdates);
               } else {
-                propsUpdates[result.targetNode] = { ...result.propsUpdates };
+                propsUpdates[key] = {
+                  name: result.targetNode,
+                  owner: msgOwner,
+                  updates: { ...result.propsUpdates },
+                };
               }
               break;
             }
@@ -1081,30 +1122,43 @@ export function FrameSynchronizedMessageHandler() {
         const mergedUpdates: { [name: string]: SceneNode } = {};
 
         // Merge attribute-level updates (wxyz, position, visibility, etc.).
-        for (const [k, v] of Object.entries(attrUpdates)) {
-          const currentNode = viewer.useSceneTree.get(k);
+        for (const { name, owner, updates } of Object.values(attrUpdates)) {
+          // The effective variant may have flipped since parking; consume
+          // into the shadow slot (or drop) instead of merging if so.
+          if (viewer.sceneTreeActions.routeShadowedUpdate(name, owner, updates))
+            continue;
+          const currentNode = viewer.useSceneTree.get(name);
           if (currentNode === undefined) {
-            console.log(`(OK) Tried to update non-existent scene node ${k}`);
+            console.log(`(OK) Tried to update non-existent scene node ${name}`);
             continue;
           }
-          mergedUpdates[k] = { ...currentNode, ...v };
+          mergedUpdates[name] = {
+            ...(mergedUpdates[name] ?? currentNode),
+            ...updates,
+          };
         }
 
         // Merge props-level updates (batched_wxyzs, colors, etc.).
-        for (const [k, v] of Object.entries(propsUpdates)) {
-          const currentNode = viewer.useSceneTree.get(k);
+        for (const { name, owner, updates } of Object.values(propsUpdates)) {
+          if (
+            viewer.sceneTreeActions.routeShadowedUpdate(name, owner, {
+              propsUpdates: updates,
+            })
+          )
+            continue;
+          const currentNode = viewer.useSceneTree.get(name);
           if (currentNode === undefined) {
-            console.log(`(OK) Tried to update non-existent scene node ${k}`);
+            console.log(`(OK) Tried to update non-existent scene node ${name}`);
             continue;
           }
-          const node = mergedUpdates[k] || currentNode;
-          mergedUpdates[k] = {
+          const node = mergedUpdates[name] || currentNode;
+          mergedUpdates[name] = {
             ...node,
             message: {
               ...node.message,
               props: {
                 ...node.message.props,
-                ...v,
+                ...updates,
               },
             } as SceneNodeMessage,
           };

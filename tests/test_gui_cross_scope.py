@@ -305,19 +305,26 @@ def test_form_nesting_rules_apply_across_scopes(server: viser.ViserServer) -> No
 def test_disconnect_releases_cross_nested_elements(
     server: viser.ViserServer,
 ) -> None:
-    """The disconnect teardown detaches cross-nested client elements from the
-    server's container tree without sending messages, so a later server-side
-    container removal doesn't cascade a remove into the dead connection."""
+    """The disconnect teardown detaches cross-nested client subtrees from the
+    server's container tree without sending messages -- including
+    DESCENDANTS of the cross-nested root, so surviving user references get
+    the ordinary already-removed warning instead of a KeyError."""
     client = make_synthetic_client(server, 0)
     with server.gui.add_folder("SrvFolder") as folder:
-        button = client.gui.add_button("mine")
+        with client.gui.add_folder("CliFolder") as cli_folder:
+            leaf = client.gui.add_button("leaf")
 
     # Simulate the disconnect teardown (buffer shutdown + release call).
     client._websock_connection._state.message_buffer.set_done()
     client.gui._release_cross_scope_nesting()
 
-    assert button._impl.removed
-    assert button._impl.uuid not in folder._children
+    assert cli_folder._impl.removed
+    assert leaf._impl.removed
+    assert cli_folder._impl.uuid not in folder._children
+
+    # A surviving reference to a DESCENDANT degrades gracefully.
+    with pytest.warns(UserWarning, match="already removed"):
+        leaf.remove()
 
     # Removing the server folder afterwards is clean: no cascade into the
     # dead connection, so no "closed connection" warning.
@@ -325,3 +332,59 @@ def test_disconnect_releases_cross_nested_elements(
         warnings_module.simplefilter("always")
         folder.remove()
     assert not any("closed connection" in str(w.message) for w in caught)
+
+
+def test_second_server_context_does_not_break_first(
+    server: viser.ViserServer,
+) -> None:
+    """Regression: container-context markers are per-server, so an inner
+    `with` block on an unrelated ViserServer must not clobber the first
+    server's still-open context."""
+    server_b = viser.ViserServer(port=0, verbose=False)
+    try:
+        client = make_synthetic_client(server, 0)
+        with server.gui.add_folder("FA") as fa:
+            with server_b.gui.add_folder("FB"):
+                pass
+            # Server A's context is still active for both of its scopes.
+            cli_button = client.gui.add_button("x")
+            srv_button = server.gui.add_button("y")
+        assert cli_button._impl.parent_container_id == fa._impl.uuid
+        assert srv_button._impl.parent_container_id == fa._impl.uuid
+    finally:
+        server_b.stop()
+
+
+def test_client_scope_dangling_restore_stays_client_local(
+    server: viser.ViserServer,
+) -> None:
+    """Regression: a CLIENT container removed while an inner client context
+    is open is a same-scope affair -- the dangling uuid must not be handed
+    to the server's target map (which would poison the thread for both
+    scopes permanently). After the outer context exits, both scopes add at
+    their roots again."""
+    client = make_synthetic_client(server, 0)
+
+    with client.gui.add_folder("Outer") as outer:
+        with client.gui.add_folder("Inner"):
+            outer.remove()
+
+    assert server.gui.add_button("s")._impl.parent_container_id == "root"
+    assert client.gui.add_button("c")._impl.parent_container_id == "root"
+
+
+def test_removed_server_container_restore_does_not_poison_thread(
+    server: viser.ViserServer,
+) -> None:
+    """Regression: if the server container is removed while a nested client
+    context is open, the client context's exit must still hand the thread
+    marker back cleanly -- afterwards neither scope spuriously raises and
+    adds land at their own roots."""
+    client = make_synthetic_client(server, 0)
+
+    with server.gui.add_folder("F") as f:
+        with client.gui.add_folder("C"):
+            f.remove()
+
+    assert server.gui.add_button("s")._impl.parent_container_id == "root"
+    assert client.gui.add_button("c")._impl.parent_container_id == "root"

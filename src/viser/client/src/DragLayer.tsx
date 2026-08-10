@@ -228,9 +228,10 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         end_screen_pos: [endScreenPos.x, endScreenPos.y],
         button: activeDrag.input.button,
         modifier: activeDrag.input.modifier,
-        // Echo the effective variant's owner so the server routes the drag
-        // to exactly one scope's registry.
-        owner: ownerOf(viewer.useSceneTree.get(activeDrag.nodeName)?.message),
+        // Echo the drag-start owner (frozen in ActiveDragState) so every
+        // phase routes to the same scope's registry -- including the final
+        // ``end`` sent after the node was removed mid-drag.
+        owner: activeDrag.owner,
       };
     },
     [
@@ -567,6 +568,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         // point.
         activeDragRef.current = {
           nodeName,
+          owner: ownerOf(viewer.useSceneTree.get(nodeName)?.message),
           instanceIndex,
           targetObj,
           pointerId,

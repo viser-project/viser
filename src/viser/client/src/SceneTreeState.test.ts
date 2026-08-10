@@ -215,3 +215,55 @@ describe("variant slots and the display rule", () => {
     expect(node.shadowed?.message.owner).toBe("");
   });
 });
+
+describe("removeSceneNodeVariantSubtree", () => {
+  it("removes same-scope descendants of a single non-enumerated remove (old recordings)", () => {
+    // Recordings from servers predating per-descendant remove enumeration
+    // contain ONE RemoveSceneNodeMessage per subtree; the store must sweep
+    // descendants (and their side state) itself.
+    const { store, nodeRefFromName, nodePoseData, actions } = setup();
+    for (const name of ["/p", "/p/a", "/p/a/b"]) {
+      actions.addSceneNode(makeFrameMessage(name, ""));
+      nodeRefFromName[name] = new THREE.Object3D();
+      nodePoseData[name] = {
+        wxyz: [1, 0, 0, 0],
+        position: [0, 0, 0],
+        poseUpdateState: "updated",
+      };
+    }
+
+    const outcomes = actions.removeSceneNodeVariantSubtree("/p", "");
+
+    for (const name of ["/p", "/p/a", "/p/a/b"]) {
+      expect(store.get(name)).toBeUndefined();
+      expect(nodeRefFromName[name]).toBeUndefined();
+      expect(nodePoseData[name]).toBeUndefined();
+    }
+    expect(outcomes.map((o) => o.outcome)).toEqual([
+      "removed-effective",
+      "removed-effective",
+      "removed-effective",
+    ]);
+  });
+
+  it("stays scope-local: other-owner descendants survive and shadowed ones promote", () => {
+    const { store, actions } = setup();
+    actions.addSceneNode(makeFrameMessage("/p", ""));
+    actions.addSceneNode(makeFrameMessage("/p/shared", ""));
+    const clientVariant = makeFrameMessage("/p/shared", "7");
+    actions.addSceneNode(clientVariant); // Shadows the broadcast one.
+    actions.addSceneNode(makeFrameMessage("/p/mine", "7"));
+
+    const outcomes = actions.removeSceneNodeVariantSubtree("/p", "");
+    const byName = Object.fromEntries(outcomes.map((o) => [o.name, o.outcome]));
+
+    expect(byName["/p"]).toBe("removed-effective");
+    // The broadcast variant of /p/shared was PARKED (client shadows it);
+    // removing it leaves the client variant effective.
+    expect(byName["/p/shared"]).toBe("removed-shadow");
+    expect(store.get("/p/shared")!.message).toBe(clientVariant);
+    // The client-only descendant is untouched by the broadcast sweep.
+    expect(byName["/p/mine"]).toBe("noop");
+    expect(store.get("/p/mine")).toBeDefined();
+  });
+});

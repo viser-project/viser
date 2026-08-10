@@ -199,9 +199,20 @@ class _RootGuiContainer:
 _global_order_counter = 0
 
 _thread_container_context = threading.local()
-"""Tracks, per thread, which GuiApi instance currently has an active
-(non-root) container context. Used to make cross-scope container nesting an
-error instead of a silent misplace -- see GuiApi._get_container_uuid."""
+"""Tracks, per thread and per ViserServer, which GuiApi instance currently
+has an active (non-root) container context (attribute ``api_by_server``,
+keyed by ``id(root server)``). Per-server keying keeps independent
+ViserServers in one process from clobbering each other's markers. Used to
+make cross-scope container nesting directional instead of a silent
+misplace -- see GuiApi._get_container_uuid."""
+
+
+def _thread_context_markers() -> dict[int, GuiApi]:
+    """The current thread's active-container markers, keyed by root server."""
+    markers = getattr(_thread_container_context, "api_by_server", None)
+    if markers is None:
+        markers = _thread_container_context.api_by_server = {}
+    return markers
 
 
 def _apply_default_order(order: float | None) -> float:
@@ -669,16 +680,11 @@ class GuiApi:
         inside a server-scope container targets the server's container, while
         the reverse raises -- silently placing the element at this scope's
         root (the historical behavior) hid the mistake."""
-        owner_api = getattr(_thread_container_context, "api", None)
-        if (
-            owner_api is not None
-            and owner_api is not self
-            # Only consider scopes of the SAME server: two independent
-            # ViserServers in one process are unrelated worlds, and a
-            # container context on one has never affected (and should not
-            # constrain) adds on the other.
-            and owner_api._root_server() is self._root_server()
-        ):
+        # Markers are keyed by root server: two independent ViserServers in
+        # one process are unrelated worlds, and a container context on one
+        # has never affected (and should not constrain) adds on the other.
+        owner_api = _thread_context_markers().get(id(self._root_server()))
+        if owner_api is not None and owner_api is not self:
             from ._viser import ViserServer
 
             if isinstance(owner_api._owner, ViserServer) and not isinstance(
@@ -730,17 +736,41 @@ class GuiApi:
         cascade a remove into a dead connection."""
         while self._handles_in_foreign_containers:
             uuid, handle = self._handles_in_foreign_containers.popitem()
-            impl = handle._impl
-            if impl.removed:
-                continue
-            impl.removed = True
             parent = self._root_server().gui._container_handle_from_uuid.get(
-                impl.parent_container_id
+                handle._impl.parent_container_id
             )
             if parent is not None:
                 parent._children.pop(uuid, None)
-            self._gui_input_handle_from_uuid.pop(uuid, None)
-            self._container_handle_from_uuid.pop(uuid, None)
+            self._tombstone_subtree(handle)
+
+    def _tombstone_subtree(self, handle: Any) -> None:
+        """Recursively mark a cross-nested subtree removed and purge it from
+        this scope's registries WITHOUT queuing messages (the connection is
+        closed). Descendants must be tombstoned too: a surviving user
+        reference calling ``.remove()`` on one should get the ordinary
+        already-removed warning, not a KeyError from a parent that no
+        longer resolves. Mirrors the per-type drains in the remove()
+        implementations."""
+        from ._gui_handles import GuiTabHandle
+
+        if isinstance(handle, GuiTabHandle):
+            if handle.removed:
+                return
+            handle.removed = True
+            self._container_handle_from_uuid.pop(handle._id, None)
+            for child in tuple(handle._children.values()):
+                self._tombstone_subtree(child)
+            return
+        impl = handle._impl
+        if impl.removed:
+            return
+        impl.removed = True
+        self._gui_input_handle_from_uuid.pop(impl.uuid, None)
+        self._container_handle_from_uuid.pop(impl.uuid, None)
+        for tab in tuple(getattr(handle, "_tab_handles", ())):
+            self._tombstone_subtree(tab)
+        for child in tuple(getattr(handle, "_children", {}).values()):
+            self._tombstone_subtree(child)
 
     def _root_server(self):
         """The ViserServer this GuiApi ultimately belongs to (itself for the
@@ -758,34 +788,47 @@ class GuiApi:
         which GuiApi currently owns an active (non-root) container context
         so cross-scope nesting stays directional (see _get_container_uuid)."""
         thread_id = threading.get_ident()
+        markers = _thread_context_markers()
+        server_key = id(self._root_server())
         if (
             container_uuid != "root"
             and container_uuid not in self._container_handle_from_uuid
         ):
-            # The uuid belongs to the SERVER scope's registry: this is a
-            # client container context exiting back out into the server
-            # container context it was nested in (its __enter__ snapshot
-            # resolved to the server's active container). Hand the thread
-            # marker back to the server GuiApi instead of recording a
+            # A client-scoped GuiApi restoring a uuid the SERVER scope owns:
+            # this is a client container context exiting back out into the
+            # server container context it was nested in (its __enter__
+            # snapshot resolved to the server's active container). Hand the
+            # thread marker back to the server GuiApi instead of recording a
             # foreign uuid as our own target -- doing the latter would make
             # later server adds see a client context and raise, and would
             # leave this scope targeting the server container even after
             # the server's `with` block exits.
+            #
+            # "Owned by the server scope" means: in the server's registry,
+            # OR exactly the server's current thread target -- the latter
+            # covers a server container REMOVED while the client context was
+            # open (the server's target can't change underneath us: a server
+            # container context can't even be entered while a client context
+            # marker is active). A dangling uuid matching neither is this
+            # scope's own removed-while-open container; it stays in our map,
+            # matching the single-scope behavior, and heals when the outer
+            # context exits to root.
             server_gui = self._root_server().gui
-            if (
-                server_gui is not self
-                and container_uuid in server_gui._container_handle_from_uuid
+            if server_gui is not self and (
+                container_uuid in server_gui._container_handle_from_uuid
+                or server_gui._target_container_from_thread_id.get(thread_id)
+                == container_uuid
             ):
                 self._target_container_from_thread_id.pop(thread_id, None)
                 server_gui._target_container_from_thread_id[thread_id] = container_uuid
-                _thread_container_context.api = server_gui
+                markers[server_key] = server_gui
                 return
         self._target_container_from_thread_id[thread_id] = container_uuid
         if container_uuid == "root":
-            if getattr(_thread_container_context, "api", None) is self:
-                _thread_container_context.api = None
+            if markers.get(server_key) is self:
+                del markers[server_key]
         else:
-            _thread_container_context.api = self
+            markers[server_key] = self
 
     def _next_layout_counter(self) -> int:
         """Bump and return the layout-update counter. THE single home of the

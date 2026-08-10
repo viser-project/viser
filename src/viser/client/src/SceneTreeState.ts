@@ -328,6 +328,34 @@ export function createSceneTreeActions(
       return "noop";
     },
 
+    /** Remove one scope's variants of `name` AND its same-scope descendants.
+     * Current servers enumerate one RemoveSceneNodeMessage per descendant
+     * (the recursion then no-ops on the later messages), but recordings from
+     * older servers contain a single non-enumerated remove per subtree --
+     * without the recursion their descendants would linger forever, along
+     * with their pose/ref side state. Still scope-local: other-owner
+     * variants of descendant names are untouched. Returns the disposition
+     * per name so callers can clean per-variant side state. */
+    removeSceneNodeVariantSubtree: (
+      name: string,
+      owner: string,
+    ): {
+      name: string;
+      outcome: "removed-effective" | "promoted" | "removed-shadow" | "noop";
+    }[] => {
+      // Collect before removing: children lists die with their nodes.
+      const names: string[] = [];
+      function collect(nodeName: string) {
+        names.push(nodeName);
+        store.get(nodeName)?.children.forEach(collect);
+      }
+      collect(name);
+      return names.map((n) => ({
+        name: n,
+        outcome: actions.removeSceneNodeVariant(n, owner),
+      }));
+    },
+
     /** Route a node-keyed state update by owner: returns false when it
      * targets the EFFECTIVE variant of `name` (or the scope-less root
      * singleton), in which case the caller applies it through the normal

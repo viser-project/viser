@@ -291,10 +291,20 @@ export class ScenePointerController {
     this.removeWindowListeners();
   }
 
-  resetForTest(): void {
-    this.cancelAny();
+  /** Drop every scope's filters. Called on (re)connect: owner ids are
+   * connection-scoped (a reconnected browser is a NEW client id), so any
+   * surviving per-owner entry is unreachable garbage that would keep its
+   * event type permanently engaged -- no disable for that owner can ever
+   * arrive. Broadcast-scope enables replay from the persistent buffer
+   * right after. */
+  clearFilters(): void {
     this.filters.clear();
     this.hover.refresh();
+  }
+
+  resetForTest(): void {
+    this.cancelAny();
+    this.clearFilters();
   }
 }
 

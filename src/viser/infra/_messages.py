@@ -222,12 +222,18 @@ class Message(abc.ABC):
         Otherwise, arrays are inlined as memoryviews in the returned dict."""
         message_type = type(self)
         hints = get_type_hints_cached(message_type)
-        # Filter to type-hinted fields only -- excludes dynamic attributes
-        # like cached values that shouldn't be serialized.
+        # Iterate DECLARED dataclass fields (not vars(self)): non-init
+        # defaulted fields -- e.g. the scene messages' owner/virtual stamps
+        # -- live on the class until assigned, so vars() would silently omit
+        # them from the wire even though the generated TypeScript declares
+        # them as required. The hints filter still excludes anything
+        # unannotated.
         out = {
-            k: _prepare_for_serialization(v, hints[k], binary_buffers)
-            for k, v in vars(self).items()
-            if k in hints
+            name: _prepare_for_serialization(
+                getattr(self, name), hints[name], binary_buffers
+            )
+            for name in message_type.__dataclass_fields__
+            if name in hints
         }
         out["type"] = message_type.__name__
         return out
@@ -254,7 +260,21 @@ class Message(abc.ABC):
         # a blanket recursive traversal of the entire message tree.
         message_type = cls._subclass_from_type_string()[cast(str, mapping.pop("type"))]
         message_kwargs = message_type._from_serializable_dict(mapping)
-        return message_type(**message_kwargs)
+        # Non-init fields (e.g. the scene messages' owner/virtual stamps,
+        # declared init=False so defaulted fields can follow subclasses'
+        # positional ones on Python 3.8) can't be passed to __init__; strip
+        # them out and assign after construction so the serialize ->
+        # deserialize round trip stays lossless.
+        fields = message_type.__dataclass_fields__
+        non_init = {
+            k: message_kwargs.pop(k)
+            for k in list(message_kwargs)
+            if k in fields and not fields[k].init
+        }
+        message = message_type(**message_kwargs)
+        for k, v in non_init.items():
+            setattr(message, k, v)
+        return message
 
     @classmethod
     @functools.lru_cache(maxsize=100)

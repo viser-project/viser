@@ -568,3 +568,145 @@ def test_world_axes_server_state_deterministic_for_new_client(
 
     context.close()
     server.stop()
+
+
+# ---------------------------------------------------------------------------
+# Regression tests: owner routing + per-connection frontend state.
+# ---------------------------------------------------------------------------
+
+
+def test_drag_end_routes_to_owner_after_mid_drag_removal(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """The final drag ``end`` echoes the owner captured at drag START.
+    Regression: it was re-derived from the live store per phase, so removing
+    the node mid-drag stamped the end with the broadcast owner ("") and the
+    client scope's ``on_drag`` end callback never fired."""
+    import viser as viser_module
+
+    client = get_client_handle(viser_server)
+    client.camera.position = (0.0, 0.0, 4.0)
+    client.camera.look_at = (0.0, 0.0, 0.0)
+
+    box = client.scene.add_box("/dragme", dimensions=(4.0, 4.0, 0.2))
+    started = threading.Event()
+    ended = threading.Event()
+
+    @box.on_drag("left")
+    def _(event: viser_module.SceneNodeDragEvent) -> None:
+        if event.phase == "start":
+            started.set()
+        elif event.phase == "end":
+            ended.set()
+
+    wait_for_scene_node(viser_page, "/dragme")
+    cx, cy = canvas_center(viser_page)
+    viser_page.mouse.move(cx, cy)
+    viser_page.mouse.down()
+    viser_page.mouse.move(cx + 80, cy + 40, steps=10)
+    assert started.wait(timeout=5.0), "drag start never reached the client scope"
+
+    # Remove the node MID-DRAG: the frontend synthesizes the end phase, which
+    # must still route to the client scope that received the start.
+    box.remove()
+    assert ended.wait(timeout=5.0), "drag end was misrouted after removal"
+    viser_page.mouse.up()
+
+
+def test_pointer_filters_cleared_on_reconnect(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """Per-owner scene-pointer filters are connection-scoped. Regression: an
+    IN-PLACE reconnect (worker retry, no page reload) left the previous
+    client's filter entry behind forever -- its owner id can never send a
+    disable -- keeping click gestures engaged."""
+    client = get_client_handle(viser_server)
+    old_id = client.client_id
+
+    @client.scene.on_pointer_event(event_type="click")
+    def _(event) -> None:
+        pass
+
+    viser_page.wait_for_function(
+        "() => window.__viserPointer?.hasSceneClickFilter() === true",
+        timeout=5_000,
+    )
+
+    # Kick the connection; the page's worker auto-reconnects WITHOUT a
+    # reload, so all frontend state survives except what the reconnect
+    # path deliberately resets. The browser comes back as a new client id,
+    # and nothing re-registers a pointer callback -- so no filter may
+    # survive the reconnect.
+    viser_server._websock_server.disconnect_all_clients()
+    deadline = time.time() + 10.0
+    while not any(cid != old_id for cid in viser_server.get_clients().keys()):
+        assert time.time() < deadline, "browser never reconnected"
+        time.sleep(0.05)
+
+    viser_page.wait_for_function(
+        "() => window.__viserPointer?.hasSceneClickFilter() === false",
+        timeout=5_000,
+    )
+
+
+def test_skinned_mesh_bone_state_is_variant_scoped(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """Bone state is keyed per (owner, name) variant. Regression: a single
+    name-keyed entry let a shadowed server's bone stream corrupt the
+    client's variant, and promotion deleted the promoted variant's state."""
+    import numpy as np
+
+    client = get_client_handle(viser_server)
+
+    def add_skinned(scene_api):
+        return scene_api.add_mesh_skinned(
+            "/skin",
+            vertices=np.array(
+                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                dtype=np.float32,
+            ),
+            faces=np.array([[0, 1, 2]], dtype=np.uint32),
+            bone_wxyzs=((1.0, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)),
+            bone_positions=((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)),
+            skin_weights=np.array(
+                [[1.0, 0.0], [0.5, 0.5], [0.0, 1.0]], dtype=np.float32
+            ),
+        )
+
+    server_mesh = add_skinned(viser_server.scene)
+    wait_for_scene_node(viser_page, "/skin")
+
+    # Client-scoped variant shadows the server's.
+    add_skinned(client.scene)
+    js_entry = """
+    (owner) => {
+        const state = window.__viserMutable?.skinnedMeshState;
+        if (!state) return null;
+        const entry = state[`${owner}\\u0000/skin`];
+        return entry ? entry.poses[1].position : null;
+    }
+    """
+    client_owner = str(client.client_id)
+    viser_page.wait_for_function(
+        f"() => ({js_entry})('') !== null && ({js_entry})('{client_owner}') !== null",
+        timeout=5_000,
+    )
+
+    # A bone update from the (shadowed) server scope lands in the SERVER
+    # variant's entry; the client's stays at its initial pose.
+    server_mesh.bones[1].position = (5.0, 6.0, 7.0)
+    viser_page.wait_for_function(
+        f"() => String(({js_entry})('')) === '5,6,7'",
+        timeout=5_000,
+    )
+    assert viser_page.evaluate(js_entry, client_owner) == [1, 0, 0]
+
+    # Promotion: removing the client variant keeps the server variant's
+    # accumulated bone state (entry survives; client entry is dropped).
+    client.scene._handle_from_node_name["/skin"].remove()
+    viser_page.wait_for_function(
+        f"() => ({js_entry})('{client_owner}') === null",
+        timeout=5_000,
+    )
+    assert viser_page.evaluate(js_entry, "") == [5, 6, 7]

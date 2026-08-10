@@ -3103,7 +3103,10 @@ class SceneApi:
         # Remove all scene nodes.
         handles = list(self._handle_from_node_name.values())
         for handle in handles:
-            if handle.name == "/WorldAxes":
+            # The broadcast scope keeps its default world-axes handle; a
+            # client-scoped "/WorldAxes" is an ordinary per-client override
+            # and resets away like everything else.
+            if handle.name == "/WorldAxes" and self._owner_id == "":
                 continue
             # Skip handles already removed by cascading.
             if handle._impl.removed:

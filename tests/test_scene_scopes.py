@@ -246,6 +246,53 @@ def test_client_world_axes_property_raises(server: viser.ViserServer) -> None:
     assert not server.scene.world_axes._impl.removed
 
 
+def test_reset_world_axes_skip_is_broadcast_only(server: viser.ViserServer) -> None:
+    """Regression: reset()'s "/WorldAxes" carve-out protects the broadcast
+    scope's default handle only -- a client-scoped override is an ordinary
+    per-client node and must reset away with everything else."""
+    client = make_synthetic_client(server, 0)
+    override = client.scene.add_frame("/WorldAxes", show_axes=True)
+
+    client.scene.reset()
+    assert override._impl.removed
+    assert "/WorldAxes" not in client.scene._handle_from_node_name
+
+    server.scene.reset()
+    assert not server.scene.world_axes._impl.removed
+
+
+def test_stamped_messages_roundtrip_through_serialization(
+    server: viser.ViserServer,
+) -> None:
+    """Regression: the owner/virtual stamps are non-init dataclass fields,
+    which (a) vars()-based serialization silently omitted until first
+    assignment and (b) ``Message.deserialize`` choked on (they aren't
+    ``__init__`` parameters). The public serialize -> deserialize round trip
+    must stay lossless, stamps included."""
+    import msgspec
+
+    from viser.infra import Message
+
+    client = make_synthetic_client(server, 3)
+    client.scene.add_frame("/rt/leaf", show_axes=False)  # Anchor + real node.
+
+    messages = _client_buffer_messages(client)
+    assert len(messages) > 0
+    for msg in messages:
+        serialized = msg.as_serializable_dict()
+        # The stamps are always on the wire (the generated TypeScript
+        # declares them as required fields).
+        assert serialized["owner"] == "3"
+        if hasattr(msg, "virtual"):
+            assert "virtual" in serialized
+
+        decoded = Message.deserialize(msgspec.msgpack.encode(serialized))
+        assert type(decoded) is type(msg)
+        assert decoded.owner == msg.owner  # type: ignore[attr-defined]
+        if hasattr(msg, "virtual"):
+            assert decoded.virtual == msg.virtual  # type: ignore[attr-defined]
+
+
 # ---------------------------------------------------------------------------
 # Dead-client writes. (Cross-scope GUI container tests live in
 # tests/test_gui_cross_scope.py.)
