@@ -756,8 +756,31 @@ class GuiApi:
     def _set_container_uuid(self, container_uuid: str) -> None:
         """Set container ID associated with the current thread, tracking
         which GuiApi currently owns an active (non-root) container context
-        so cross-scope nesting fails loudly (see _get_container_uuid)."""
-        self._target_container_from_thread_id[threading.get_ident()] = container_uuid
+        so cross-scope nesting stays directional (see _get_container_uuid)."""
+        thread_id = threading.get_ident()
+        if (
+            container_uuid != "root"
+            and container_uuid not in self._container_handle_from_uuid
+        ):
+            # The uuid belongs to the SERVER scope's registry: this is a
+            # client container context exiting back out into the server
+            # container context it was nested in (its __enter__ snapshot
+            # resolved to the server's active container). Hand the thread
+            # marker back to the server GuiApi instead of recording a
+            # foreign uuid as our own target -- doing the latter would make
+            # later server adds see a client context and raise, and would
+            # leave this scope targeting the server container even after
+            # the server's `with` block exits.
+            server_gui = self._root_server().gui
+            if (
+                server_gui is not self
+                and container_uuid in server_gui._container_handle_from_uuid
+            ):
+                self._target_container_from_thread_id.pop(thread_id, None)
+                server_gui._target_container_from_thread_id[thread_id] = container_uuid
+                _thread_container_context.api = server_gui
+                return
+        self._target_container_from_thread_id[thread_id] = container_uuid
         if container_uuid == "root":
             if getattr(_thread_container_context, "api", None) is self:
                 _thread_container_context.api = None
