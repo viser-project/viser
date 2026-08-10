@@ -149,13 +149,18 @@ class _GuiButtonHandleState(_GuiHandleState[bool]):
 class _GuiHandle(Generic[T], AssignablePropsBase[_GuiHandleState]):
     def __init__(self, impl: _GuiHandleState[T]) -> None:
         super().__init__(impl=impl)
-        parent = self._impl.gui_api._container_handle_from_uuid[
-            self._impl.parent_container_id
-        ]
+        gui_api = self._impl.gui_api
+        parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
         parent._children[self._impl.uuid] = self
+        if self._impl.parent_container_id not in gui_api._container_handle_from_uuid:
+            # Client element nested inside a server container: the parent
+            # lives in the server GuiApi's registry, so this scope's reset()
+            # and disconnect teardown can't find it through the root
+            # container walk. Track it for those paths.
+            gui_api._handles_in_foreign_containers[self._impl.uuid] = self
 
         if isinstance(self, _GuiInputHandle):
-            self._impl.gui_api._gui_input_handle_from_uuid[self._impl.uuid] = self
+            gui_api._gui_input_handle_from_uuid[self._impl.uuid] = self
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
@@ -177,8 +182,9 @@ class _GuiHandle(Generic[T], AssignablePropsBase[_GuiHandleState]):
 
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
-        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
+        parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
         parent._children.pop(self._impl.uuid)
+        gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
         if isinstance(self, _GuiInputHandle):
             gui_api._gui_input_handle_from_uuid.pop(self._impl.uuid)
@@ -796,9 +802,9 @@ class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
         self._tab_handles: list[GuiTabHandle] = []
 
     def __post_init__(self) -> None:
-        parent = self._impl.gui_api._container_handle_from_uuid[
+        parent = self._impl.gui_api._resolve_container_handle(
             self._impl.parent_container_id
-        ]
+        )
         parent._children[self._impl.uuid] = self
 
     def remove(self) -> None:
@@ -826,8 +832,9 @@ class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
         # client drops the whole entity via the remove message anyway).
         for tab in tuple(self._tab_handles):
             tab.remove()
-        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
+        parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
         parent._children.pop(self._impl.uuid)
+        gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
 
 @dataclasses.dataclass
@@ -1351,9 +1358,9 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         super().__init__(impl=_impl)
         self._impl.gui_api._container_handle_from_uuid[self._impl.uuid] = self
         self._children = {}
-        parent = self._impl.gui_api._container_handle_from_uuid[
+        parent = self._impl.gui_api._resolve_container_handle(
             self._impl.parent_container_id
-        ]
+        )
         parent._children[self._impl.uuid] = self
 
     _container_id_restore: str | None = None
@@ -1395,9 +1402,10 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         for child in tuple(self._children.values()):
             child.remove()
-        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
+        parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
         parent._children.pop(self._impl.uuid)
         gui_api._container_handle_from_uuid.pop(self._impl.uuid)
+        gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
 
 class GuiFormHandle(GuiFolderHandle):

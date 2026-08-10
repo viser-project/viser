@@ -76,6 +76,7 @@ from ._gui_handles import (
     _colors_to_int_tuple,
     _CommandHandleState,
     _GuiButtonHandleState,
+    _GuiHandle,
     _GuiHandleState,
     _GuiInputHandle,
     _make_uuid,
@@ -241,11 +242,11 @@ class GuiApi:
 
     _target_container_from_thread_id: dict[int, str]
     """ID of container to put GUI elements into. Per-instance (NOT a shared
-    class attribute): container targets never span GuiApi instances. A
-    cross-instance nesting attempt (``with server.gui.add_folder()`` around a
-    ``client.gui`` add, or vice versa) raises via _get_container_uuid's
-    thread-context check instead of silently landing at the other scope's
-    root."""
+    class attribute). Cross-instance nesting is DIRECTIONAL, resolved by
+    _get_container_uuid's thread-context check: a ``client.gui`` add inside
+    a ``with server.gui.add_folder()`` block nests in the server container
+    (the element's audience is a subset of the container's), while the
+    reverse raises instead of silently landing at the other scope's root."""
 
     def __init__(
         self,
@@ -273,6 +274,12 @@ class GuiApi:
             "root": _RootGuiContainer({})
         }
         self._modal_handle_from_uuid: dict[str, GuiModalHandle] = {}
+        # Elements of THIS scope that were nested inside another scope's
+        # container (client elements inside server containers -- the only
+        # allowed direction). They are parented in the server GuiApi's
+        # container tree, so this scope's reset() and disconnect teardown
+        # can't reach them through the root container walk; track them here.
+        self._handles_in_foreign_containers: dict[str, _GuiHandle[Any]] = {}
         self._panel_handle_from_uuid: dict[str, PanelHandle] = {}
         # Layout-update counter, bumped on every placement command (any panel)
         # and stamped onto the placement message (see
@@ -657,29 +664,83 @@ class GuiApi:
     def _get_container_uuid(self) -> str:
         """Get container ID associated with the current thread.
 
-        Raises when a container context from a DIFFERENT GuiApi (e.g. a
-        ``with server.gui.add_folder(...)`` block while adding through
-        ``client.gui``) is active on this thread: GUI containers cannot span
-        scopes, and silently placing the element at this scope's root --
-        the historical behavior -- hid the mistake."""
+        When a container context from a DIFFERENT GuiApi of the same server
+        is active on this thread, nesting is directional: a client-scope add
+        inside a server-scope container targets the server's container, while
+        the reverse raises -- silently placing the element at this scope's
+        root (the historical behavior) hid the mistake."""
         owner_api = getattr(_thread_container_context, "api", None)
         if (
             owner_api is not None
             and owner_api is not self
-            # Only guard scopes of the SAME server: two independent
+            # Only consider scopes of the SAME server: two independent
             # ViserServers in one process are unrelated worlds, and a
             # container context on one has never affected (and should not
             # constrain) adds on the other.
             and owner_api._root_server() is self._root_server()
         ):
+            from ._viser import ViserServer
+
+            if isinstance(owner_api._owner, ViserServer) and not isinstance(
+                self._owner, ViserServer
+            ):
+                # Client element into a server container: allowed (the
+                # element's audience is a subset of the container's). The
+                # element nests under the SERVER scope's active container.
+                # This is the one deliberate exception to scope-local
+                # removal: the server container's teardown cascades into
+                # cross-nested client elements, because an orphaned widget
+                # -- unlike a scene node, which keeps its pose -- has
+                # nowhere coherent to go.
+                return owner_api._target_container_from_thread_id.get(
+                    threading.get_ident(), "root"
+                )
+            # Server (or other-client) element into a client container:
+            # every viewer outside that client scope couldn't see the
+            # container, so the element would dangle. Fail loudly.
             raise RuntimeError(
-                "A GUI container context from a different scope is active on "
-                "this thread (e.g. `with server.gui.add_folder(...)` around "
-                "an add through `client.gui`, or vice versa). GUI containers "
-                "cannot span the server and client scopes; create the "
-                "container through the same handle that adds its contents."
+                "A GUI container context from a client scope is active on "
+                "this thread, and elements with a broader audience cannot "
+                "nest inside it (they would dangle for every other client). "
+                "Client elements may nest inside server containers, but not "
+                "vice versa."
             )
         return self._target_container_from_thread_id.get(threading.get_ident(), "root")
+
+    def _resolve_container_handle(self, container_uuid: str) -> GuiContainerProtocol:
+        """Resolve a container uuid to its handle, tolerating client
+        elements nested inside SERVER containers: the parent then lives in
+        the server GuiApi's registry rather than this one's."""
+        handle = self._container_handle_from_uuid.get(container_uuid)
+        if handle is not None:
+            return handle
+        server_gui = self._root_server().gui
+        if server_gui is not self:
+            handle = server_gui._container_handle_from_uuid.get(container_uuid)
+            if handle is not None:
+                return handle
+        raise KeyError(container_uuid)
+
+    def _release_cross_scope_nesting(self) -> None:
+        """Bookkeeping-only detach of this (client-scoped) GuiApi's elements
+        from the server containers they were nested in. Called on
+        disconnect: the connection's buffer is already closed, so no removal
+        messages are sent -- we just unhook the handles from the server's
+        container tree so a later server-side container removal doesn't
+        cascade a remove into a dead connection."""
+        while self._handles_in_foreign_containers:
+            uuid, handle = self._handles_in_foreign_containers.popitem()
+            impl = handle._impl
+            if impl.removed:
+                continue
+            impl.removed = True
+            parent = self._root_server().gui._container_handle_from_uuid.get(
+                impl.parent_container_id
+            )
+            if parent is not None:
+                parent._children.pop(uuid, None)
+            self._gui_input_handle_from_uuid.pop(uuid, None)
+            self._container_handle_from_uuid.pop(uuid, None)
 
     def _root_server(self):
         """The ViserServer this GuiApi ultimately belongs to (itself for the
@@ -720,6 +781,11 @@ class GuiApi:
         root_container = self._container_handle_from_uuid["root"]
         while root_container._children:
             next(iter(root_container._children.values())).remove()
+        # This scope's elements nested inside ANOTHER scope's containers
+        # (client elements in server containers) aren't reachable from this
+        # root; drain them explicitly.
+        while self._handles_in_foreign_containers:
+            next(iter(self._handles_in_foreign_containers.values())).remove()
         while self._modal_handle_from_uuid:
             next(iter(self._modal_handle_from_uuid.values())).close()
         # Panels are top-level entities (not under `root`), so drain them
@@ -1051,7 +1117,12 @@ class GuiApi:
         # <form> is well-formed.
         container = self._get_container_uuid()
         while container != "root":
-            parent = self._container_handle_from_uuid.get(container)
+            # Resolve across scopes: a client-scope add_form() inside a
+            # server-scope form is just as invalid as a same-scope nesting.
+            try:
+                parent = self._resolve_container_handle(container)
+            except KeyError:
+                break
             if isinstance(parent, GuiFormHandle):
                 raise ValueError(
                     "Nested forms are not supported: add_form() was called "

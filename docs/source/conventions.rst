@@ -107,6 +107,20 @@ children named under a shared parent -- those stay, anchored at the
 parent's last pose, until their own scope removes them. In the scene-tree
 panel, per-client nodes are marked with a ``local`` badge.
 
+GUI container nesting across scopes is **directional**: a ``client.gui``
+element may be added inside a ``server.gui`` container context (its
+audience is a subset of the container's), rendering inside the shared
+folder for that client only::
+
+    with server.gui.add_folder("Shared folder"):
+        client.gui.add_button("Only I see this")
+
+The reverse -- a ``server.gui`` element inside a ``client.gui`` container
+-- raises, since no other client could see the container. Cross-nested
+elements are the one exception to scope-local removal: removing the
+server container also removes the client elements nested inside it (an
+orphaned widget, unlike a scene node, has nowhere coherent to go).
+
 ----
 
 .. seealso::

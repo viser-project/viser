@@ -589,6 +589,14 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
     server-scoped parent (e.g. per-client annotations under a shared frame);
     it survives the parent's removal, anchored at the parent's last pose,
     until this handle removes it.
+
+    **GUI containers nest one way.** A client-scoped GUI element may be
+    added inside a server-scoped container context (``with
+    server.gui.add_folder(...): client.gui.add_button(...)``); it renders
+    inside the shared folder for this client only, and is removed along
+    with the folder. The reverse -- a server-scoped element inside a
+    client-scoped container -- raises, since no other client could see the
+    container.
     """
 
     def __init__(
@@ -1137,6 +1145,12 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # accumulated parts forever.
             self.gui._drop_uploads_from_client(cast(infra.ClientId, conn.client_id))
             handle.gui._drop_uploads_from_client(cast(infra.ClientId, conn.client_id))
+
+            # Unhook this client's GUI elements from any SERVER containers
+            # they were nested in (bookkeeping only; the connection's buffer
+            # is closed). Otherwise a later server-side container removal
+            # would cascade removes into a dead connection.
+            handle.gui._release_cross_scope_nesting()
 
             # Drop any in-flight drag entries for this client; the
             # corresponding ``phase="end"`` will never arrive, so without
