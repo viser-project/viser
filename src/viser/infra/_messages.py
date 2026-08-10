@@ -162,6 +162,13 @@ def _prepare_for_serialization(
     return value
 
 
+def is_binary_placeholder(value: Any) -> bool:
+    """Detect the tagged placeholder dicts created above for extracted binary
+    buffers. Must stay in sync with the client's detection in
+    ``BinaryMessageDecode.ts``, which tests for the same two keys."""
+    return isinstance(value, dict) and "__binary_index" in value and "dtype" in value
+
+
 T = TypeVar("T", bound="Message")
 
 

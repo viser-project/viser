@@ -22,8 +22,7 @@ import asyncio
 import io
 import threading
 import time
-from contextlib import contextmanager
-from typing import Callable, Generator, cast
+from typing import Callable, cast
 
 import numpy as np
 import pytest
@@ -38,14 +37,7 @@ from viser.infra._infra import (
     _ClientHandleState,
 )
 
-
-@contextmanager
-def _server() -> Generator[viser.ViserServer, None, None]:
-    server = viser.ViserServer(port=0, verbose=False)
-    try:
-        yield server
-    finally:
-        server.stop()
+from .utils import viser_server as _server
 
 
 def _camera_kwargs() -> dict:
