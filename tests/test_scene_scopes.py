@@ -247,88 +247,9 @@ def test_client_world_axes_property_raises(server: viser.ViserServer) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cross-scope GUI containers + dead-client writes.
+# Dead-client writes. (Cross-scope GUI container tests live in
+# tests/test_gui_cross_scope.py.)
 # ---------------------------------------------------------------------------
-
-
-def test_gui_container_nesting_is_directional(server: viser.ViserServer) -> None:
-    """Client elements nest inside server containers (their audience is a
-    subset of the container's); the reverse raises instead of silently
-    landing the element at the other scope's root."""
-    client = make_synthetic_client(server, 0)
-
-    with server.gui.add_folder("SrvFolder") as folder:
-        button = client.gui.add_button("mine")
-    # The client element is parented in the SERVER folder's subtree...
-    assert button._impl.parent_container_id == folder._impl.uuid
-    assert folder._children[button._impl.uuid] is button
-    # ...but tracked by the client scope for reset/disconnect teardown.
-    assert button._impl.uuid in client.gui._handles_in_foreign_containers
-
-    # Server-container removal cascades into the cross-nested client element
-    # (the one deliberate exception to scope-local removal: an orphaned
-    # widget has nowhere coherent to go). The remove is queued on the
-    # CLIENT's own connection.
-    folder.remove()
-    assert button._impl.removed
-    assert button._impl.uuid not in client.gui._handles_in_foreign_containers
-    remove_uuids = {
-        msg.uuid
-        for msg in _client_buffer_messages(client)
-        if isinstance(msg, m.GuiRemoveMessage)
-    }
-    assert button._impl.uuid in remove_uuids
-
-    # The reverse direction still raises; outside the context, adds work
-    # normally.
-    with client.gui.add_folder("CliFolder"):
-        with pytest.raises(RuntimeError, match="not vice versa"):
-            server.gui.add_button("stray")
-    server.gui.add_button("ok")
-
-
-def test_client_gui_reset_drains_cross_nested_elements(
-    server: viser.ViserServer,
-) -> None:
-    """client.gui.reset() reaches elements nested in server containers, which
-    the root-container walk alone would miss; the server container itself is
-    untouched."""
-    client = make_synthetic_client(server, 0)
-    with server.gui.add_folder("SrvFolder") as folder:
-        button = client.gui.add_button("mine")
-
-    client.gui.reset()
-
-    assert button._impl.removed
-    assert button._impl.uuid not in folder._children
-    assert not folder._impl.removed
-
-
-def test_disconnect_releases_cross_nested_elements(
-    server: viser.ViserServer,
-) -> None:
-    """The disconnect teardown detaches cross-nested client elements from the
-    server's container tree without sending messages, so a later server-side
-    container removal doesn't cascade a remove into the dead connection."""
-    import warnings as warnings_module
-
-    client = make_synthetic_client(server, 0)
-    with server.gui.add_folder("SrvFolder") as folder:
-        button = client.gui.add_button("mine")
-
-    # Simulate the disconnect teardown (buffer shutdown + release call).
-    client._websock_connection._state.message_buffer.set_done()
-    client.gui._release_cross_scope_nesting()
-
-    assert button._impl.removed
-    assert button._impl.uuid not in folder._children
-
-    # Removing the server folder afterwards is clean: no cascade into the
-    # dead connection, so no "closed connection" warning.
-    with warnings_module.catch_warnings(record=True) as caught:
-        warnings_module.simplefilter("always")
-        folder.remove()
-    assert not any("closed connection" in str(w.message) for w in caught)
 
 
 def test_dead_connection_write_warns_once(server: viser.ViserServer) -> None:

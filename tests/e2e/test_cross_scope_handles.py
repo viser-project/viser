@@ -124,8 +124,11 @@ def two_client_setup(browser: Browser) -> Generator[dict, None, None]:
         "client2": client2,
     }
 
-    context1.close()
-    context2.close()
+    for context in (context1, context2):
+        try:
+            context.close()
+        except Exception:
+            pass  # A test may have closed it already (disconnect tests).
     server.stop()
 
 
@@ -276,6 +279,13 @@ def test_gui_container_nesting_is_directional(two_client_setup: dict) -> None:
     page2.get_by_text("SrvFolder").wait_for(state="visible", timeout=5_000)
     assert page2.get_by_role("button", name="MineBtn").count() == 0
 
+    # DOM containment, not just coexistence: collapsing the folder must hide
+    # the client's button; expanding brings it back.
+    page1.get_by_text("SrvFolder").click()
+    button1.wait_for(state="hidden", timeout=5_000)
+    page1.get_by_text("SrvFolder").click()
+    button1.wait_for(state="visible", timeout=5_000)
+
     # Removing the server folder cascades into the cross-nested client
     # element (the one deliberate exception to scope-local removal).
     folder.remove()
@@ -289,6 +299,41 @@ def test_gui_container_nesting_is_directional(two_client_setup: dict) -> None:
     with client1.gui.add_folder("CliFolder"):
         with pytest.raises(RuntimeError, match="not vice versa"):
             server.gui.add_button("StrayBtn")
+
+
+def test_disconnect_detaches_cross_nested_gui_elements(
+    two_client_setup: dict,
+) -> None:
+    """A real websocket disconnect runs the cross-scope release hook: the
+    departed client's elements are detached from the server's container
+    tree, so removing the server folder afterwards is warning-free and
+    still propagates to the remaining client."""
+    import warnings as warnings_module
+
+    server = two_client_setup["server"]
+    page1: Page = two_client_setup["page1"]
+    page2: Page = two_client_setup["page2"]
+    client1 = two_client_setup["client1"]
+
+    with server.gui.add_folder("SrvFolder") as folder:
+        client1.gui.add_button("MineBtn")
+    page1.get_by_role("button", name="MineBtn").wait_for(state="visible", timeout=5_000)
+    page2.get_by_text("SrvFolder").wait_for(state="visible", timeout=5_000)
+
+    # Disconnect client 1 for real and wait for the server-side teardown.
+    page1.context.close()
+    deadline = time.time() + 5.0
+    while client1.client_id in server._connected_clients:
+        assert time.time() < deadline, "client 1 never disconnected"
+        time.sleep(0.05)
+
+    # The folder's cross-nested child was detached bookkeeping-only, so this
+    # removal must not try to message the dead connection.
+    with warnings_module.catch_warnings(record=True) as caught:
+        warnings_module.simplefilter("always")
+        folder.remove()
+    assert not any("closed connection" in str(w.message) for w in caught)
+    page2.get_by_text("SrvFolder").wait_for(state="hidden", timeout=5_000)
 
 
 # ---------------------------------------------------------------------------

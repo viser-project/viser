@@ -15,6 +15,18 @@ from viser.infra._async_message_buffer import AsyncMessageBuffer
 from viser.infra._infra import WebsockClientConnection, _ClientHandleState
 
 
+def client_buffer_messages(client: ClientHandle) -> list:
+    """Messages currently in a client's per-connection buffer (post-GC)."""
+    return list(
+        client._websock_connection._state.message_buffer.message_from_id.values()
+    )
+
+
+def broadcast_messages(server: viser.ViserServer) -> list:
+    """Messages currently in the server's broadcast buffer (post-GC)."""
+    return list(server._websock_server._broadcast_buffer.message_from_id.values())
+
+
 def make_synthetic_client(server: viser.ViserServer, client_id: int) -> ClientHandle:
     """In-process ClientHandle with a real per-client message buffer but no
     websocket (mirrors how WebsockServer builds per-client state). Buffer
