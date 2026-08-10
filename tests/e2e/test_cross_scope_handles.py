@@ -66,20 +66,26 @@ def wait_for_node_position(
     page: Page,
     node_name: str,
     position: tuple[float, float, float],
-    timeout: int = 5_000,
+    timeout: int = 10_000,
 ) -> None:
-    """Wait until a node's three.js local position matches ``position``."""
+    """Wait until a node's latest wire pose matches ``position``.
+
+    Observes ``nodePoseData`` (written synchronously when the message is
+    handled), NOT the mounted three.js object: the object's position is
+    applied by a ``useFrame`` hook and needs requestAnimationFrame ticks,
+    which stall for seconds under CI's software-GL + xdist contention (the
+    only repeated CI failures in this suite were exactly that stall). The
+    applier path is covered by the visual/pixel tests."""
+    wait_for_scene_node(page, node_name, timeout=timeout)  # Delivery proof.
     page.wait_for_function(
         """([nodeName, expected]) => {
-            const m = window.__viserMutable;
-            if (!m || !m.nodeRefFromName) return false;
-            const obj = m.nodeRefFromName[nodeName];
-            if (!obj) return false;
-            const p = obj.position;
+            const pose = window.__viserMutable?.nodePoseData?.[nodeName];
+            if (!pose) return false;
+            const p = pose.position;
             return (
-                Math.abs(p.x - expected[0]) < 1e-4 &&
-                Math.abs(p.y - expected[1]) < 1e-4 &&
-                Math.abs(p.z - expected[2]) < 1e-4
+                Math.abs(p[0] - expected[0]) < 1e-4 &&
+                Math.abs(p[1] - expected[1]) < 1e-4 &&
+                Math.abs(p[2] - expected[2]) < 1e-4
             );
         }""",
         arg=[node_name, list(position)],

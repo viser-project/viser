@@ -344,3 +344,133 @@ describe("parked batch updates (batchedSceneUpdates)", () => {
     expect(visibilityNames).toEqual(["/y"]);
   });
 });
+
+describe("randomized display-rule oracle", () => {
+  // Deterministic PRNG so failures reproduce from the logged round index.
+  function mulberry32(seed: number) {
+    return () => {
+      seed |= 0;
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  const rank = (owner: string, virtual: boolean) =>
+    (virtual ? 0 : 2) + (owner !== "" ? 1 : 0);
+
+  type ModelVariant = { virtual: boolean; visibility: boolean };
+
+  it("random op sequences match the documented semantics", async () => {
+    const { createParkedSceneUpdates } = await import("./batchedSceneUpdates");
+    const NAMES = ["/n1", "/n2"];
+    const OWNERS = ["", "7"];
+
+    for (let round = 0; round < 300; round++) {
+      const rand = mulberry32(round + 1);
+      const { store, actions } = setup();
+      const parked = createParkedSceneUpdates(store, actions);
+      // Oracle: per name, per owner, the variant's state; plus which owner
+      // is effective. Mirrors ONLY the documented rules (display rule,
+      // fresh-on-add, snapshot-on-shadow, promotion, virtual force-true).
+      const model: {
+        [name: string]: {
+          variants: { [owner: string]: ModelVariant };
+          effective: string | undefined;
+        };
+      } = { "/n1": { variants: {}, effective: undefined },
+            "/n2": { variants: {}, effective: undefined } };
+      const opLog: string[] = [];
+
+      for (let i = 0; i < 12; i++) {
+        const name = NAMES[Math.floor(rand() * NAMES.length)];
+        const owner = OWNERS[Math.floor(rand() * OWNERS.length)];
+        const m = model[name];
+        const r = rand();
+        if (r < 0.45) {
+          // Add (sometimes virtual, as anchors are on the wire).
+          const virtual = rand() < 0.25;
+          opLog.push(`add(${name}, ${owner || "server"}, virtual=${virtual})`);
+          parked.drainFor(name);
+          actions.addSceneNode(makeFrameMessage(name, owner, virtual));
+          if (m.effective !== undefined && m.effective !== owner) {
+            const eff = m.variants[m.effective];
+            if (rank(owner, virtual) >= rank(m.effective, eff.virtual)) {
+              m.variants[owner] = { virtual, visibility: true };
+              m.effective = owner; // Old effective keeps its state, parked.
+            } else {
+              m.variants[owner] = { virtual, visibility: true }; // Parked fresh.
+            }
+          } else {
+            const prev = m.variants[owner];
+            m.variants[owner] = {
+              virtual,
+              // Same-owner supersede preserves visibility; new name is true.
+              visibility: m.effective === owner ? prev.visibility : true,
+            };
+            m.effective = owner;
+          }
+        } else if (r < 0.7) {
+          opLog.push(`removeVariant(${name}, ${owner || "server"})`);
+          parked.drainFor(name);
+          actions.removeSceneNodeVariant(name, owner);
+          if (m.variants[owner] !== undefined) {
+            delete m.variants[owner];
+            if (m.effective === owner) {
+              const other = Object.keys(m.variants)[0];
+              m.effective = other;
+              if (other !== undefined && m.variants[other].virtual) {
+                m.variants[other].visibility = true; // Promotion force-true.
+              }
+            }
+          }
+        } else {
+          // Visibility update, exactly as MessageHandler routes it. Skipped
+          // for virtual variants (no wire path sends these).
+          if (m.variants[owner]?.virtual) continue;
+          const visible = rand() < 0.5;
+          opLog.push(`visibility(${name}, ${owner || "server"}, ${visible})`);
+          if (
+            !actions.routeShadowedUpdate(name, owner, { visibility: visible })
+          ) {
+            parked.parkAttr(owner, name, { visibility: visible });
+          }
+          if (m.variants[owner] !== undefined) {
+            m.variants[owner].visibility = visible;
+          }
+        }
+      }
+
+      const { mergedUpdates } = parked.flush();
+      store.set(mergedUpdates);
+
+      for (const name of NAMES) {
+        const m = model[name];
+        const node = store.get(name);
+        const ctx = `round ${round}: ${opLog.join(" ; ")} -- ${name}`;
+        if (m.effective === undefined) {
+          expect(node, ctx).toBeUndefined();
+          continue;
+        }
+        expect(node, ctx).toBeDefined();
+        const eff = m.variants[m.effective];
+        expect(node!.message.owner ?? "", ctx).toBe(m.effective);
+        expect(!!node!.message.virtual, ctx).toBe(eff.virtual);
+        expect(node!.visibility ?? true, ctx).toBe(eff.visibility);
+        const shadowOwner = Object.keys(m.variants).find(
+          (o) => o !== m.effective,
+        );
+        if (shadowOwner === undefined) {
+          expect(node!.shadowed, ctx).toBeUndefined();
+        } else {
+          const sh = m.variants[shadowOwner];
+          expect(node!.shadowed, ctx).toBeDefined();
+          expect(node!.shadowed!.message.owner ?? "", ctx).toBe(shadowOwner);
+          expect(!!node!.shadowed!.message.virtual, ctx).toBe(sh.virtual);
+          expect(node!.shadowed!.visibility, ctx).toBe(sh.visibility);
+        }
+      }
+    }
+  });
+});
