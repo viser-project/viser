@@ -22,9 +22,12 @@ import pytest
 import viser
 import viser._client_autobuild
 from viser import _messages as m
-from viser._viser import ClientHandle
 
-from .infra_utils import make_synthetic_client
+from .infra_utils import (
+    broadcast_messages,
+    client_buffer_messages,
+    make_synthetic_client,
+)
 
 
 @pytest.fixture()
@@ -35,27 +38,17 @@ def server() -> Generator[viser.ViserServer, None, None]:
     server.stop()
 
 
-def _client_buffer_messages(client: ClientHandle) -> list[m.Message]:
-    return list(
-        client._websock_connection._state.message_buffer.message_from_id.values()
-    )
-
-
-def _broadcast_messages(server: viser.ViserServer) -> list[m.Message]:
-    return list(server._websock_server._broadcast_buffer.message_from_id.values())
-
-
 # ---------------------------------------------------------------------------
 # Owner stamping.
 # ---------------------------------------------------------------------------
 
 
-def test_owner_stamped_on_broadcast_messages(server: viser.ViserServer) -> None:
+def test_owner_stamped_onbroadcast_messages(server: viser.ViserServer) -> None:
     handle = server.scene.add_icosphere("/ball", radius=0.1, position=(1.0, 0.0, 0.0))
     handle.visible = False
     handle.color = (10, 20, 30)
 
-    for msg in _broadcast_messages(server):
+    for msg in broadcast_messages(server):
         if hasattr(msg, "owner"):
             assert msg.owner == "", f"{type(msg).__name__} not broadcast-stamped"
 
@@ -68,7 +61,7 @@ def test_owner_stamped_on_client_messages(server: viser.ViserServer) -> None:
     handle.remove()
 
     scene_messages = [
-        msg for msg in _client_buffer_messages(client) if hasattr(msg, "owner")
+        msg for msg in client_buffer_messages(client) if hasattr(msg, "owner")
     ]
     assert len(scene_messages) > 0
     for msg in scene_messages:
@@ -134,7 +127,7 @@ def test_virtual_anchors_created_per_scope(server: viser.ViserServer) -> None:
 
     creates = {
         msg.name: msg
-        for msg in _client_buffer_messages(client)
+        for msg in client_buffer_messages(client)
         if isinstance(msg, m._CreateSceneNodeMessage)
     }
     assert creates["/parent"].virtual is True
@@ -154,7 +147,7 @@ def test_real_add_supersedes_virtual_anchor(server: viser.ViserServer) -> None:
     # The real frame's create message is not virtual.
     creates = [
         msg
-        for msg in _broadcast_messages(server)
+        for msg in broadcast_messages(server)
         if isinstance(msg, m._CreateSceneNodeMessage) and msg.name == "/a"
     ]
     assert len(creates) == 1  # Redundancy key replaced the anchor's create.
@@ -215,7 +208,7 @@ def test_remove_messages_enumerate_descendants(server: viser.ViserServer) -> Non
     # After GC/redundancy, creates are gone; a remove tombstone per name.
     removed_names = {
         msg.name
-        for msg in _broadcast_messages(server)
+        for msg in broadcast_messages(server)
         if isinstance(msg, m.RemoveSceneNodeMessage)
     }
     assert {"/p", "/p/a", "/p/a/b"} <= removed_names
@@ -228,7 +221,7 @@ def test_remove_messages_enumerate_descendants(server: viser.ViserServer) -> Non
 
 def test_client_scene_construction_sends_nothing(server: viser.ViserServer) -> None:
     client = make_synthetic_client(server, 0)
-    assert len(_client_buffer_messages(client)) == 0, (
+    assert len(client_buffer_messages(client)) == 0, (
         "client SceneApi construction queued messages; it must not re-add "
         "/WorldAxes (or anything else) over the per-client connection"
     )
@@ -276,7 +269,7 @@ def test_stamped_messages_roundtrip_through_serialization(
     client = make_synthetic_client(server, 3)
     client.scene.add_frame("/rt/leaf", show_axes=False)  # Anchor + real node.
 
-    messages = _client_buffer_messages(client)
+    messages = client_buffer_messages(client)
     assert len(messages) > 0
     for msg in messages:
         serialized = msg.as_serializable_dict()
@@ -316,3 +309,14 @@ def test_dead_connection_write_warns_once(server: viser.ViserServer) -> None:
         handle.position = (2.0, 0.0, 0.0)  # Second write: no second warning.
     dead_warnings = [w for w in caught if "closed connection" in str(w.message)]
     assert len(dead_warnings) == 1
+
+    # Removal messages are exempt: releasing a departed client's elements
+    # (e.g. inside on_client_disconnect, which runs after the buffer is
+    # closed) is ordinary cleanup, not a leak in the making.
+    client2 = make_synthetic_client(server, 1)
+    handle2 = client2.scene.add_icosphere("/theirs", radius=0.1)
+    client2._websock_connection._state.message_buffer.set_done()
+    with warnings_module.catch_warnings(record=True) as caught:
+        warnings_module.simplefilter("always")
+        handle2.remove()
+    assert not any("closed connection" in str(w.message) for w in caught)

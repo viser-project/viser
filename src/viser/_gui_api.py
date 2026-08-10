@@ -12,6 +12,7 @@ import warnings
 from asyncio import AbstractEventLoop
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -196,6 +197,20 @@ class _RootGuiContainer:
     _children: dict[str, SupportsRemoveProtocol]
 
 
+_context_owner_by_server: ContextVar[Dict[int, "GuiApi"]] = ContextVar(
+    "viser_gui_context_owner_by_server", default={}
+)
+"""Which GuiApi owns the active (non-root) container context, keyed by
+``id()`` of the owning server's GuiApi. A ContextVar rather than
+thread-keyed state: asyncio callbacks interleave on one event-loop thread,
+and a ``with`` block suspended at an ``await`` must not leak its container
+context into unrelated callbacks -- each asyncio task runs in a copied
+Context, so only code inside the block sees the marker. Sync code keeps
+working like before (a thread has its own implicit Context). Values are
+treated as IMMUTABLE -- every update installs a fresh dict -- because
+copied Contexts share the mapping object itself."""
+
+
 _global_order_counter = 0
 
 
@@ -254,13 +269,6 @@ class GuiApi:
         self._owner = owner
         """Entity that owns this API."""
         self._target_container_from_thread_id = {}
-        # Which GuiApi owns each thread's active (non-root) container
-        # context. Only the SERVER-scope instance's dict is consulted --
-        # storing the marker there scopes it per server for free, so
-        # contexts on unrelated ViserServers can't interfere. Used to make
-        # cross-scope container nesting directional instead of a silent
-        # misplace (see _get_container_uuid).
-        self._context_owner_from_thread_id: dict[int, GuiApi] = {}
         self._thread_executor = thread_executor
         self._event_loop = event_loop
 
@@ -667,13 +675,12 @@ class GuiApi:
         """Get container ID associated with the current thread.
 
         When a container context from a DIFFERENT GuiApi of the same server
-        is active on this thread, nesting is directional: a client-scope add
-        inside a server-scope container targets the server's container, while
-        the reverse raises -- silently placing the element at this scope's
-        root (the historical behavior) hid the mistake."""
-        owner_api = self._root_server().gui._context_owner_from_thread_id.get(
-            threading.get_ident()
-        )
+        is active in the current Context, nesting is directional: a
+        client-scope add inside a server-scope container targets the
+        server's container, while the reverse raises -- silently placing the
+        element at this scope's root (the historical behavior) hid the
+        mistake."""
+        owner_api = self._context_owner()
         if owner_api is not None and owner_api is not self:
             from ._viser import ViserServer
 
@@ -770,18 +777,36 @@ class GuiApi:
             else self._owner._viser_server
         )
 
+    def _context_owner(self) -> GuiApi | None:
+        """The GuiApi owning the current Context's active (non-root)
+        container context on this API's server, if any."""
+        return _context_owner_by_server.get().get(id(self._root_server().gui))
+
+    def _set_context_owner(self, owner: GuiApi | None) -> None:
+        """Install (or clear, with None) this server's context-owner marker
+        in the current Context. Copy-on-write: copied Contexts (sibling
+        asyncio tasks) share the mapping object, so it is never mutated."""
+        key = id(self._root_server().gui)
+        current = _context_owner_by_server.get()
+        if owner is None:
+            if key in current:
+                updated = dict(current)
+                del updated[key]
+                _context_owner_by_server.set(updated)
+        else:
+            _context_owner_by_server.set({**current, key: owner})
+
     def _set_container_uuid(self, container_uuid: str) -> None:
         """Set container ID associated with the current thread, tracking
         which GuiApi currently owns an active (non-root) container context
         so cross-scope nesting stays directional (see _get_container_uuid)."""
         thread_id = threading.get_ident()
         self._target_container_from_thread_id[thread_id] = container_uuid
-        markers = self._root_server().gui._context_owner_from_thread_id
         if container_uuid == "root":
-            if markers.get(thread_id) is self:
-                del markers[thread_id]
+            if self._context_owner() is self:
+                self._set_context_owner(None)
         else:
-            markers[thread_id] = self
+            self._set_context_owner(self)
 
     def _snapshot_container_context(self) -> tuple[GuiApi, str]:
         """Snapshot the active container context for a `with` block to
@@ -793,9 +818,7 @@ class GuiApi:
         removed-while-open container always has within a single scope).
         Raises for disallowed nesting directions, via _get_container_uuid."""
         container_uuid = self._get_container_uuid()
-        owner_api = self._root_server().gui._context_owner_from_thread_id.get(
-            threading.get_ident()
-        )
+        owner_api = self._context_owner()
         return (owner_api if owner_api is not None else self, container_uuid)
 
     def _restore_container_context(self, snapshot: tuple[GuiApi, str]) -> None:

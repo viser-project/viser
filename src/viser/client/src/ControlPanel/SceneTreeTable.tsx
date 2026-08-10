@@ -609,25 +609,22 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
     (node) => node?.children,
     shallowArrayEqual,
   );
-  const messageType = viewer.useSceneTree(
+  // One subscription for the row's message-derived facts (scenes can hold
+  // thousands of rows; every extra per-row selector multiplies the
+  // subscriber walk on each store write). Variant provenance: client-local
+  // variants get a badge (they exist only on THIS client, possibly
+  // shadowing a server node of the same name), and virtual anchors --
+  // auto-created ancestor frames that render nothing -- are de-emphasized.
+  const [messageType, nodeIsClientLocal, nodeIsVirtual] = viewer.useSceneTree(
     props.nodeName,
-    (node) => node?.message.type,
-  );
-  // Variant provenance for the effective node: client-local variants get a
-  // badge (they exist only on THIS client, possibly shadowing a server node
-  // of the same name), and virtual anchors -- auto-created ancestor frames
-  // that render nothing -- are de-emphasized.
-  const nodeIsClientLocal =
-    viewer.useSceneTree(
-      props.nodeName,
-      (node) => node !== undefined && ownerOf(node.message) !== "",
-    ) ?? false;
-  const nodeIsVirtual =
-    viewer.useSceneTree(
-      props.nodeName,
-      (node) =>
+    (node) =>
+      [
+        node?.message.type,
+        node !== undefined && ownerOf(node.message) !== "",
         (node?.message as { virtual?: boolean } | undefined)?.virtual ?? false,
-    ) ?? false;
+      ] as const,
+    shallowArrayEqual,
+  );
   const expandable = (childrenName?.length ?? 0) > 0;
   const [expanded, { toggle: toggleExpanded }] = useDisclosure(false);
 

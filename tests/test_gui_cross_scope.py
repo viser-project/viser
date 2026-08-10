@@ -261,6 +261,34 @@ def test_server_adds_ok_after_nested_client_context_exits(
     assert cli_button._impl.parent_container_id == srv_folder._impl.uuid
 
 
+def test_container_context_is_task_local(server: viser.ViserServer) -> None:
+    """Async callbacks interleave on ONE event-loop thread, each running in
+    a copied Context. Regression: a thread-keyed context marker made a
+    `with` block suspended at an await leak into unrelated callbacks -- a
+    sibling task's server add spuriously raised the cross-scope error.
+    Contexts copied before the block entered must see no marker."""
+    import contextvars
+
+    client_a = make_synthetic_client(server, 0)
+    client_b = make_synthetic_client(server, 1)
+    sibling = contextvars.copy_context()  # Stands in for another asyncio task.
+
+    folder = client_a.gui.add_folder("F")
+    folder.__enter__()
+    try:
+        # Inside the block, cross-scope nesting is live...
+        inside = client_a.gui.add_button("in")
+        assert inside._impl.parent_container_id == folder._impl.uuid
+        # ...but the sibling context is unaffected: no spurious raise, no
+        # cross-scope capture.
+        srv = sibling.run(server.gui.add_button, "s")
+        assert srv._impl.parent_container_id == "root"
+        other = sibling.run(client_b.gui.add_button, "b")
+        assert other._impl.parent_container_id == "root"
+    finally:
+        folder.__exit__(None, None, None)
+
+
 def test_no_stale_target_after_server_context_exits(
     server: viser.ViserServer,
 ) -> None:

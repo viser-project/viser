@@ -64,16 +64,23 @@ class AsyncMessageBuffer:
         # buffer this means the client disconnected, and anything pushed via
         # a stale handle silently accumulates forever. Warn ONCE per buffer
         # so the dead-handle write is diagnosable without spamming loops
-        # that keep animating a departed client's elements.
-        if self.done and not self._warned_push_after_done:
+        # that keep animating a departed client's elements. Removal messages
+        # are exempt: releasing elements of a departed client (e.g. inside
+        # on_client_disconnect, which runs after the buffer is closed) is
+        # ordinary cleanup, and a remove on a dead connection is a benign
+        # no-op rather than a leak in the making.
+        if (
+            self.done
+            and not self._warned_push_after_done
+            and message.lifecycle_phase != "remove"
+        ):
             self._warned_push_after_done = True
             import warnings
 
             warnings.warn(
                 f"Queued a {type(message).__name__} on a closed connection "
-                "(e.g. via a handle owned by a disconnected client); it will "
-                "never be delivered. Further messages on this connection "
-                "will be dropped silently.",
+                "(e.g. via a handle owned by a disconnected client, or after "
+                "the server stopped); it will never be delivered.",
                 stacklevel=4,
             )
 

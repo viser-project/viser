@@ -702,3 +702,44 @@ def test_skinned_mesh_bone_state_is_variant_scoped(
         timeout=5_000,
     )
     assert viser_page.evaluate(js_entry, "") == [5, 6, 7]
+
+
+def test_disconnect_mid_drag_fires_end_for_client_scope(
+    two_client_setup: dict,
+) -> None:
+    """Regression: the disconnect teardown drained in-flight drags only from
+    the server SceneApi, but owner-scoped dispatch routes drags on
+    client-scoped nodes to the CLIENT's own scope -- so their synthesized
+    ``phase="end"`` (which lets apps release per-drag state) never fired."""
+    server = two_client_setup["server"]
+    page1: Page = two_client_setup["page1"]
+    client1 = two_client_setup["client1"]
+
+    client1.camera.position = (0.0, 0.0, 4.0)
+    client1.camera.look_at = (0.0, 0.0, 0.0)
+    box = client1.scene.add_box("/dragme", dimensions=(4.0, 4.0, 0.2))
+    started = threading.Event()
+    ended = threading.Event()
+
+    @box.on_drag("left")
+    def _(event: viser.SceneNodeDragEvent) -> None:
+        if event.phase == "start":
+            started.set()
+        elif event.phase == "end":
+            ended.set()
+
+    wait_for_scene_node(page1, "/dragme")
+    cx, cy = canvas_center(page1)
+    page1.mouse.move(cx, cy)
+    page1.mouse.down()
+    page1.mouse.move(cx + 80, cy + 40, steps=10)
+    assert started.wait(timeout=5.0), "drag start never reached the client scope"
+
+    # Disconnect mid-drag: the wire "end" will never arrive, so the
+    # teardown must synthesize it for the CLIENT scope's registry.
+    page1.context.close()
+    deadline = time.time() + 5.0
+    while client1.client_id in server._connected_clients:
+        assert time.time() < deadline, "client 1 never disconnected"
+        time.sleep(0.05)
+    assert ended.wait(timeout=5.0), "synthesized drag end never fired"

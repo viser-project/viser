@@ -1155,11 +1155,16 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # Drop any in-flight drag entries for this client; the
             # corresponding ``phase="end"`` will never arrive, so without
             # this the active-drag map leaks an entry per dropped drag and
-            # ``on_drag_end`` is silently skipped. The popped handle is
-            # passed in explicitly so the synthesized end events can still
-            # resolve ``event.client`` without the client being publicly
-            # listed.
+            # ``on_drag_end`` is silently skipped. BOTH scopes: owner-scoped
+            # dispatch routes drags on client-scoped nodes to the client's
+            # own SceneApi, so its map needs the same drain as the server's.
+            # The popped handle is passed in explicitly so the synthesized
+            # end events can still resolve ``event.client`` without the
+            # client being publicly listed.
             await self.scene._drop_active_drags_for_client(
+                cast(infra.ClientId, conn.client_id), event_client=handle
+            )
+            await handle.scene._drop_active_drags_for_client(
                 cast(infra.ClientId, conn.client_id), event_client=handle
             )
             await self._dispatch_client_callbacks(disconnect_cbs, handle)

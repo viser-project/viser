@@ -313,7 +313,11 @@ def test_pointer_event_scopes_coexist() -> None:
     (gesture engagement uses the union), so registrations in one scope
     never clear the other's, and each scope's enable messages ride its own
     connection stamped with its own owner."""
-    from .infra_utils import make_synthetic_client
+    from .infra_utils import (
+        broadcast_messages,
+        client_buffer_messages,
+        make_synthetic_client,
+    )
 
     server = viser.ViserServer()
     client = make_synthetic_client(server, 5)
@@ -333,14 +337,12 @@ def test_pointer_event_scopes_coexist() -> None:
     # Each scope's enable message is stamped with its own owner.
     server_enables = [
         msg
-        for msg in server._websock_server._broadcast_buffer.message_from_id.values()
+        for msg in broadcast_messages(server)
         if isinstance(msg, _messages.ScenePointerEnableMessage)
     ]
     client_enables = [
         msg
-        for msg in (
-            client._websock_connection._state.message_buffer.message_from_id.values()
-        )
+        for msg in client_buffer_messages(client)
         if isinstance(msg, _messages.ScenePointerEnableMessage)
     ]
     assert server_enables and all(msg.owner == "" for msg in server_enables)
@@ -354,9 +356,7 @@ def test_pointer_event_scopes_coexist() -> None:
     assert len(server.scene._scene_pointer_cb) == 1
     latest_client_enable = [
         msg
-        for msg in (
-            client._websock_connection._state.message_buffer.message_from_id.values()
-        )
+        for msg in client_buffer_messages(client)
         if isinstance(msg, _messages.ScenePointerEnableMessage)
     ][-1]
     assert latest_client_enable.modifiers == ()
