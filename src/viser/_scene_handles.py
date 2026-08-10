@@ -476,12 +476,16 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             # dispatch is about to snapshot -- losing the user's required
             # on_drag_end.
             drag_active = api._is_drag_active_for(node_name)
-            _queue_empty_interaction_bindings(
-                api,
-                node_name,
-                had_click=len(impl.click_cb) > 0,
-                had_drag=had_drag,
-            )
+            # These emits are part of the removal: on a dead per-client
+            # buffer (remove() from on_client_disconnect) they are benign
+            # no-ops and must not trip the dead-connection write warning.
+            with api._websock_interface.get_message_buffer().sanctioned_dead_writes():
+                _queue_empty_interaction_bindings(
+                    api,
+                    node_name,
+                    had_click=len(impl.click_cb) > 0,
+                    had_drag=had_drag,
+                )
             # Clear AFTER both emits (the snapshots above key them): if an
             # emit raises mid-remove, the handle keeps its callback state, so
             # a RETRY re-emits everything -- clearing first left a retry

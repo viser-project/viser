@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { TextureLoader } from "three";
 import { toMantineColor } from "./components/colorUtils";
 
+import { createParkedSceneUpdates } from "./batchedSceneUpdates";
 import { ViewerContext, variantKey } from "./ViewerContext";
 import {
   FileTransferPart,
@@ -1046,52 +1047,44 @@ export function FrameSynchronizedMessageHandler() {
 
         // Handle all messages and accumulate batched updates.
         // Three kinds of updates are accumulated and applied as single setState calls:
-        // - attrUpdates: top-level SceneNode attributes (wxyz, position, visibility, etc.)
-        // - propsUpdates: message.props fields (batched_wxyzs, colors, etc.)
+        // - parked scene updates: SceneNode attributes (wxyz, visibility,
+        //   ...) and message.props fields, per (owner, name) -- see
+        //   batchedSceneUpdates.ts for the parking/routing semantics.
         // - guiUpdates: GUI component property updates
-        //
-        // Scene updates are parked per (owner, name) and RE-ROUTED through
-        // routeShadowedUpdate at flush time: a cross-scope add later in the
-        // SAME batch can flip a name's effective variant after an update was
-        // parked, and flushing by name alone would then write one scope's
-        // update onto the other scope's variant. (With a single scope per
-        // name -- the common case -- the re-route is the shadowedSlotCount
-        // fast path and flushing is unchanged.)
-        const attrUpdates: {
-          [ownerAndName: string]: {
-            name: string;
-            owner: string;
-            updates: Partial<SceneNode>;
-          };
-        } = {};
-        const propsUpdates: {
-          [ownerAndName: string]: {
-            name: string;
-            owner: string;
-            updates: { [key: string]: any };
-          };
-        } = {};
+        const parked = createParkedSceneUpdates(
+          viewer.useSceneTree,
+          viewer.sceneTreeActions,
+        );
         const guiUpdates: { uuid: string; updates: { [key: string]: any } }[] =
           [];
 
         for (const msg of processBatch) {
+          // An add or variant remove flips the name's variant topology at
+          // receive time; parked updates for it must land first to keep
+          // wire order (see the drainFor contract).
+          if (
+            isSceneNodeMessage(msg) ||
+            msg.type === "RemoveSceneNodeMessage"
+          ) {
+            parked.drainFor(msg.name);
+          }
           const result = handleMessage(msg);
           if (result === undefined) continue;
           switch (result.kind) {
             case "sceneNodeAttrUpdate": {
-              const owner = ownerOf(msg as { owner?: string });
-              const entry = (attrUpdates[
-                variantKey(owner, result.targetNode)
-              ] ??= { name: result.targetNode, owner, updates: {} });
-              Object.assign(entry.updates, result.updates);
+              parked.parkAttr(
+                ownerOf(msg as { owner?: string }),
+                result.targetNode,
+                result.updates,
+              );
               break;
             }
             case "sceneNodePropsUpdate": {
-              const owner = ownerOf(msg as { owner?: string });
-              const entry = (propsUpdates[
-                variantKey(owner, result.targetNode)
-              ] ??= { name: result.targetNode, owner, updates: {} });
-              Object.assign(entry.updates, result.propsUpdates);
+              parked.parkProps(
+                ownerOf(msg as { owner?: string }),
+                result.targetNode,
+                result.propsUpdates,
+              );
               break;
             }
             case "guiUpdate":
@@ -1101,51 +1094,7 @@ export function FrameSynchronizedMessageHandler() {
         }
 
         // Apply all accumulated scene tree updates in a single set().
-        const mergedUpdates: { [name: string]: SceneNode } = {};
-
-        // Merge attribute-level updates (wxyz, position, visibility, etc.).
-        for (const { name, owner, updates } of Object.values(attrUpdates)) {
-          // The effective variant may have flipped since parking; consume
-          // into the shadow slot (or drop) instead of merging if so.
-          if (viewer.sceneTreeActions.routeShadowedUpdate(name, owner, updates))
-            continue;
-          const currentNode = viewer.useSceneTree.get(name);
-          if (currentNode === undefined) {
-            console.log(`(OK) Tried to update non-existent scene node ${name}`);
-            continue;
-          }
-          mergedUpdates[name] = {
-            ...(mergedUpdates[name] ?? currentNode),
-            ...updates,
-          };
-        }
-
-        // Merge props-level updates (batched_wxyzs, colors, etc.).
-        for (const { name, owner, updates } of Object.values(propsUpdates)) {
-          if (
-            viewer.sceneTreeActions.routeShadowedUpdate(name, owner, {
-              propsUpdates: updates,
-            })
-          )
-            continue;
-          const currentNode = viewer.useSceneTree.get(name);
-          if (currentNode === undefined) {
-            console.log(`(OK) Tried to update non-existent scene node ${name}`);
-            continue;
-          }
-          const node = mergedUpdates[name] || currentNode;
-          mergedUpdates[name] = {
-            ...node,
-            message: {
-              ...node.message,
-              props: {
-                ...node.message.props,
-                ...updates,
-              },
-            } as SceneNodeMessage,
-          };
-        }
-
+        const { mergedUpdates, visibilityNames } = parked.flush();
         if (Object.keys(mergedUpdates).length > 0) {
           viewer.useSceneTree.set(mergedUpdates);
         }
@@ -1202,12 +1151,12 @@ export function FrameSynchronizedMessageHandler() {
           });
         }
 
-        // Recompute effective visibility for nodes whose visibility changed.
-        // This needs to be done after updates are applied.
-        for (const { name, updates } of Object.values(attrUpdates)) {
-          if ("visibility" in updates) {
-            viewer.sceneTreeActions.computeEffectiveVisibility(name);
-          }
+        // Recompute effective visibility for nodes whose visibility change
+        // actually merged into an effective variant (updates consumed into
+        // a shadow slot don't affect what renders). This needs to be done
+        // after updates are applied.
+        for (const name of visibilityNames) {
+          viewer.sceneTreeActions.computeEffectiveVisibility(name);
         }
 
         // A render request that arrived with no messages in front of it has

@@ -103,6 +103,17 @@ class SupportsRemoveProtocol(Protocol):
     def remove(self) -> None: ...
 
 
+def _cascade_remove(child: SupportsRemoveProtocol) -> None:
+    """Remove a child as part of a parent's removal cascade, silently
+    skipping children that a concurrent disconnect teardown already
+    tombstoned -- remove() would warn "already removed" for a purely
+    internal race the user did not cause."""
+    impl = getattr(child, "_impl", child)  # Tabs carry `removed` directly.
+    if getattr(impl, "removed", False):
+        return
+    child.remove()
+
+
 class GuiPropsProtocol(Protocol):
     order: float
 
@@ -837,7 +848,7 @@ class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
         # skips for a removed group (props_setattr would reject the write; the
         # client drops the whole entity via the remove message anyway).
         for tab in tuple(self._tab_handles):
-            tab.remove()
+            _cascade_remove(tab)
         try:
             parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
             parent._children.pop(self._impl.uuid, None)
@@ -919,7 +930,7 @@ class GuiTabHandle:
         self._parent._rebuild_tab_props()
 
         for child in tuple(self._children.values()):
-            child.remove()
+            _cascade_remove(child)
         self._parent._impl.gui_api._container_handle_from_uuid.pop(self._id, None)
 
 
@@ -1332,7 +1343,7 @@ class PanelHandle(
         # message anyway).
         gui_api._panel_handle_from_uuid.pop(self._impl.uuid)
         for tab in tuple(self._tab_handles):
-            tab.remove()
+            _cascade_remove(tab)
 
 
 class MainPanelHandle(_PlacementMixin):
@@ -1414,7 +1425,7 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         for child in tuple(self._children.values()):
-            child.remove()
+            _cascade_remove(child)
         try:
             parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
             parent._children.pop(self._impl.uuid, None)
@@ -1560,7 +1571,7 @@ class GuiModalHandle:
             GuiCloseModalMessage(self._uuid),
         )
         for child in tuple(self._children.values()):
-            child.remove()
+            _cascade_remove(child)
         self._gui_api._container_handle_from_uuid.pop(self._uuid)
         self._gui_api._modal_handle_from_uuid.pop(self._uuid)
 

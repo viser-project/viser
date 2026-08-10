@@ -312,9 +312,13 @@ def test_dead_connection_write_warns_once(server: viser.ViserServer) -> None:
 
     # Removal messages are exempt: releasing a departed client's elements
     # (e.g. inside on_client_disconnect, which runs after the buffer is
-    # closed) is ordinary cleanup, not a leak in the making.
+    # closed) is ordinary cleanup, not a leak in the making. The click
+    # callback matters: remove() then also emits empty interaction-bindings
+    # messages (not lifecycle_phase="remove"), which must be covered by the
+    # same exemption.
     client2 = make_synthetic_client(server, 1)
     handle2 = client2.scene.add_icosphere("/theirs", radius=0.1)
+    handle2.on_click(lambda _: None)
     client2._websock_connection._state.message_buffer.set_done()
     with warnings_module.catch_warnings(record=True) as caught:
         warnings_module.simplefilter("always")

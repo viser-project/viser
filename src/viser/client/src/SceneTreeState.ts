@@ -42,6 +42,14 @@ export type ShadowedVariant = {
  * (server.scene), anything else is a per-client scope. Old recordings
  * predate the field; a missing field -- or a missing MESSAGE, e.g. an
  * interaction racing a node removal -- means broadcast. */
+/** Composite key for one scope's variant of a scene node, used wherever
+ * per-variant side state lives in a flat map (skinnedMeshState, the message
+ * batcher's parked updates). Owners are "" (broadcast) or a client id, so
+ * NUL can't collide with a real owner. */
+export function variantKey(owner: string | undefined, name: string): string {
+  return `${owner ?? ""}\u0000${name}`;
+}
+
 export function ownerOf(message: { owner?: string } | undefined): string {
   return message?.owner ?? "";
 }

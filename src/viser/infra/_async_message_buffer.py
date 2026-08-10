@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import threading
 from asyncio.events import AbstractEventLoop
-from typing import AsyncGenerator, Callable, Dict, List, Sequence
+from typing import AsyncGenerator, Callable, Dict, Generator, List, Sequence
 
 from ._messages import Message
 
@@ -34,6 +35,10 @@ class AsyncMessageBuffer:
     _warned_push_after_done: bool = False
     """One-shot latch for the dead-connection write warning in push()."""
 
+    _sanctioned_dead_writes: int = 0
+    """Nesting depth of ``sanctioned_dead_writes()`` scopes; nonzero
+    suppresses the dead-connection write warning."""
+
     generator_cursors: Dict[int, int] = dataclasses.field(default_factory=dict)
     """Per-active-connection consumption cursors (client id -> last message id
     that connection's window generator has drained). Written by each generator
@@ -42,6 +47,21 @@ class AsyncMessageBuffer:
     that EVERY active generator has consumed -- a shared "any messages
     pending?" event is not a consumption watermark, since a backpressured
     client's cursor can sit arbitrarily far behind it."""
+
+    @contextlib.contextmanager
+    def sanctioned_dead_writes(self) -> Generator[None, None, None]:
+        """Suppress the dead-connection write warning for pushes inside this
+        scope. For cleanup emits that removal paths perform on behalf of the
+        user (e.g. the empty interaction-bindings broadcasts in a scene
+        node's ``remove()``): on a dead buffer they are benign no-ops, same
+        as the removal messages themselves. Depth is a plain int (GIL-atomic
+        += / -=); a concurrent unsanctioned push slipping through unwarned
+        is acceptable for a best-effort diagnostic."""
+        self._sanctioned_dead_writes += 1
+        try:
+            yield
+        finally:
+            self._sanctioned_dead_writes -= 1
 
     def remove_from_buffer(self, match_fn: Callable[[Message], bool]) -> None:
         """Remove messages that match some condition."""
@@ -73,6 +93,7 @@ class AsyncMessageBuffer:
             self.done
             and not self._warned_push_after_done
             and message.lifecycle_phase != "remove"
+            and self._sanctioned_dead_writes == 0
         ):
             self._warned_push_after_done = True
             import warnings

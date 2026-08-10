@@ -285,3 +285,62 @@ describe("routeShadowedUpdate", () => {
     expect(store.get("/a")!.message).toBe(clientMsg);
   });
 });
+
+describe("parked batch updates (batchedSceneUpdates)", () => {
+  it("keeps wire order across a mid-batch variant flip", async () => {
+    // Batch: [visibility(false, server), client add (flip), visibility(true,
+    // server)]. Msg 1 parks (server variant effective at receive time); msg 3
+    // is consumed into the shadow slot at receive time. Without draining the
+    // parked entries at the flip, the STALE parked false would overwrite the
+    // newer true at flush.
+    const { createParkedSceneUpdates } = await import("./batchedSceneUpdates");
+    const { store, actions } = setup();
+    actions.addSceneNode(makeFrameMessage("/x", ""));
+    const parked = createParkedSceneUpdates(store, actions);
+
+    // Msg 1: server visibility=false. Effective at receive time -> parks.
+    expect(actions.routeShadowedUpdate("/x", "", { visibility: false })).toBe(
+      false,
+    );
+    parked.parkAttr("", "/x", { visibility: false });
+
+    // Msg 2: client add flips the effective variant. MessageHandler drains
+    // parked entries for the name BEFORE the add.
+    parked.drainFor("/x");
+    actions.addSceneNode(makeFrameMessage("/x", "7"));
+
+    // Msg 3: server visibility=true. Server variant now shadowed -> consumed
+    // into the shadow slot at receive time.
+    expect(actions.routeShadowedUpdate("/x", "", { visibility: true })).toBe(
+      true,
+    );
+
+    const { mergedUpdates, visibilityNames } = parked.flush();
+    store.set(mergedUpdates);
+
+    // The server variant's accumulated state must reflect the LAST wire
+    // value (true), and no effective-visibility recompute is owed (nothing
+    // merged into the effective variant).
+    expect(store.get("/x")!.shadowed!.visibility).toBe(true);
+    expect(visibilityNames).toEqual([]);
+
+    // Promotion materializes that state: remove the client variant and the
+    // server node comes back visible.
+    actions.removeSceneNodeVariant("/x", "7");
+    expect(store.get("/x")!.visibility).toBe(true);
+  });
+
+  it("reports merged visibility changes for effective-variant recompute", async () => {
+    const { createParkedSceneUpdates } = await import("./batchedSceneUpdates");
+    const { store, actions } = setup();
+    actions.addSceneNode(makeFrameMessage("/y", ""));
+    const parked = createParkedSceneUpdates(store, actions);
+
+    parked.parkAttr("", "/y", { visibility: false });
+    const { mergedUpdates, visibilityNames } = parked.flush();
+    store.set(mergedUpdates);
+
+    expect(store.get("/y")!.visibility).toBe(false);
+    expect(visibilityNames).toEqual(["/y"]);
+  });
+});
