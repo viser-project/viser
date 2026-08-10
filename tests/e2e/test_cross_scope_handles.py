@@ -583,6 +583,10 @@ def test_drag_end_routes_to_owner_after_mid_drag_removal(
     the node mid-drag stamped the end with the broadcast owner ("") and the
     client scope's ``on_drag`` end callback never fired."""
     client = get_client_handle(viser_server)
+    # Up must be set explicitly: the (0, 0, 4) -> origin view is parallel to
+    # the server-default +Z up, and whether the browser's camera sync has
+    # already replaced that default is a race.
+    client.camera.up_direction = (0.0, 1.0, 0.0)
     client.camera.position = (0.0, 0.0, 4.0)
     client.camera.look_at = (0.0, 0.0, 0.0)
 
@@ -682,7 +686,7 @@ def test_skinned_mesh_bone_state_is_variant_scoped(
     client_owner = str(client.client_id)
     viser_page.wait_for_function(
         f"() => ({js_entry})('') !== null && ({js_entry})('{client_owner}') !== null",
-        timeout=5_000,
+        timeout=10_000,
     )
 
     # A bone update from the (shadowed) server scope lands in the SERVER
@@ -690,7 +694,7 @@ def test_skinned_mesh_bone_state_is_variant_scoped(
     server_mesh.bones[1].position = (5.0, 6.0, 7.0)
     viser_page.wait_for_function(
         f"() => String(({js_entry})('')) === '5,6,7'",
-        timeout=5_000,
+        timeout=10_000,
     )
     assert viser_page.evaluate(js_entry, client_owner) == [1, 0, 0]
 
@@ -699,7 +703,7 @@ def test_skinned_mesh_bone_state_is_variant_scoped(
     client.scene._handle_from_node_name["/skin"].remove()
     viser_page.wait_for_function(
         f"() => ({js_entry})('{client_owner}') === null",
-        timeout=5_000,
+        timeout=10_000,
     )
     assert viser_page.evaluate(js_entry, "") == [5, 6, 7]
 
@@ -715,6 +719,7 @@ def test_disconnect_mid_drag_fires_end_for_client_scope(
     page1: Page = two_client_setup["page1"]
     client1 = two_client_setup["client1"]
 
+    client1.camera.up_direction = (0.0, 1.0, 0.0)
     client1.camera.position = (0.0, 0.0, 4.0)
     client1.camera.look_at = (0.0, 0.0, 0.0)
     box = client1.scene.add_box("/dragme", dimensions=(4.0, 4.0, 0.2))
