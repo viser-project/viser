@@ -416,3 +416,38 @@ def test_removed_server_container_restore_does_not_poison_thread(
 
     assert server.gui.add_button("s")._impl.parent_container_id == "root"
     assert client.gui.add_button("c")._impl.parent_container_id == "root"
+
+
+def test_disconnect_cycles_leave_no_server_residue(
+    server: viser.ViserServer,
+) -> None:
+    """Repeated connect / cross-nest / disconnect cycles must not accumulate
+    entries in the server-side GUI registries or the host container's
+    children (leak check for the release path)."""
+    folder = server.gui.add_folder("Host")
+    gui = server.gui
+
+    def registry_sizes() -> tuple[int, int, int]:
+        return (
+            len(gui._container_handle_from_uuid),
+            len(gui._gui_input_handle_from_uuid),
+            len(folder._children),
+        )
+
+    baseline = registry_sizes()
+    for i in range(20):
+        client = make_synthetic_client(server, i)
+        with folder:
+            with client.gui.add_folder(f"F{i}"):
+                client.gui.add_button(f"b{i}")
+            client.gui.add_slider(
+                f"s{i}", min=0.0, max=1.0, step=0.1, initial_value=0.5
+            )
+        client.scene.add_frame(f"/c{i}")
+
+        # Disconnect teardown.
+        client._websock_connection._state.message_buffer.set_done()
+        client.gui._release_cross_scope_nesting()
+
+        assert registry_sizes() == baseline, f"registry residue after cycle {i}"
+        assert len(client.gui._handles_in_foreign_containers) == 0
