@@ -196,10 +196,16 @@ def test_client_scope_elements_do_not_survive_reconnect(
         "/shared_box", dimensions=(1.0, 1.0, 1.0), position=(2.0, 0.0, 0.0)
     )
     client.scene.add_icosphere("/client_sphere", radius=0.3)
-    # A client variant shadowing a server name.
+    # A client variant shadowing a server name. Wait on the EFFECTIVE OWNER
+    # flipping to the client -- a (0, 0, 0) pose wait would pass vacuously on
+    # the store's freshly-initialized default pose before the shadowing add
+    # has even been processed.
     client.scene.add_box("/shared_box", dimensions=(0.5, 0.5, 0.5))
     wait_for_scene_node(viser_page, "/client_sphere")
-    wait_for_node_position(viser_page, "/shared_box", (0.0, 0.0, 0.0))
+    viser_page.wait_for_function(
+        f"() => ({JS_GET_EFFECTIVE_OWNER})('/shared_box') === '{client.client_id}'",
+        timeout=10_000,
+    )
 
     viser_server._websock_server.disconnect_all_clients()
 
@@ -581,6 +587,23 @@ def test_world_axes_server_state_deterministic_for_new_client(
 # ---------------------------------------------------------------------------
 
 
+def _wait_drag_ready(page: Page) -> None:
+    """The drag raycasts against the RENDERED scene: wait for the mounted
+    mesh (store presence precedes the object existing for the raycaster),
+    then for two animation frames (proof the render loop is producing
+    frames, so pointer events will be processed). Both lag by seconds under
+    CI's software-GL contention."""
+    wait_for_scene_node(page, "/dragme")
+    page.wait_for_function(
+        "() => window.__viserMutable?.nodeRefFromName?.['/dragme'] != null",
+        timeout=15_000,
+    )
+    page.evaluate(
+        """() => new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)))"""
+    )
+
+
 def test_drag_end_routes_to_owner_after_mid_drag_removal(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
@@ -607,7 +630,7 @@ def test_drag_end_routes_to_owner_after_mid_drag_removal(
         elif event.phase == "end":
             ended.set()
 
-    wait_for_scene_node(viser_page, "/dragme")
+    _wait_drag_ready(viser_page)
     cx, cy = canvas_center(viser_page)
     viser_page.mouse.move(cx, cy)
     viser_page.mouse.down()
@@ -739,7 +762,7 @@ def test_disconnect_mid_drag_fires_end_for_client_scope(
         elif event.phase == "end":
             ended.set()
 
-    wait_for_scene_node(page1, "/dragme")
+    _wait_drag_ready(page1)
     cx, cy = canvas_center(page1)
     page1.mouse.move(cx, cy)
     page1.mouse.down()

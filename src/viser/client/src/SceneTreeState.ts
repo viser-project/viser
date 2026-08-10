@@ -236,6 +236,10 @@ export function createSceneTreeActions(
 
       // Same-owner add (within-scope create or supersede), or a brand-new
       // name. `...existingNode` carries any shadow slot across a supersede.
+      // Deliberately NOT re-ranked against the shadow slot: the wire never
+      // downgrades an existing in-scope name to a virtual anchor (anchors
+      // are only sent for names missing in that scope), so a supersede
+      // keeps this variant effective unconditionally.
       const parentName = message.name.split("/").slice(0, -1).join("/");
       const parentNode = store.get(parentName);
 

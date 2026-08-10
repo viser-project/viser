@@ -107,7 +107,12 @@ def _cascade_remove(child: SupportsRemoveProtocol) -> None:
     """Remove a child as part of a parent's removal cascade, silently
     skipping children that a concurrent disconnect teardown already
     tombstoned -- remove() would warn "already removed" for a purely
-    internal race the user did not cause."""
+    internal race the user did not cause.
+
+    Best-effort: the unlocked check narrows the race window rather than
+    closing it (a teardown landing between this check and the removed-guard
+    inside remove() still warns, harmlessly). Closing it would need a lock
+    shared across all GUI removal paths, which the design avoids."""
     impl = getattr(child, "_impl", child)  # Tabs carry `removed` directly.
     if getattr(impl, "removed", False):
         return

@@ -411,6 +411,11 @@ describe("randomized display-rule oracle", () => {
               // Same-owner supersede preserves visibility; new name is true.
               visibility: m.effective === owner ? prev.visibility : true,
             };
+            // Stays effective WITHOUT re-ranking against the shadow slot,
+            // matching addSceneNode: the wire never downgrades an existing
+            // in-scope name to a virtual anchor, so the only sequence where
+            // this would matter (real -> virtual same-owner supersede while
+            // shadowing a real other-scope variant) is unreachable live.
             m.effective = owner;
           }
         } else if (r < 0.7) {

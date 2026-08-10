@@ -54,14 +54,17 @@ class AsyncMessageBuffer:
         scope. For cleanup emits that removal paths perform on behalf of the
         user (e.g. the empty interaction-bindings broadcasts in a scene
         node's ``remove()``): on a dead buffer they are benign no-ops, same
-        as the removal messages themselves. Depth is a plain int (GIL-atomic
-        += / -=); a concurrent unsanctioned push slipping through unwarned
-        is acceptable for a best-effort diagnostic."""
-        self._sanctioned_dead_writes += 1
+        as the removal messages themselves. The depth is adjusted under
+        ``buffer_lock`` so concurrent scopes can't lose an update and wedge
+        the counter; a concurrent unsanctioned push slipping through
+        unwarned is still acceptable for a best-effort diagnostic."""
+        with self.buffer_lock:
+            self._sanctioned_dead_writes += 1
         try:
             yield
         finally:
-            self._sanctioned_dead_writes -= 1
+            with self.buffer_lock:
+                self._sanctioned_dead_writes -= 1
 
     def remove_from_buffer(self, match_fn: Callable[[Message], bool]) -> None:
         """Remove messages that match some condition."""

@@ -59,6 +59,11 @@ export function createParkedSceneUpdates(
       updates: { [key: string]: any };
     };
   } = {};
+  // Names with at least one parked entry, so the per-add/remove drainFor
+  // call is O(1) in the common case (nothing parked for that name) instead
+  // of scanning both tables. Never pruned on drain; a stale member only
+  // costs one extra scan.
+  const parkedNames = new Set<string>();
 
   /** Route one attr entry to the shadow slot, or merge it into `out`.
    * Returns true when a visibility change merged into the effective
@@ -107,6 +112,7 @@ export function createParkedSceneUpdates(
 
   return {
     parkAttr: (owner, name, updates) => {
+      parkedNames.add(name);
       const entry = (attrUpdates[variantKey(owner, name)] ??= {
         name,
         owner,
@@ -115,6 +121,7 @@ export function createParkedSceneUpdates(
       Object.assign(entry.updates, updates);
     },
     parkProps: (owner, name, updates) => {
+      parkedNames.add(name);
       const entry = (propsUpdates[variantKey(owner, name)] ??= {
         name,
         owner,
@@ -123,6 +130,7 @@ export function createParkedSceneUpdates(
       Object.assign(entry.updates, updates);
     },
     drainFor: (name) => {
+      if (!parkedNames.has(name)) return;
       // Rare path (a cross-scope flip mid-batch): immediate store writes
       // are fine, and required -- the topology change lands right after.
       for (const [key, entry] of Object.entries(attrUpdates)) {
