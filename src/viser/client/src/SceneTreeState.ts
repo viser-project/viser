@@ -129,13 +129,6 @@ export function createSceneTreeActions(
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
   nodePoseData: NodePoseDataMap,
 ) {
-  // Number of names currently holding a shadowed variant. Shadowing only
-  // exists while a client has deliberately reused a server-owned name
-  // (typically zero for a whole session), so this lets the per-message
-  // routing check in `routeShadowedUpdate` collapse to one integer compare
-  // on the hot pose/visibility paths.
-  let shadowedSlotCount = 0;
-
   /** Pre-order names of `name`'s subtree, collected BEFORE any removal:
    * children lists die with their nodes. Shared by variant-subtree and
    * whole-node removal. */
@@ -181,11 +174,6 @@ export function createSceneTreeActions(
         existingNode !== undefined &&
         ownerOf(existingNode.message) !== ownerOf(message)
       ) {
-        // Either branch below fills the (single) shadow slot; only count the
-        // slot when it was previously empty. If it was occupied, the parked
-        // variant belonged to the incoming message's own scope and is being
-        // replaced (a within-scope supersede that happens to be parked).
-        if (existingNode.shadowed === undefined) shadowedSlotCount++;
         if (variantRank(message) >= variantRank(existingNode.message)) {
           // Incoming variant shadows the current effective one. Snapshot the
           // effective variant's state (including its live pose) into the
@@ -299,7 +287,6 @@ export function createSceneTreeActions(
         if (shadowed !== undefined) {
           // Promote the shadowed variant, with the state its scope's
           // messages have been accumulating while it was hidden.
-          shadowedSlotCount--;
           delete nodeRefFromName[name];
           if (!isVirtual(shadowed.message)) {
             nodePoseData[name] = {
@@ -334,7 +321,6 @@ export function createSceneTreeActions(
         return "removed-effective";
       }
       if (node.shadowed && ownerOf(node.shadowed.message) === owner) {
-        shadowedSlotCount--;
         store.set({ [name]: { ...node, shadowed: undefined } });
         return "removed-shadow";
       }
@@ -378,9 +364,6 @@ export function createSceneTreeActions(
         propsUpdates?: { [key: string]: any };
       },
     ): boolean => {
-      // Fast path: no shadowed variants exist anywhere (the common case for
-      // an entire session), so every update targets its effective variant.
-      if (shadowedSlotCount === 0) return false;
       // The root ("") is a singleton across scopes; owner is ignored for it.
       if (name === "") return false;
       const node = store.get(name);
@@ -409,7 +392,6 @@ export function createSceneTreeActions(
 
       const updates: Record<string, SceneNode | undefined> = {};
       removeNames.forEach((removeName) => {
-        if (store.get(removeName)?.shadowed !== undefined) shadowedSlotCount--;
         updates[removeName] = undefined;
         delete nodeRefFromName[removeName];
         delete nodePoseData[removeName];
@@ -479,10 +461,6 @@ export function createSceneTreeActions(
           actions.removeSceneNode(child);
         }
       }
-      // The whole store returns to variant-free defaults below; /WorldAxes
-      // may carry a shadow slot that the loop above didn't visit.
-      shadowedSlotCount = 0;
-
       // Reset root and /WorldAxes to default state.
       const defaultState = makeDefaultSceneTreeState();
       store.set({

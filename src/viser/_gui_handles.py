@@ -182,12 +182,18 @@ class _GuiHandle(Generic[T], AssignablePropsBase[_GuiHandleState]):
 
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
-        parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
-        parent._children.pop(self._impl.uuid)
+        # Tolerant detach: a disconnect teardown racing this remove() may
+        # have already purged the parent and these registry entries
+        # (bookkeeping-only, no lock).
+        try:
+            parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
+            parent._children.pop(self._impl.uuid, None)
+        except KeyError:
+            pass
         gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
         if isinstance(self, _GuiInputHandle):
-            gui_api._gui_input_handle_from_uuid.pop(self._impl.uuid)
+            gui_api._gui_input_handle_from_uuid.pop(self._impl.uuid, None)
 
 
 class _GuiInputHandle(
@@ -832,8 +838,11 @@ class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
         # client drops the whole entity via the remove message anyway).
         for tab in tuple(self._tab_handles):
             tab.remove()
-        parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
-        parent._children.pop(self._impl.uuid)
+        try:
+            parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
+            parent._children.pop(self._impl.uuid, None)
+        except KeyError:
+            pass  # Parent already torn down by a disconnect race.
         gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
 
@@ -911,7 +920,7 @@ class GuiTabHandle:
 
         for child in tuple(self._children.values()):
             child.remove()
-        self._parent._impl.gui_api._container_handle_from_uuid.pop(self._id)
+        self._parent._impl.gui_api._container_handle_from_uuid.pop(self._id, None)
 
 
 # The control panel's fixed uuid, shared with the client (CONTROL_PANEL_ID in
@@ -1406,9 +1415,12 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         for child in tuple(self._children.values()):
             child.remove()
-        parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
-        parent._children.pop(self._impl.uuid)
-        gui_api._container_handle_from_uuid.pop(self._impl.uuid)
+        try:
+            parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
+            parent._children.pop(self._impl.uuid, None)
+        except KeyError:
+            pass  # Parent already torn down by a disconnect race.
+        gui_api._container_handle_from_uuid.pop(self._impl.uuid, None)
         gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
 

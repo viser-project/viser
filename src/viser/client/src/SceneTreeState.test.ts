@@ -263,3 +263,25 @@ describe("removeSceneNodeVariantSubtree", () => {
     expect(store.get("/p/mine")).toBeDefined();
   });
 });
+
+describe("routeShadowedUpdate", () => {
+  it("drops a stale other-scope update even when no shadow slot exists", () => {
+    // Server adds /a, a client shadows it, then the server variant is
+    // removed (no shadow slot anywhere anymore). A late broadcast-owned
+    // update -- e.g. a write through a stale server handle -- must be
+    // consumed (dropped), NOT applied to the client's surviving variant.
+    // Regression: a global shadow-count fast path skipped the per-name
+    // owner check when the count was zero.
+    const { store, actions } = setup();
+    actions.addSceneNode(makeFrameMessage("/a", ""));
+    const clientMsg = makeFrameMessage("/a", "7");
+    actions.addSceneNode(clientMsg);
+    actions.removeSceneNodeVariant("/a", ""); // Parked broadcast copy dies.
+
+    const consumed = actions.routeShadowedUpdate("/a", "", {
+      position: [9, 9, 9],
+    });
+    expect(consumed).toBe(true);
+    expect(store.get("/a")!.message).toBe(clientMsg);
+  });
+});

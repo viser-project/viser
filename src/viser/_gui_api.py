@@ -733,12 +733,16 @@ class GuiApi:
         cascade a remove into a dead connection."""
         while self._handles_in_foreign_containers:
             uuid, handle = self._handles_in_foreign_containers.popitem()
+            # Tombstone BEFORE detaching from the server parent: a user
+            # thread racing us with handle.remove() then bails at the
+            # already-removed check instead of finding a half-detached
+            # tree (its registry pops are tolerant of ours regardless).
+            self._tombstone_subtree(handle)
             parent = self._root_server().gui._container_handle_from_uuid.get(
                 handle._impl.parent_container_id
             )
             if parent is not None:
                 parent._children.pop(uuid, None)
-            self._tombstone_subtree(handle)
 
     def _tombstone_subtree(self, handle: Any) -> None:
         """Recursively mark a cross-nested subtree removed and purge it from
