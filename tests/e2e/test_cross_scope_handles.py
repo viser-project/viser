@@ -593,7 +593,6 @@ def _wait_drag_ready(page: Page) -> None:
     then for two animation frames (proof the render loop is producing
     frames, so pointer events will be processed). Both lag by seconds under
     CI's software-GL contention."""
-    wait_for_scene_node(page, "/dragme")
     page.wait_for_function(
         "() => window.__viserMutable?.nodeRefFromName?.['/dragme'] != null",
         timeout=15_000,
