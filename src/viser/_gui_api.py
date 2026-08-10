@@ -197,7 +197,7 @@ class _RootGuiContainer:
     _children: dict[str, SupportsRemoveProtocol]
 
 
-_context_owner_by_server: ContextVar[Dict[int, "GuiApi"]] = ContextVar(
+_context_owner_by_server: ContextVar[dict[int, GuiApi]] = ContextVar(
     "viser_gui_context_owner_by_server", default={}
 )
 """Which GuiApi owns the active (non-root) container context, keyed by

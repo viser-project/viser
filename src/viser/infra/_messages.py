@@ -285,10 +285,10 @@ class Message(abc.ABC):
             for k in _non_init_field_names(message_type)
             if k in message_kwargs
         }
-        message = message_type(**message_kwargs)
+        decoded = message_type(**message_kwargs)
         for k, v in non_init.items():
-            setattr(message, k, v)
-        return message
+            setattr(decoded, k, v)
+        return decoded
 
     @classmethod
     @functools.lru_cache(maxsize=100)

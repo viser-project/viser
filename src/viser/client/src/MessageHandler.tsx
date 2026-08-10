@@ -1204,9 +1204,9 @@ export function FrameSynchronizedMessageHandler() {
 
         // Recompute effective visibility for nodes whose visibility changed.
         // This needs to be done after updates are applied.
-        for (const [nodeName, nodeState] of Object.entries(attrUpdates)) {
-          if ("visibility" in nodeState) {
-            viewer.sceneTreeActions.computeEffectiveVisibility(nodeName);
+        for (const { name, updates } of Object.values(attrUpdates)) {
+          if ("visibility" in updates) {
+            viewer.sceneTreeActions.computeEffectiveVisibility(name);
           }
         }
 
