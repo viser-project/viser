@@ -4,14 +4,18 @@ buffer deduplication, and as_html() embedding."""
 from __future__ import annotations
 
 import base64
+import dataclasses
+import threading
 from contextlib import contextmanager
 from typing import Any, Generator
 
 import msgspec.msgpack
 import numpy as np
+import pytest
 import zstandard
 
 import viser
+from viser.infra import Message, StateSerializer
 
 
 @contextmanager
@@ -21,6 +25,33 @@ def _server() -> Generator[viser.ViserServer, None, None]:
         yield server
     finally:
         server.stop()
+
+
+class _FakeHandler:
+    """Minimal stand-in for WebsockMessageHandler: just the serializer
+    registry that StateSerializer.serialize() interacts with."""
+
+    def __init__(self) -> None:
+        self._record_handles: list[StateSerializer] = []
+        self._record_lock = threading.RLock()
+
+
+# Leading underscore: excluded from Message.get_subclasses(), so this test
+# type never leaks into the real message registry.
+@dataclasses.dataclass
+class _ArrayTestMessage(Message):
+    name: str
+    array: np.ndarray
+
+    def redundancy_key(self) -> str:
+        return f"_ArrayTestMessage-{self.name}"
+
+
+def _make_serializer() -> StateSerializer:
+    handler = _FakeHandler()
+    serializer = StateSerializer(handler, filter=lambda message: True)  # type: ignore[arg-type]
+    handler._record_handles.append(serializer)
+    return serializer
 
 
 def _decode_viser_bytes(data: bytes) -> tuple[dict[str, Any], list[bytes]]:
@@ -137,3 +168,134 @@ def test_as_html_embeds_decodable_payload() -> None:
     meta, _buffers = _decode_viser_bytes(data)
     message_types = {message["type"] for _time, message in meta["messages"]}
     assert "BoxMessage" in message_types
+
+
+def test_dedup_keys_on_bytes_not_dtype() -> None:
+    """Arrays with identical bytes but different dtypes share one stored
+    buffer; each placeholder keeps its own dtype for the client-side view."""
+    serializer = _make_serializer()
+    serializer._insert_message(
+        _ArrayTestMessage("f32", np.zeros(3, dtype=np.float32))
+    )
+    serializer._insert_message(
+        _ArrayTestMessage("u32", np.zeros(3, dtype=np.uint32))
+    )
+    meta, buffers = _decode_viser_bytes(serializer.serialize())
+
+    assert len(buffers) == 1
+    assert buffers[0] == bytes(12)
+    (placeholder_a,) = _placeholders_of(meta["messages"][0][1])
+    (placeholder_b,) = _placeholders_of(meta["messages"][1][1])
+    assert placeholder_a["__binary_index"] == placeholder_b["__binary_index"] == 0
+    assert placeholder_a["dtype"] == "<f4"
+    assert placeholder_b["dtype"] == "<u4"
+
+
+def test_empty_and_noncontiguous_arrays() -> None:
+    """Zero-length arrays (all byte-identical) dedup to one empty buffer, and
+    non-contiguous arrays round-trip via their contiguous copy."""
+    serializer = _make_serializer()
+    serializer._insert_message(
+        _ArrayTestMessage("empty_f32", np.empty(0, dtype=np.float32))
+    )
+    serializer._insert_message(
+        _ArrayTestMessage("empty_u8", np.empty(0, dtype=np.uint8))
+    )
+    strided = np.arange(12, dtype=np.float32)[::2]
+    assert not strided.flags.c_contiguous
+    serializer._insert_message(_ArrayTestMessage("strided", strided))
+    meta, buffers = _decode_viser_bytes(serializer.serialize())
+
+    assert sorted(len(b) for b in buffers) == [0, 24]
+    assert np.ascontiguousarray(strided).tobytes() in set(buffers)
+    for _time, message in meta["messages"]:
+        for placeholder in _placeholders_of(message):
+            assert 0 <= placeholder["__binary_index"] < len(buffers)
+
+
+def test_concurrent_serializers_are_independent() -> None:
+    """Serializing one handle must not corrupt another's recorded state:
+    placeholder remapping mutates message dicts, which must never be shared
+    between serializers."""
+    vertices = np.random.default_rng(1).random((8, 3)).astype(np.float32)
+    faces = np.array([[0, 1, 2]], dtype=np.uint32)
+    with _server() as server:
+        server.scene.add_mesh_simple("/x", vertices.copy(), faces.copy())
+        server.scene.add_mesh_simple("/y", vertices.copy(), faces.copy())
+        serializer_a = server.get_scene_serializer()
+        serializer_b = server.get_scene_serializer()
+        data_a = serializer_a.serialize()
+        data_b = serializer_b.serialize()
+
+    for data in (data_a, data_b):
+        _meta, buffers = _decode_viser_bytes(data)
+        assert vertices.tobytes() in set(buffers)
+        assert faces.tobytes() in set(buffers)
+
+
+def test_serialize_is_deterministic() -> None:
+    """Identical recorded state must produce identical bytes (multithreaded
+    zstd included), so recordings are cacheable/diffable."""
+    array = np.random.default_rng(2).random((50_000, 3)).astype(np.float32)
+
+    def _serialize_once() -> bytes:
+        serializer = _make_serializer()
+        serializer._insert_message(_ArrayTestMessage("a", array))
+        serializer._insert_message(_ArrayTestMessage("b", array.copy()))
+        serializer.insert_sleep(1.0)
+        return serializer.serialize()
+
+    assert _serialize_once() == _serialize_once()
+
+
+def test_message_queued_during_serialize_is_excluded_cleanly() -> None:
+    """serialize() unregisters before encoding: a message queued from another
+    thread mid-serialize must be fully absent (not recorded with a dangling
+    buffer index) and the output must still decode."""
+    with _server() as server:
+        server.scene.add_frame("/pre")
+        serializer = server.get_scene_serializer()
+
+        import viser.infra._infra as infra_module
+
+        encode_entered = threading.Event()
+        writer_done = threading.Event()
+        original_encode = infra_module.msgspec.msgpack.encode
+
+        def blocking_encode(obj: Any) -> bytes:
+            # Only the serializer's metadata dict passes through here during
+            # this test window; hold it open while the writer queues.
+            encode_entered.set()
+            assert writer_done.wait(timeout=5.0)
+            return original_encode(obj)
+
+        def writer() -> None:
+            assert encode_entered.wait(timeout=5.0)
+            server.scene.add_icosphere(
+                "/racy", radius=1.0, subdivisions=1, color=(255, 0, 0)
+            )
+            writer_done.set()
+
+        thread = threading.Thread(target=writer)
+        thread.start()
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                infra_module.msgspec.msgpack, "encode", blocking_encode
+            )
+            data = serializer.serialize()
+        thread.join(timeout=5.0)
+        assert not thread.is_alive()
+
+    meta, buffers = _decode_viser_bytes(data)  # Integrity-checked in helper.
+    names = {message.get("name") for _time, message in meta["messages"]}
+    assert "/pre" in names
+    assert "/racy" not in names
+    for _time, message in meta["messages"]:
+        for placeholder in _placeholders_of(message):
+            assert 0 <= placeholder["__binary_index"] < len(buffers)
+
+
+def _placeholders_of(message: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    _collect_placeholders(message, out)
+    return out
