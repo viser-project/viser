@@ -12,6 +12,8 @@ from playwright.sync_api import FloatRect, Page, ViewportSize, expect
 
 import viser
 
+from .utils import get_client_handle
+
 # Wide enough to stay above the mobile breakpoint (xs = 36em = 576px), so the
 # floating layout -- not the bottom sheet -- is used.
 _VIEWPORT: ViewportSize = {"width": 1280, "height": 720}
