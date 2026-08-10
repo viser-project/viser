@@ -163,13 +163,13 @@ class StateSerializer:
         compressor = zstandard.ZstdCompressor(level=12, threads=-1).compressobj(
             size=inner_size
         )
-        return b"".join(
-            [
-                inner_size.to_bytes(8, "little"),
-                *(compressor.compress(part) for part in parts),
-                compressor.flush(),
-            ]
-        )
+        # Explicit statements (not a starred list display): flush() must not
+        # be evaluated until every part has been fed through compress(), and
+        # Python 3.8 evaluated `[a, *gen, f()]`'s f() before consuming gen.
+        out = [inner_size.to_bytes(8, "little")]
+        out.extend(compressor.compress(part) for part in parts)
+        out.append(compressor.flush())
+        return b"".join(out)
 
     def as_html(self, dark_mode: bool = False) -> str:
         """Get a standalone HTML string for the serialized scene.
