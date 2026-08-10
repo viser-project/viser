@@ -379,8 +379,10 @@ describe("randomized display-rule oracle", () => {
           variants: { [owner: string]: ModelVariant };
           effective: string | undefined;
         };
-      } = { "/n1": { variants: {}, effective: undefined },
-            "/n2": { variants: {}, effective: undefined } };
+      } = {
+        "/n1": { variants: {}, effective: undefined },
+        "/n2": { variants: {}, effective: undefined },
+      };
       const opLog: string[] = [];
 
       for (let i = 0; i < 12; i++) {
