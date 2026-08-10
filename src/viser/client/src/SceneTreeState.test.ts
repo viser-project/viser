@@ -232,18 +232,17 @@ describe("removeSceneNodeVariantSubtree", () => {
       };
     }
 
-    const outcomes = actions.removeSceneNodeVariantSubtree("/p", "");
+    const removedNames = actions.removeSceneNodeVariantSubtree("/p", "");
 
     for (const name of ["/p", "/p/a", "/p/a/b"]) {
       expect(store.get(name)).toBeUndefined();
       expect(nodeRefFromName[name]).toBeUndefined();
       expect(nodePoseData[name]).toBeUndefined();
     }
-    expect(outcomes.map((o) => o.outcome)).toEqual([
-      "removed-effective",
-      "removed-effective",
-      "removed-effective",
-    ]);
+    expect(removedNames).toEqual(["/p", "/p/a", "/p/a/b"]);
+    // Later per-descendant remove messages (current servers enumerate them)
+    // no-op silently.
+    expect(actions.removeSceneNodeVariantSubtree("/p/a", "")).toEqual([]);
   });
 
   it("stays scope-local: other-owner descendants survive and shadowed ones promote", () => {
@@ -254,16 +253,13 @@ describe("removeSceneNodeVariantSubtree", () => {
     actions.addSceneNode(clientVariant); // Shadows the broadcast one.
     actions.addSceneNode(makeFrameMessage("/p/mine", "7"));
 
-    const outcomes = actions.removeSceneNodeVariantSubtree("/p", "");
-    const byName = Object.fromEntries(outcomes.map((o) => [o.name, o.outcome]));
+    const removedNames = actions.removeSceneNodeVariantSubtree("/p", "");
 
-    expect(byName["/p"]).toBe("removed-effective");
-    // The broadcast variant of /p/shared was PARKED (client shadows it);
-    // removing it leaves the client variant effective.
-    expect(byName["/p/shared"]).toBe("removed-shadow");
+    // Both broadcast variants went away: /p entirely, /p/shared's PARKED
+    // copy (the client variant shadows it and stays effective).
+    expect(removedNames).toEqual(["/p", "/p/shared"]);
     expect(store.get("/p/shared")!.message).toBe(clientVariant);
     // The client-only descendant is untouched by the broadcast sweep.
-    expect(byName["/p/mine"]).toBe("noop");
     expect(store.get("/p/mine")).toBeDefined();
   });
 });

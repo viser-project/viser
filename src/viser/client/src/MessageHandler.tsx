@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { TextureLoader } from "three";
 import { toMantineColor } from "./components/colorUtils";
 
-import { ViewerContext, skinnedMeshStateKey } from "./ViewerContext";
+import { ViewerContext, variantKey } from "./ViewerContext";
 import {
   FileTransferPart,
   FileTransferStartDownload,
@@ -20,7 +20,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Button, Progress } from "@mantine/core";
 import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
-import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
+import { ownerOf, rootNodeTemplate, SceneNode } from "./SceneTreeState";
 import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
@@ -207,7 +207,7 @@ function useMessageHandler() {
         // deletes the entry first, so a NEW component still claims a fresh
         // object and the same-name re-add race stays protected.
         const state = (viewerMutable.skinnedMeshState[
-          skinnedMeshStateKey(message.owner, message.name)
+          variantKey(message.owner, message.name)
         ] ??= {
           initialized: false,
           claimed: false,
@@ -453,7 +453,7 @@ function useMessageHandler() {
         // the effective one.
         const state =
           viewerMutable.skinnedMeshState[
-            skinnedMeshStateKey(message.owner, message.name)
+            variantKey(message.owner, message.name)
           ];
         const pose = state?.poses[message.bone_index];
         if (pose === undefined) break;
@@ -464,7 +464,7 @@ function useMessageHandler() {
       case "SetBonePositionMessage": {
         const state =
           viewerMutable.skinnedMeshState[
-            skinnedMeshStateKey(message.owner, message.name)
+            variantKey(message.owner, message.name)
           ];
         const pose = state?.poses[message.bone_index];
         if (pose === undefined) break;
@@ -761,18 +761,13 @@ function useMessageHandler() {
       // making the recursion a no-op). Other scopes' variants survive.
       case "RemoveSceneNodeMessage": {
         const owner = message.owner ?? "";
-        for (const removed of viewer.sceneTreeActions.removeSceneNodeVariantSubtree(
+        // Each removed variant's bone-state entry dies with it; other
+        // variants of the name (including a just-promoted one) keep theirs.
+        for (const name of viewer.sceneTreeActions.removeSceneNodeVariantSubtree(
           message.name,
           owner,
         )) {
-          // Whatever the disposition, the removed VARIANT is gone; drop its
-          // own bone-state entry. Other variants of the name (including a
-          // just-promoted one) keep theirs.
-          if (removed.outcome !== "noop") {
-            delete viewerMutable.skinnedMeshState[
-              skinnedMeshStateKey(owner, removed.name)
-            ];
-          }
+          delete viewerMutable.skinnedMeshState[variantKey(owner, name)];
         }
         return;
       }
@@ -1080,36 +1075,23 @@ export function FrameSynchronizedMessageHandler() {
           [];
 
         for (const msg of processBatch) {
-          const msgOwner: string = (msg as { owner?: string }).owner ?? "";
           const result = handleMessage(msg);
           if (result === undefined) continue;
           switch (result.kind) {
             case "sceneNodeAttrUpdate": {
-              const key = `${msgOwner}\u0000${result.targetNode}`;
-              const existing = attrUpdates[key];
-              if (existing) {
-                Object.assign(existing.updates, result.updates);
-              } else {
-                attrUpdates[key] = {
-                  name: result.targetNode,
-                  owner: msgOwner,
-                  updates: { ...result.updates },
-                };
-              }
+              const owner = ownerOf(msg as { owner?: string });
+              const entry = (attrUpdates[
+                variantKey(owner, result.targetNode)
+              ] ??= { name: result.targetNode, owner, updates: {} });
+              Object.assign(entry.updates, result.updates);
               break;
             }
             case "sceneNodePropsUpdate": {
-              const key = `${msgOwner}\u0000${result.targetNode}`;
-              const existing = propsUpdates[key];
-              if (existing) {
-                Object.assign(existing.updates, result.propsUpdates);
-              } else {
-                propsUpdates[key] = {
-                  name: result.targetNode,
-                  owner: msgOwner,
-                  updates: { ...result.propsUpdates },
-                };
-              }
+              const owner = ownerOf(msg as { owner?: string });
+              const entry = (propsUpdates[
+                variantKey(owner, result.targetNode)
+              ] ??= { name: result.targetNode, owner, updates: {} });
+              Object.assign(entry.updates, result.propsUpdates);
               break;
             }
             case "guiUpdate":

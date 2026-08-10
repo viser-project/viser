@@ -21,7 +21,7 @@ try:
 except ImportError:
     LiteralAlt = Literal  # type: ignore
 
-from ._messages import Message
+from ._messages import Message, wire_field_names
 
 _raw_type_mapping = {
     bool: "boolean",
@@ -252,13 +252,10 @@ def generate_typescript_interfaces(message_cls: Type[Message]) -> str:
 
         out_lines.append(f"export interface {cls.__name__} " + "{")
         out_lines.append(f'  type: "{cls.__name__}";')
-        field_names = set([f.name for f in dataclasses.fields(cls)])  # type: ignore
-        for name, typ in get_type_hints(cls, include_extras=True).items():
-            if name in field_names:
-                typ = _get_ts_type(typ)
-            else:
-                continue
-            out_lines.append(f"  {name}: {typ};")
+        # Same field set (and order) the serializer puts on the wire.
+        hints = get_type_hints(cls, include_extras=True)
+        for name in wire_field_names(cls):
+            out_lines.append(f"  {name}: {_get_ts_type(hints[name])};")
         out_lines.append("}")
     out_lines.append("")
 

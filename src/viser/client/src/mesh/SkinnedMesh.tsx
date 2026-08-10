@@ -3,11 +3,7 @@ import * as THREE from "three";
 import { ViserStandardMeshMaterial, ShadowSkinnedMesh } from "./MeshUtils";
 import { SkinnedMeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
-import {
-  ViewerContext,
-  ViewerMutable,
-  skinnedMeshStateKey,
-} from "../ViewerContext";
+import { ViewerContext, ViewerMutable, variantKey } from "../ViewerContext";
 import { useFrame } from "@react-three/fiber";
 import { normalizeScale } from "../utils/normalizeScale";
 
@@ -119,7 +115,7 @@ export const SkinnedMesh = React.forwardRef<
   // Bone state is keyed per VARIANT: this mounted instance renders exactly
   // one scope's variant, and must never read/claim the entry of a same-name
   // variant from the other scope.
-  const stateKey = skinnedMeshStateKey(message.owner, message.name);
+  const stateKey = variantKey(message.owner, message.name);
 
   // Clean up geometry and skeleton when they change (they're created together).
   React.useEffect(() => {

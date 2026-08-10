@@ -845,7 +845,7 @@ class GuiTabHandle:
     _id: str  # Used as container ID of children.
     _label: str
     _icon: IconName | None
-    _container_id_restore: str | None = None
+    _container_id_restore: tuple[GuiApi, str] | None = None
     _children: dict[str, SupportsRemoveProtocol] = dataclasses.field(
         default_factory=dict
     )
@@ -871,14 +871,18 @@ class GuiTabHandle:
                 "This GuiTabHandle is already active as a context; it cannot "
                 "be re-entered inside itself."
             )
-        self._container_id_restore = self._parent._impl.gui_api._get_container_uuid()
+        self._container_id_restore = (
+            self._parent._impl.gui_api._snapshot_container_context()
+        )
         self._parent._impl.gui_api._set_container_uuid(self._id)
         return self
 
     def __exit__(self, *args) -> None:
         del args
         assert self._container_id_restore is not None
-        self._parent._impl.gui_api._set_container_uuid(self._container_id_restore)
+        self._parent._impl.gui_api._restore_container_context(
+            self._container_id_restore
+        )
         self._container_id_restore = None
 
     def __post_init__(self) -> None:
@@ -1363,7 +1367,7 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         )
         parent._children[self._impl.uuid] = self
 
-    _container_id_restore: str | None = None
+    _container_id_restore: tuple[GuiApi, str] | None = None
 
     def __enter__(self) -> Self:
         if self._container_id_restore is not None:
@@ -1375,14 +1379,14 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
                 "This GuiFolderHandle is already active as a context; it "
                 "cannot be re-entered inside itself."
             )
-        self._container_id_restore = self._impl.gui_api._get_container_uuid()
+        self._container_id_restore = self._impl.gui_api._snapshot_container_context()
         self._impl.gui_api._set_container_uuid(self._impl.uuid)
         return self
 
     def __exit__(self, *args) -> None:
         del args
         assert self._container_id_restore is not None
-        self._impl.gui_api._set_container_uuid(self._container_id_restore)
+        self._impl.gui_api._restore_container_context(self._container_id_restore)
         self._container_id_restore = None
 
     def remove(self) -> None:
@@ -1510,21 +1514,21 @@ class GuiModalHandle:
 
     _gui_api: GuiApi
     _uuid: str  # Used as container ID of children.
-    _container_uuid_restore: str | None = None
+    _container_uuid_restore: tuple[GuiApi, str] | None = None
     _children: dict[str, SupportsRemoveProtocol] = dataclasses.field(
         default_factory=dict
     )
     closed: bool = False
 
     def __enter__(self) -> GuiModalHandle:
-        self._container_uuid_restore = self._gui_api._get_container_uuid()
+        self._container_uuid_restore = self._gui_api._snapshot_container_context()
         self._gui_api._set_container_uuid(self._uuid)
         return self
 
     def __exit__(self, *args) -> None:
         del args
         assert self._container_uuid_restore is not None
-        self._gui_api._set_container_uuid(self._container_uuid_restore)
+        self._gui_api._restore_container_context(self._container_uuid_restore)
         self._container_uuid_restore = None
 
     def __post_init__(self) -> None:

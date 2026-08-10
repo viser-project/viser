@@ -198,22 +198,6 @@ class _RootGuiContainer:
 
 _global_order_counter = 0
 
-_thread_container_context = threading.local()
-"""Tracks, per thread and per ViserServer, which GuiApi instance currently
-has an active (non-root) container context (attribute ``api_by_server``,
-keyed by ``id(root server)``). Per-server keying keeps independent
-ViserServers in one process from clobbering each other's markers. Used to
-make cross-scope container nesting directional instead of a silent
-misplace -- see GuiApi._get_container_uuid."""
-
-
-def _thread_context_markers() -> dict[int, GuiApi]:
-    """The current thread's active-container markers, keyed by root server."""
-    markers = getattr(_thread_container_context, "api_by_server", None)
-    if markers is None:
-        markers = _thread_container_context.api_by_server = {}
-    return markers
-
 
 def _apply_default_order(order: float | None) -> float:
     """Apply default ordering logic for GUI elements.
@@ -270,6 +254,13 @@ class GuiApi:
         self._owner = owner
         """Entity that owns this API."""
         self._target_container_from_thread_id = {}
+        # Which GuiApi owns each thread's active (non-root) container
+        # context. Only the SERVER-scope instance's dict is consulted --
+        # storing the marker there scopes it per server for free, so
+        # contexts on unrelated ViserServers can't interfere. Used to make
+        # cross-scope container nesting directional instead of a silent
+        # misplace (see _get_container_uuid).
+        self._context_owner_from_thread_id: dict[int, GuiApi] = {}
         self._thread_executor = thread_executor
         self._event_loop = event_loop
 
@@ -680,10 +671,9 @@ class GuiApi:
         inside a server-scope container targets the server's container, while
         the reverse raises -- silently placing the element at this scope's
         root (the historical behavior) hid the mistake."""
-        # Markers are keyed by root server: two independent ViserServers in
-        # one process are unrelated worlds, and a container context on one
-        # has never affected (and should not constrain) adds on the other.
-        owner_api = _thread_context_markers().get(id(self._root_server()))
+        owner_api = self._root_server().gui._context_owner_from_thread_id.get(
+            threading.get_ident()
+        )
         if owner_api is not None and owner_api is not self:
             from ._viser import ViserServer
 
@@ -753,23 +743,20 @@ class GuiApi:
         implementations."""
         from ._gui_handles import GuiTabHandle
 
-        if isinstance(handle, GuiTabHandle):
-            if handle.removed:
-                return
-            handle.removed = True
-            self._container_handle_from_uuid.pop(handle._id, None)
-            for child in tuple(handle._children.values()):
-                self._tombstone_subtree(child)
+        # Tabs keep their tombstone/uuid on the handle itself; everything
+        # else keeps them on `_impl`.
+        is_tab = isinstance(handle, GuiTabHandle)
+        state = handle if is_tab else handle._impl
+        if state.removed:
             return
-        impl = handle._impl
-        if impl.removed:
-            return
-        impl.removed = True
-        self._gui_input_handle_from_uuid.pop(impl.uuid, None)
-        self._container_handle_from_uuid.pop(impl.uuid, None)
-        for tab in tuple(getattr(handle, "_tab_handles", ())):
-            self._tombstone_subtree(tab)
-        for child in tuple(getattr(handle, "_children", {}).values()):
+        state.removed = True
+        uuid = handle._id if is_tab else handle._impl.uuid
+        self._gui_input_handle_from_uuid.pop(uuid, None)
+        self._container_handle_from_uuid.pop(uuid, None)
+        for child in (
+            *getattr(handle, "_tab_handles", ()),
+            *tuple(getattr(handle, "_children", {}).values()),
+        ):
             self._tombstone_subtree(child)
 
     def _root_server(self):
@@ -788,47 +775,39 @@ class GuiApi:
         which GuiApi currently owns an active (non-root) container context
         so cross-scope nesting stays directional (see _get_container_uuid)."""
         thread_id = threading.get_ident()
-        markers = _thread_context_markers()
-        server_key = id(self._root_server())
-        if (
-            container_uuid != "root"
-            and container_uuid not in self._container_handle_from_uuid
-        ):
-            # A client-scoped GuiApi restoring a uuid the SERVER scope owns:
-            # this is a client container context exiting back out into the
-            # server container context it was nested in (its __enter__
-            # snapshot resolved to the server's active container). Hand the
-            # thread marker back to the server GuiApi instead of recording a
-            # foreign uuid as our own target -- doing the latter would make
-            # later server adds see a client context and raise, and would
-            # leave this scope targeting the server container even after
-            # the server's `with` block exits.
-            #
-            # "Owned by the server scope" means: in the server's registry,
-            # OR exactly the server's current thread target -- the latter
-            # covers a server container REMOVED while the client context was
-            # open (the server's target can't change underneath us: a server
-            # container context can't even be entered while a client context
-            # marker is active). A dangling uuid matching neither is this
-            # scope's own removed-while-open container; it stays in our map,
-            # matching the single-scope behavior, and heals when the outer
-            # context exits to root.
-            server_gui = self._root_server().gui
-            if server_gui is not self and (
-                container_uuid in server_gui._container_handle_from_uuid
-                or server_gui._target_container_from_thread_id.get(thread_id)
-                == container_uuid
-            ):
-                self._target_container_from_thread_id.pop(thread_id, None)
-                server_gui._target_container_from_thread_id[thread_id] = container_uuid
-                markers[server_key] = server_gui
-                return
         self._target_container_from_thread_id[thread_id] = container_uuid
+        markers = self._root_server().gui._context_owner_from_thread_id
         if container_uuid == "root":
-            if markers.get(server_key) is self:
-                del markers[server_key]
+            if markers.get(thread_id) is self:
+                del markers[thread_id]
         else:
-            markers[server_key] = self
+            markers[thread_id] = self
+
+    def _snapshot_container_context(self) -> tuple[GuiApi, str]:
+        """Snapshot the active container context for a `with` block to
+        restore on exit: the OWNING GuiApi and its current target uuid.
+        Carrying the owner explicitly -- instead of re-deriving it from a
+        bare uuid at exit time -- keeps the restore correct even when the
+        snapshot container has been removed while the block was open (a
+        dangling uuid restores into the scope that owned it, exactly like a
+        removed-while-open container always has within a single scope).
+        Raises for disallowed nesting directions, via _get_container_uuid."""
+        container_uuid = self._get_container_uuid()
+        owner_api = self._root_server().gui._context_owner_from_thread_id.get(
+            threading.get_ident()
+        )
+        return (owner_api if owner_api is not None else self, container_uuid)
+
+    def _restore_container_context(self, snapshot: tuple[GuiApi, str]) -> None:
+        """Restore an `__enter__`-time snapshot on `__exit__`. When the
+        snapshot belongs to another scope (a client container context nested
+        inside a server one), our own thread target -- set for the block
+        that is now exiting -- is dropped so later adds can't resolve
+        against it once the owning scope's context also exits."""
+        owner_api, container_uuid = snapshot
+        if owner_api is not self:
+            self._target_container_from_thread_id.pop(threading.get_ident(), None)
+        owner_api._set_container_uuid(container_uuid)
 
     def _next_layout_counter(self) -> int:
         """Bump and return the layout-update counter. THE single home of the

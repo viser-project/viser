@@ -14,6 +14,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     Type,
     TypeVar,
     Union,
@@ -170,6 +171,25 @@ def get_type_hints_cached(cls: Type[Any]) -> Dict[str, Any]:
     return get_type_hints(cls)  # type: ignore
 
 
+@functools.lru_cache(maxsize=None)
+def wire_field_names(cls: Type[Any]) -> Tuple[str, ...]:
+    """Names of the fields a message type puts on the wire: declared,
+    type-hinted dataclass fields, in declaration order. THE single
+    definition of the wire field set -- the serializer and the TypeScript
+    interface generator must never disagree on it. Declared fields (not
+    ``vars()``) so that non-init defaulted fields (e.g. the scene messages'
+    owner/virtual stamps) are included even before first assignment."""
+    hints = get_type_hints_cached(cls)
+    return tuple(f.name for f in dataclasses.fields(cls) if f.name in hints)
+
+
+@functools.lru_cache(maxsize=None)
+def _non_init_field_names(cls: Type[Any]) -> Tuple[str, ...]:
+    """Dataclass fields excluded from ``__init__`` (assigned post-construction
+    on deserialization). Empty for most message types."""
+    return tuple(f.name for f in dataclasses.fields(cls) if not f.init)
+
+
 class Message(abc.ABC):
     """Base message type for server/client communication."""
 
@@ -222,18 +242,11 @@ class Message(abc.ABC):
         Otherwise, arrays are inlined as memoryviews in the returned dict."""
         message_type = type(self)
         hints = get_type_hints_cached(message_type)
-        # Iterate DECLARED dataclass fields (not vars(self)): non-init
-        # defaulted fields -- e.g. the scene messages' owner/virtual stamps
-        # -- live on the class until assigned, so vars() would silently omit
-        # them from the wire even though the generated TypeScript declares
-        # them as required. The hints filter still excludes anything
-        # unannotated.
         out = {
             name: _prepare_for_serialization(
                 getattr(self, name), hints[name], binary_buffers
             )
-            for name in message_type.__dataclass_fields__
-            if name in hints
+            for name in wire_field_names(message_type)
         }
         out["type"] = message_type.__name__
         return out
@@ -264,12 +277,13 @@ class Message(abc.ABC):
         # declared init=False so defaulted fields can follow subclasses'
         # positional ones on Python 3.8) can't be passed to __init__; strip
         # them out and assign after construction so the serialize ->
-        # deserialize round trip stays lossless.
-        fields = message_type.__dataclass_fields__
+        # deserialize round trip stays lossless. The per-class name tuple is
+        # cached: most message types have none, and this runs per inbound
+        # message.
         non_init = {
             k: message_kwargs.pop(k)
-            for k in list(message_kwargs)
-            if k in fields and not fields[k].init
+            for k in _non_init_field_names(message_type)
+            if k in message_kwargs
         }
         message = message_type(**message_kwargs)
         for k, v in non_init.items():

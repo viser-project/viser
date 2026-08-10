@@ -42,8 +42,8 @@ export type ShadowedVariant = {
  * (server.scene), anything else is a per-client scope. Old recordings
  * predate the field; a missing field -- or a missing MESSAGE, e.g. an
  * interaction racing a node removal -- means broadcast. */
-export function ownerOf(message: SceneNodeMessage | undefined): string {
-  return (message as { owner?: string } | undefined)?.owner ?? "";
+export function ownerOf(message: { owner?: string } | undefined): string {
+  return message?.owner ?? "";
 }
 
 function isVirtual(message: SceneNodeMessage): boolean {
@@ -135,6 +135,19 @@ export function createSceneTreeActions(
   // routing check in `routeShadowedUpdate` collapse to one integer compare
   // on the hot pose/visibility paths.
   let shadowedSlotCount = 0;
+
+  /** Pre-order names of `name`'s subtree, collected BEFORE any removal:
+   * children lists die with their nodes. Shared by variant-subtree and
+   * whole-node removal. */
+  function collectSubtreeNames(name: string): string[] {
+    const names: string[] = [];
+    function collect(nodeName: string) {
+      names.push(nodeName);
+      store.get(nodeName)?.children.forEach(collect);
+    }
+    collect(name);
+    return names;
+  }
 
   /** Remove `name` from its parent's `children` list, recording the change
    * in `updates`. Shared by variant removal and recursive removal. */
@@ -276,11 +289,11 @@ export function createSceneTreeActions(
       name: string,
       owner: string,
     ): "removed-effective" | "promoted" | "removed-shadow" | "noop" => {
+      // Absent names are routine, not an anomaly: servers enumerate one
+      // remove per descendant, and the subtree recursion (see
+      // removeSceneNodeVariantSubtree) has usually removed them already.
       const node = store.get(name);
-      if (node === undefined) {
-        console.log(`(OK) Skipping variant removal for ${name}`);
-        return "noop";
-      }
+      if (node === undefined) return "noop";
       if (ownerOf(node.message) === owner) {
         const shadowed = node.shadowed;
         if (shadowed !== undefined) {
@@ -334,26 +347,14 @@ export function createSceneTreeActions(
      * older servers contain a single non-enumerated remove per subtree --
      * without the recursion their descendants would linger forever, along
      * with their pose/ref side state. Still scope-local: other-owner
-     * variants of descendant names are untouched. Returns the disposition
-     * per name so callers can clean per-variant side state. */
-    removeSceneNodeVariantSubtree: (
-      name: string,
-      owner: string,
-    ): {
-      name: string;
-      outcome: "removed-effective" | "promoted" | "removed-shadow" | "noop";
-    }[] => {
-      // Collect before removing: children lists die with their nodes.
-      const names: string[] = [];
-      function collect(nodeName: string) {
-        names.push(nodeName);
-        store.get(nodeName)?.children.forEach(collect);
-      }
-      collect(name);
-      return names.map((n) => ({
-        name: n,
-        outcome: actions.removeSceneNodeVariant(n, owner),
-      }));
+     * variants of descendant names are untouched. Returns the names whose
+     * variant actually went away, so callers can clean per-variant side
+     * state. */
+    removeSceneNodeVariantSubtree: (name: string, owner: string): string[] => {
+      if (store.get(name) === undefined) return [];
+      return collectSubtreeNames(name).filter(
+        (n) => actions.removeSceneNodeVariant(n, owner) !== "noop",
+      );
     },
 
     /** Route a node-keyed state update by owner: returns false when it
@@ -404,15 +405,7 @@ export function createSceneTreeActions(
 
     removeSceneNode: (name: string) => {
       // Remove this scene node and all children.
-      const removeNames: string[] = [];
-      function findChildrenRecursive(nodeName: string) {
-        removeNames.push(nodeName);
-        const node = store.get(nodeName);
-        if (node) {
-          node.children.forEach(findChildrenRecursive);
-        }
-      }
-      findChildrenRecursive(name);
+      const removeNames = collectSubtreeNames(name);
 
       const updates: Record<string, SceneNode | undefined> = {};
       removeNames.forEach((removeName) => {

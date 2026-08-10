@@ -582,8 +582,6 @@ def test_drag_end_routes_to_owner_after_mid_drag_removal(
     Regression: it was re-derived from the live store per phase, so removing
     the node mid-drag stamped the end with the broadcast owner ("") and the
     client scope's ``on_drag`` end callback never fired."""
-    import viser as viser_module
-
     client = get_client_handle(viser_server)
     client.camera.position = (0.0, 0.0, 4.0)
     client.camera.look_at = (0.0, 0.0, 0.0)
@@ -593,7 +591,7 @@ def test_drag_end_routes_to_owner_after_mid_drag_removal(
     ended = threading.Event()
 
     @box.on_drag("left")
-    def _(event: viser_module.SceneNodeDragEvent) -> None:
+    def _(event: viser.SceneNodeDragEvent) -> None:
         if event.phase == "start":
             started.set()
         elif event.phase == "end":
@@ -621,7 +619,6 @@ def test_pointer_filters_cleared_on_reconnect(
     client's filter entry behind forever -- its owner id can never send a
     disable -- keeping click gestures engaged."""
     client = get_client_handle(viser_server)
-    old_id = client.client_id
 
     @client.scene.on_pointer_event(event_type="click")
     def _(event) -> None:
@@ -634,18 +631,13 @@ def test_pointer_filters_cleared_on_reconnect(
 
     # Kick the connection; the page's worker auto-reconnects WITHOUT a
     # reload, so all frontend state survives except what the reconnect
-    # path deliberately resets. The browser comes back as a new client id,
-    # and nothing re-registers a pointer callback -- so no filter may
-    # survive the reconnect.
+    # path deliberately resets. Nothing re-registers a pointer callback, so
+    # no filter may survive -- and since only the reconnect path clears
+    # filters, this wait doubles as the reconnect wait.
     viser_server._websock_server.disconnect_all_clients()
-    deadline = time.time() + 10.0
-    while not any(cid != old_id for cid in viser_server.get_clients().keys()):
-        assert time.time() < deadline, "browser never reconnected"
-        time.sleep(0.05)
-
     viser_page.wait_for_function(
         "() => window.__viserPointer?.hasSceneClickFilter() === false",
-        timeout=5_000,
+        timeout=10_000,
     )
 
 

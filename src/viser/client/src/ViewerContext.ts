@@ -78,7 +78,7 @@ export type ViewerMutable = {
     rootWxyzAtCapture: [number, number, number, number];
   } | null;
 
-  // Skinned mesh state, keyed PER VARIANT via skinnedMeshStateKey(owner,
+  // Skinned mesh state, keyed PER VARIANT via variantKey(owner,
   // name): each scope's variant of a name owns independent bone state, so
   // bone updates for a shadowed variant accumulate without corrupting the
   // effective one, and promotion finds the promoted variant's state intact.
@@ -105,12 +105,11 @@ export type ViewerMutable = {
   nodePoseData: NodePoseDataMap;
 };
 
-/** skinnedMeshState key for one scope's variant of a scene node. Owners are
- * "" (broadcast) or a client id, so NUL can't collide with a real owner. */
-export function skinnedMeshStateKey(
-  owner: string | undefined,
-  name: string,
-): string {
+/** Composite key for one scope's variant of a scene node, used wherever
+ * per-variant side state lives in a flat map (skinnedMeshState, the message
+ * batcher's parked updates). Owners are "" (broadcast) or a client id, so
+ * NUL can't collide with a real owner. */
+export function variantKey(owner: string | undefined, name: string): string {
   return `${owner ?? ""}\u0000${name}`;
 }
 
