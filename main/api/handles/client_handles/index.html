@@ -444,6 +444,38 @@ interfaces at <a class="reference internal" href="#viser.ClientHandle.scene" tit
 these are used, for example via a client’s
 <a class="reference internal" href="../../core/scene_api/#viser.SceneApi.add_point_cloud" title="viser.SceneApi.add_point_cloud"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SceneApi.add_point_cloud()</span></code></a> method, created elements are local to
 only one specific client.</p>
+<p><strong>Client state is ephemeral.</strong> A client handle corresponds to a single
+websocket connection: when the browser disconnects or reloads, elements
+created through the handle are gone, and the reconnected browser is a new
+client (new handle, new <code class="docutils literal notranslate"><span class="pre">client_id</span></code>). Per-client state should therefore
+be (re)built in <a class="reference internal" href="../../core/server/#viser.ViserServer.on_client_connect" title="viser.ViserServer.on_client_connect"><code class="xref py py-meth docutils literal notranslate"><span class="pre">ViserServer.on_client_connect()</span></code></a>, which fires again
+on reconnect. State that must outlive a connection belongs client-side
+(browser storage) or in application code keyed however the application
+identifies its users; the server never retains per-client element state.</p>
+<p><strong>Scene names shadow, not collide.</strong> Each scene-tree name holds at most
+one node per scope: adding a client-scoped node under a name the server
+also uses creates an independent per-client variant that <em>shadows</em> the
+server’s node for this one client (the server’s node, with its latest
+state, shows again when the client-scoped variant is removed). State is
+fully scope-local – updates and removals from one scope never touch the
+other scope’s variant, and removing a node cascades only through its own
+scope’s descendants. A client-scoped node may be named under a
+server-scoped parent (e.g. per-client annotations under a shared frame);
+it survives the parent’s removal, anchored at the parent’s last pose,
+until this handle removes it.</p>
+<p><strong>GUI containers nest one way.</strong> A client-scoped GUI element may be
+added inside a server-scoped container context (<code class="docutils literal notranslate"><span class="pre">with</span>
+<span class="pre">server.gui.add_folder(...):</span> <span class="pre">client.gui.add_button(...)</span></code>); it renders
+inside the shared folder for this client only, and is removed along
+with the folder. The reverse – a server-scoped element inside a
+client-scoped container – raises, since no other client could see the
+container.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ClientHandle.client_id">
+<span class="sig-name descname"><span class="pre">client_id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#viser.ClientHandle.client_id" title="Link to this definition">¶</a></dt>
+<dd><p>Unique ID for this client.</p>
+</dd></dl>
+
 <dl class="py attribute">
 <dt class="sig sig-object py" id="viser.ClientHandle.scene">
 <span class="sig-name descname"><span class="pre">scene</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../core/scene_api/#viser.SceneApi" title="viser._scene_api.SceneApi"><span class="pre">SceneApi</span></a></em><a class="headerlink" href="#viser.ClientHandle.scene" title="Link to this definition">¶</a></dt>
@@ -454,12 +486,6 @@ only one specific client.</p>
 <dt class="sig sig-object py" id="viser.ClientHandle.gui">
 <span class="sig-name descname"><span class="pre">gui</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="../../core/gui_api/#viser.GuiApi" title="viser._gui_api.GuiApi"><span class="pre">GuiApi</span></a></em><a class="headerlink" href="#viser.ClientHandle.gui" title="Link to this definition">¶</a></dt>
 <dd><p>Handle for interacting with the GUI.</p>
-</dd></dl>
-
-<dl class="py attribute">
-<dt class="sig sig-object py" id="viser.ClientHandle.client_id">
-<span class="sig-name descname"><span class="pre">client_id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></em><a class="headerlink" href="#viser.ClientHandle.client_id" title="Link to this definition">¶</a></dt>
-<dd><p>Unique ID for this client.</p>
 </dd></dl>
 
 <dl class="py attribute">
@@ -712,9 +738,9 @@ False to disable auto-close.</p>
             <ul>
 <li><a class="reference internal" href="#">Client Handles</a><ul>
 <li><a class="reference internal" href="#viser.ClientHandle"><code class="docutils literal notranslate"><span class="pre">ClientHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.ClientHandle.client_id"><code class="docutils literal notranslate"><span class="pre">ClientHandle.client_id</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.scene"><code class="docutils literal notranslate"><span class="pre">ClientHandle.scene</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.gui"><code class="docutils literal notranslate"><span class="pre">ClientHandle.gui</span></code></a></li>
-<li><a class="reference internal" href="#viser.ClientHandle.client_id"><code class="docutils literal notranslate"><span class="pre">ClientHandle.client_id</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.camera"><code class="docutils literal notranslate"><span class="pre">ClientHandle.camera</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.flush"><code class="docutils literal notranslate"><span class="pre">ClientHandle.flush()</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.atomic"><code class="docutils literal notranslate"><span class="pre">ClientHandle.atomic()</span></code></a></li>

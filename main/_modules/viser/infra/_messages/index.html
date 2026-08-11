@@ -441,6 +441,7 @@
     <span class="n">Dict</span><span class="p">,</span>
     <span class="n">List</span><span class="p">,</span>
     <span class="n">Optional</span><span class="p">,</span>
+    <span class="n">Tuple</span><span class="p">,</span>
     <span class="n">Type</span><span class="p">,</span>
     <span class="n">TypeVar</span><span class="p">,</span>
     <span class="n">Union</span><span class="p">,</span>
@@ -597,6 +598,25 @@
     <span class="k">return</span> <span class="n">get_type_hints</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 
 
+<span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">wire_field_names</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Names of the fields a message type puts on the wire: declared,</span>
+<span class="sd">    type-hinted dataclass fields, in declaration order. THE single</span>
+<span class="sd">    definition of the wire field set -- the serializer and the TypeScript</span>
+<span class="sd">    interface generator must never disagree on it. Declared fields (not</span>
+<span class="sd">    ``vars()``) so that non-init defaulted fields (e.g. the scene messages&#39;</span>
+<span class="sd">    owner/virtual stamps) are included even before first assignment.&quot;&quot;&quot;</span>
+    <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">hints</span><span class="p">)</span>
+
+
+<span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_non_init_field_names</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dataclass fields excluded from ``__init__`` (assigned post-construction</span>
+<span class="sd">    on deserialization). Empty for most message types.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">init</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="Message">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Message</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">):</span>
@@ -656,12 +676,11 @@
 <span class="sd">        Otherwise, arrays are inlined as memoryviews in the returned dict.&quot;&quot;&quot;</span>
         <span class="n">message_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
-        <span class="c1"># Filter to type-hinted fields only -- excludes dynamic attributes</span>
-        <span class="c1"># like cached values that shouldn&#39;t be serialized.</span>
         <span class="n">out</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">k</span><span class="p">:</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">hints</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="n">binary_buffers</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">vars</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">hints</span>
+            <span class="n">name</span><span class="p">:</span> <span class="n">_prepare_for_serialization</span><span class="p">(</span>
+                <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">),</span> <span class="n">hints</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="n">binary_buffers</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">wire_field_names</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
         <span class="p">}</span>
         <span class="n">out</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message_type</span><span class="o">.</span><span class="vm">__name__</span>
         <span class="k">return</span> <span class="n">out</span></div>
@@ -691,7 +710,22 @@
         <span class="c1"># a blanket recursive traversal of the entire message tree.</span>
         <span class="n">message_type</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_subclass_from_type_string</span><span class="p">()[</span><span class="n">cast</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">mapping</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">))]</span>
         <span class="n">message_kwargs</span> <span class="o">=</span> <span class="n">message_type</span><span class="o">.</span><span class="n">_from_serializable_dict</span><span class="p">(</span><span class="n">mapping</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">message_type</span><span class="p">(</span><span class="o">**</span><span class="n">message_kwargs</span><span class="p">)</span></div>
+        <span class="c1"># Non-init fields (e.g. the scene messages&#39; owner/virtual stamps,</span>
+        <span class="c1"># declared init=False so defaulted fields can follow subclasses&#39;</span>
+        <span class="c1"># positional ones on Python 3.8) can&#39;t be passed to __init__; strip</span>
+        <span class="c1"># them out and assign after construction so the serialize -&gt;</span>
+        <span class="c1"># deserialize round trip stays lossless. The per-class name tuple is</span>
+        <span class="c1"># cached: most message types have none, and this runs per inbound</span>
+        <span class="c1"># message.</span>
+        <span class="n">non_init</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">k</span><span class="p">:</span> <span class="n">message_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">_non_init_field_names</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">message_kwargs</span>
+        <span class="p">}</span>
+        <span class="n">decoded</span> <span class="o">=</span> <span class="n">message_type</span><span class="p">(</span><span class="o">**</span><span class="n">message_kwargs</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">non_init</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">decoded</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">decoded</span></div>
 
 
     <span class="nd">@classmethod</span>

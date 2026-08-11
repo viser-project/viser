@@ -1009,6 +1009,35 @@
 <span class="sd">    these are used, for example via a client&#39;s</span>
 <span class="sd">    :meth:`SceneApi.add_point_cloud()` method, created elements are local to</span>
 <span class="sd">    only one specific client.</span>
+
+<span class="sd">    **Client state is ephemeral.** A client handle corresponds to a single</span>
+<span class="sd">    websocket connection: when the browser disconnects or reloads, elements</span>
+<span class="sd">    created through the handle are gone, and the reconnected browser is a new</span>
+<span class="sd">    client (new handle, new ``client_id``). Per-client state should therefore</span>
+<span class="sd">    be (re)built in :meth:`ViserServer.on_client_connect`, which fires again</span>
+<span class="sd">    on reconnect. State that must outlive a connection belongs client-side</span>
+<span class="sd">    (browser storage) or in application code keyed however the application</span>
+<span class="sd">    identifies its users; the server never retains per-client element state.</span>
+
+<span class="sd">    **Scene names shadow, not collide.** Each scene-tree name holds at most</span>
+<span class="sd">    one node per scope: adding a client-scoped node under a name the server</span>
+<span class="sd">    also uses creates an independent per-client variant that *shadows* the</span>
+<span class="sd">    server&#39;s node for this one client (the server&#39;s node, with its latest</span>
+<span class="sd">    state, shows again when the client-scoped variant is removed). State is</span>
+<span class="sd">    fully scope-local -- updates and removals from one scope never touch the</span>
+<span class="sd">    other scope&#39;s variant, and removing a node cascades only through its own</span>
+<span class="sd">    scope&#39;s descendants. A client-scoped node may be named under a</span>
+<span class="sd">    server-scoped parent (e.g. per-client annotations under a shared frame);</span>
+<span class="sd">    it survives the parent&#39;s removal, anchored at the parent&#39;s last pose,</span>
+<span class="sd">    until this handle removes it.</span>
+
+<span class="sd">    **GUI containers nest one way.** A client-scoped GUI element may be</span>
+<span class="sd">    added inside a server-scoped container context (``with</span>
+<span class="sd">    server.gui.add_folder(...): client.gui.add_button(...)``); it renders</span>
+<span class="sd">    inside the shared folder for this client only, and is removed along</span>
+<span class="sd">    with the folder. The reverse -- a server-scoped element inside a</span>
+<span class="sd">    client-scoped container -- raises, since no other client could see the</span>
+<span class="sd">    container.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
@@ -1019,6 +1048,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_viser_server</span> <span class="o">=</span> <span class="n">server</span>
 
         <span class="c1"># Public attributes.</span>
+        <span class="c1"># client_id is assigned BEFORE the scene/gui APIs: SceneApi.__init__</span>
+        <span class="c1"># reads it (the owner id stamped on this scope&#39;s scene messages), and</span>
+        <span class="c1"># an attribute miss during construction would recurse through</span>
+        <span class="c1"># DeprecatedAttributeShim.__getattr__ (whose `self.scene` lookup is</span>
+        <span class="c1"># also unset at that point).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Unique ID for this client.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="p">:</span> <span class="n">SceneApi</span> <span class="o">=</span> <span class="n">SceneApi</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span> <span class="n">thread_executor</span><span class="o">=</span><span class="n">server</span><span class="o">.</span><span class="n">_thread_executor</span><span class="p">,</span> <span class="n">event_loop</span><span class="o">=</span><span class="n">server</span><span class="o">.</span><span class="n">_event_loop</span>
         <span class="p">)</span>
@@ -1027,8 +1063,6 @@
             <span class="bp">self</span><span class="p">,</span> <span class="n">thread_executor</span><span class="o">=</span><span class="n">server</span><span class="o">.</span><span class="n">_thread_executor</span><span class="p">,</span> <span class="n">event_loop</span><span class="o">=</span><span class="n">server</span><span class="o">.</span><span class="n">_event_loop</span>
         <span class="p">)</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for interacting with the GUI.&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Unique ID for this client.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">camera</span><span class="p">:</span> <span class="n">CameraHandle</span> <span class="o">=</span> <span class="n">CameraHandle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for reading from and manipulating the client&#39;s viewport camera.&quot;&quot;&quot;</span>
 
@@ -1465,6 +1499,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_connection</span> <span class="o">=</span> <span class="n">server</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_connected_clients</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">ClientHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="c1"># Lifecycle lock shared by every SceneApi (server- and</span>
+        <span class="c1"># client-scoped). Created BEFORE server.start(): a client can</span>
+        <span class="c1"># connect (and build its SceneApi) as soon as the server thread</span>
+        <span class="c1"># runs, which may be before `self.scene` exists below.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scene_lifecycle_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client_connect_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client_disconnect_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span>
             <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span>
@@ -1566,14 +1605,25 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_drop_uploads_from_client</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">))</span>
             <span class="n">handle</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_drop_uploads_from_client</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">))</span>
 
+            <span class="c1"># Unhook this client&#39;s GUI elements from any SERVER containers</span>
+            <span class="c1"># they were nested in (bookkeeping only; the connection&#39;s buffer</span>
+            <span class="c1"># is closed). Otherwise a later server-side container removal</span>
+            <span class="c1"># would cascade removes into a dead connection.</span>
+            <span class="n">handle</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_release_cross_scope_nesting</span><span class="p">()</span>
+
             <span class="c1"># Drop any in-flight drag entries for this client; the</span>
             <span class="c1"># corresponding ``phase=&quot;end&quot;`` will never arrive, so without</span>
             <span class="c1"># this the active-drag map leaks an entry per dropped drag and</span>
-            <span class="c1"># ``on_drag_end`` is silently skipped. The popped handle is</span>
-            <span class="c1"># passed in explicitly so the synthesized end events can still</span>
-            <span class="c1"># resolve ``event.client`` without the client being publicly</span>
-            <span class="c1"># listed.</span>
+            <span class="c1"># ``on_drag_end`` is silently skipped. BOTH scopes: owner-scoped</span>
+            <span class="c1"># dispatch routes drags on client-scoped nodes to the client&#39;s</span>
+            <span class="c1"># own SceneApi, so its map needs the same drain as the server&#39;s.</span>
+            <span class="c1"># The popped handle is passed in explicitly so the synthesized</span>
+            <span class="c1"># end events can still resolve ``event.client`` without the</span>
+            <span class="c1"># client being publicly listed.</span>
             <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_drop_active_drags_for_client</span><span class="p">(</span>
+                <span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">),</span> <span class="n">event_client</span><span class="o">=</span><span class="n">handle</span>
+            <span class="p">)</span>
+            <span class="k">await</span> <span class="n">handle</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_drop_active_drags_for_client</span><span class="p">(</span>
                 <span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">),</span> <span class="n">event_client</span><span class="o">=</span><span class="n">handle</span>
             <span class="p">)</span>
             <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_client_callbacks</span><span class="p">(</span><span class="n">disconnect_cbs</span><span class="p">,</span> <span class="n">handle</span><span class="p">)</span>
@@ -1987,6 +2037,10 @@
         <span class="bp">self</span><span class="p">,</span> <span class="n">cb</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback to run for newly connected clients.</span>
+
+<span class="sd">        This is also where per-client state should be (re)built: client state</span>
+<span class="sd">        is ephemeral (see :class:`ClientHandle`), and a browser that</span>
+<span class="sd">        reconnects or reloads arrives here as a brand-new client.</span>
 
 <span class="sd">        The callback can be either a standard function or an async function:</span>
 <span class="sd">        - Standard functions (def) will be executed in a threadpool.</span>

@@ -431,7 +431,6 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Coroutine</span>
@@ -705,18 +704,40 @@
             <span class="nb">str</span><span class="p">,</span> <span class="n">TransformControlsHandle</span>
         <span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">SceneNodeHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_creating_virtual_anchors</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;True only while _ensure_ancestors_exist creates intermediate</span>
+<span class="sd">        frames; _make stamps `virtual=True` on create messages queued while</span>
+<span class="sd">        set. An api-level flag (rather than a parameter) keeps the marker</span>
+<span class="sd">        out of the public add_frame signature; the lifecycle lock makes it</span>
+<span class="sd">        race-free.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_owner_id</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;Opaque owner id stamped on every outgoing scene message: &quot;&quot;</span>
+<span class="sd">            for the broadcast scope, otherwise a per-client identifier. Each</span>
+<span class="sd">            scene-tree name holds at most one variant per owner on the</span>
+<span class="sd">            frontend; the effective (rendered, interactive) variant follows</span>
+<span class="sd">            the display rule: real client &gt; real broadcast &gt; virtual client</span>
+<span class="sd">            &gt; virtual broadcast. Scene state is fully scope-local -- adds,</span>
+<span class="sd">            updates, and removals from one scope never touch the other</span>
+<span class="sd">            scope&#39;s variant of the same name.&quot;&quot;&quot;</span>
+            <span class="n">server_owner</span> <span class="o">=</span> <span class="n">owner</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_owner_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">owner</span><span class="o">.</span><span class="n">client_id</span><span class="p">)</span>
+            <span class="n">server_owner</span> <span class="o">=</span> <span class="n">owner</span><span class="o">.</span><span class="n">_viser_server</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_node_lifecycle_lock</span> <span class="o">=</span> <span class="n">server_owner</span><span class="o">.</span><span class="n">_scene_lifecycle_lock</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Serializes scene-node lifecycle transitions (remove, same-name</span>
 <span class="sd">        supersede) against interaction-callback (de)registration. All</span>
 <span class="sd">        critical sections are short and synchronous (no awaits inside).</span>
-<span class="sd">        Reentrant defensively: no current teardown path re-enters (a 3D GUI</span>
-<span class="sd">        container&#39;s _on_remove removes GUI children only), but subclass</span>
-<span class="sd">        _on_remove hooks run under the lock and must stay safe to extend.</span>
-<span class="sd">        Without this lock, a registration racing a remove/supersede from</span>
-<span class="sd">        another thread could publish a name-keyed binding into the</span>
-<span class="sd">        persistent buffer AFTER the teardown&#39;s empty-bindings emit -- a</span>
-<span class="sd">        ghost a same-name successor would inherit on late-joining</span>
-<span class="sd">        clients.&quot;&quot;&quot;</span>
+<span class="sd">        Shared server-wide by every SceneApi: scene lifecycle is scope-local,</span>
+<span class="sd">        so per-scope locks would also be correct, but one lock keeps the</span>
+<span class="sd">        invariants easy to reason about and costs nothing (lifecycle ops are</span>
+<span class="sd">        rare and short). Reentrant: ancestor auto-creation re-enters by</span>
+<span class="sd">        design, and subclass _on_remove hooks run under the lock and must</span>
+<span class="sd">        stay safe to extend. Without this lock, a registration racing a</span>
+<span class="sd">        remove/supersede from another thread could publish a name-keyed</span>
+<span class="sd">        binding into the persistent buffer AFTER the teardown&#39;s</span>
+<span class="sd">        empty-bindings emit -- a ghost a same-name successor would inherit</span>
+<span class="sd">        on late-joining clients.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_children_from_node_name</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="c1"># Tracks handles with an in-flight drag gesture, plus the last</span>
         <span class="c1"># message we processed for that drag. Populated on</span>
@@ -751,38 +772,110 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">_PointerCallbackEntry</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="c1"># Set up world axes handle.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">world_axes</span><span class="p">:</span> <span class="n">FrameHandle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span>
-            <span class="s2">&quot;/WorldAxes&quot;</span><span class="p">,</span>
-            <span class="n">axes_radius</span><span class="o">=</span><span class="mf">0.0125</span><span class="p">,</span>
-        <span class="p">)</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for the world axes, which are created by default.&quot;&quot;&quot;</span>
+        <span class="c1"># Set up world axes handle. Only the SERVER scope creates one by</span>
+        <span class="c1"># default (each ClientHandle used to re-add /WorldAxes over its own</span>
+        <span class="c1"># connection, racing the broadcast replay). Client-scoped SceneApis</span>
+        <span class="c1"># expose no world_axes handle -- see the property below; a client</span>
+        <span class="c1"># that wants different axes adds its own &quot;/WorldAxes&quot; frame, which</span>
+        <span class="c1"># shadows the server&#39;s variant for that one client.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_world_axes</span><span class="p">:</span> <span class="n">FrameHandle</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner_id</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_world_axes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span>
+                <span class="s2">&quot;/WorldAxes&quot;</span><span class="p">,</span>
+                <span class="n">axes_radius</span><span class="o">=</span><span class="mf">0.0125</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_world_axes</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="kc">False</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">world_axes</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="kc">False</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
+        <span class="c1"># Node-keyed interaction messages echo the effective variant&#39;s owner,</span>
+        <span class="c1"># and every incoming message fans out to BOTH the server&#39;s and the</span>
+        <span class="c1"># connection&#39;s handler lists -- so these handlers are registered</span>
+        <span class="c1"># through the owner-scoping wrapper, which makes exactly one scope&#39;s</span>
+        <span class="c1"># SceneApi act on each message. Registering one of these directly</span>
+        <span class="c1"># would not fail; it would silently double-dispatch callbacks in</span>
+        <span class="c1"># both scopes.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_register_owner_scoped_handler</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">TransformControlsUpdateMessage</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_handle_transform_controls_updates</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_register_owner_scoped_handler</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">TransformControlsDragStartMessage</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_handle_transform_controls_drag_start</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_register_owner_scoped_handler</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">TransformControlsDragEndMessage</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_handle_transform_controls_drag_end</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_register_owner_scoped_handler</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">SceneNodeClickMessage</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_handle_node_click_updates</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_register_owner_scoped_handler</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">SceneNodeDragMessage</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_node_drag</span>
         <span class="p">)</span>
+        <span class="c1"># Deliberately NOT owner-scoped: scene pointer events are scene-level</span>
+        <span class="c1"># (no target node). The client engages a gesture when the held</span>
+        <span class="c1"># modifiers match the UNION of both scopes&#39; filters and sends ONE</span>
+        <span class="c1"># message; every scope&#39;s handler then dispatches its own matching</span>
+        <span class="c1"># registrations -- coexistence, with per-owner filter state on the</span>
+        <span class="c1"># client (ScenePointerEnableMessage.owner) so one scope&#39;s disable</span>
+        <span class="c1"># never deactivates the other&#39;s callbacks.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerMessage</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_handle_scene_pointer_updates</span><span class="p">,</span>
         <span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">world_axes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FrameHandle</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for the world axes, which are created by default. Hidden</span>
+<span class="sd">        until made visible via ``server.scene.world_axes.visible = True``.</span>
+
+<span class="sd">        Only available on the server&#39;s scene API; accessing this on a client</span>
+<span class="sd">        handle&#39;s ``client.scene`` raises ``AttributeError``. To show</span>
+<span class="sd">        different axes for one client, add a client-scoped frame named</span>
+<span class="sd">        ``&quot;/WorldAxes&quot;`` -- the client&#39;s variant shadows the server&#39;s for</span>
+<span class="sd">        that one viewer.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_world_axes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span>
+                <span class="s2">&quot;world_axes is only available on the server&#39;s scene API &quot;</span>
+                <span class="s2">&quot;(server.scene.world_axes). To show or hide the shared axes &quot;</span>
+                <span class="s2">&quot;for every client, assign server.scene.world_axes.visible; &quot;</span>
+                <span class="s2">&quot;to override them for one client, add a client-scoped frame &quot;</span>
+                <span class="s1">&#39;named &quot;/WorldAxes&quot; (it shadows the server</span><span class="se">\&#39;</span><span class="s1">s node for that &#39;</span>
+                <span class="s2">&quot;client).&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_world_axes</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_queue_scene_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">Message</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Queue a name-keyed scene message, stamped with this scope&#39;s owner</span>
+<span class="sd">        id. Every scene message that targets a node by name MUST go through</span>
+<span class="sd">        here (or stamp ``owner`` itself): an unstamped message defaults to</span>
+<span class="sd">        the broadcast owner and would be routed to the wrong variant on the</span>
+<span class="sd">        client.&quot;&quot;&quot;</span>
+        <span class="c1"># A message class without a declared `owner` field would accept the</span>
+        <span class="c1"># assignment below but silently DROP it at serialization (only</span>
+        <span class="c1"># declared fields go over the wire) -- the client would then route</span>
+        <span class="c1"># the message to the wrong variant. Catch that at the first test</span>
+        <span class="c1"># that exercises the new message instead.</span>
+        <span class="k">assert</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="s2">&quot;owner&quot;</span><span class="p">),</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> is queued as a scene message but &quot;</span>
+            <span class="s2">&quot;declares no `owner` field.&quot;</span>
+        <span class="p">)</span>
+        <span class="n">message</span><span class="o">.</span><span class="n">owner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner_id</span>  <span class="c1"># type: ignore[attr-defined]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_register_owner_scoped_handler</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message_cls</span><span class="p">,</span> <span class="n">handler</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register an incoming-message handler that only fires when the</span>
+<span class="sd">        message&#39;s echoed ``owner`` matches this scope. This is the dispatch</span>
+<span class="sd">        rule that makes the fan-out registration model safe: node-keyed</span>
+<span class="sd">        interaction messages reach both the server&#39;s and the connection&#39;s</span>
+<span class="sd">        handler lists, and exactly one scope may act on each.&quot;&quot;&quot;</span>
+
+        <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">owner_scoped</span><span class="p">(</span><span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">owner</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner_id</span><span class="p">:</span>
+                <span class="k">return</span>
+            <span class="k">await</span> <span class="n">handler</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span><span class="n">message_cls</span><span class="p">,</span> <span class="n">owner_scoped</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_is_drag_active_for</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether the named scene node currently has any in-flight drag</span>
@@ -845,12 +938,43 @@
                 <span class="n">print_awaited_callback_error</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_ancestors_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create intermediate frame nodes for any missing ancestors of `name`.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create VIRTUAL intermediate frames for any ancestors of ``name``</span>
+<span class="sd">        missing from THIS scope&#39;s registry.</span>
+
+<span class="sd">        Unconditional per scope: an anchor is created even when another</span>
+<span class="sd">        scope has a (real) variant of the ancestor name. Virtual variants</span>
+<span class="sd">        yield to real ones in the client&#39;s display rule, so the anchor never</span>
+<span class="sd">        shadows anything -- it exists so every node has a complete</span>
+<span class="sd">        same-scope ancestor chain, which is what makes scope-local cascade</span>
+<span class="sd">        removal orphan-free (a client child survives a broadcast parent&#39;s</span>
+<span class="sd">        removal by hanging from its own scope&#39;s anchor, which inherits the</span>
+<span class="sd">        departing variant&#39;s pose client-side).</span>
+
+<span class="sd">        Caller (``SceneNodeHandle._make``) holds the lifecycle lock, so the</span>
+<span class="sd">        existence checks and creates are atomic against concurrent</span>
+<span class="sd">        adds/removes.&quot;&quot;&quot;</span>
+        <span class="c1"># Fast path: a registered parent implies a complete ancestor chain</span>
+        <span class="c1"># (every add ensures its own chain; cascade removes whole same-scope</span>
+        <span class="c1"># subtrees), so per-add cost is one rsplit + dict lookup.</span>
+        <span class="n">parent</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">parent</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span> <span class="ow">or</span> <span class="n">parent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">:</span>
+            <span class="k">return</span>
         <span class="n">parts</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)):</span>  <span class="c1"># skip root (&quot;&quot;) and the node itself</span>
-            <span class="n">ancestor</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">[:</span><span class="n">i</span><span class="p">])</span>
-            <span class="k">if</span> <span class="n">ancestor</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span><span class="n">ancestor</span><span class="p">,</span> <span class="n">show_axes</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="c1"># The anchors are ordinary add_frame() calls; the flag below makes</span>
+        <span class="c1"># _make stamp their create messages virtual, keeping the marker out</span>
+        <span class="c1"># of add_frame&#39;s public signature. Safe without save/restore</span>
+        <span class="c1"># subtleties: the lifecycle lock serializes adds, and the nested</span>
+        <span class="c1"># _ensure_ancestors_exist calls that add_frame triggers all hit the</span>
+        <span class="c1"># fast path above (ancestors are created parent-first).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_creating_virtual_anchors</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)):</span>  <span class="c1"># skip root (&quot;&quot;) and the node itself</span>
+                <span class="n">ancestor</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">[:</span><span class="n">i</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">ancestor</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="p">:</span>
+                    <span class="c1"># Recurses into _make under the reentrant lifecycle lock.</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span><span class="n">ancestor</span><span class="p">,</span> <span class="n">show_axes</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_creating_virtual_anchors</span> <span class="o">=</span> <span class="kc">False</span>
 
 <div class="viewcode-block" id="SceneApi.set_up_direction">
 <a class="viewcode-back" href="../../../api/core/scene_api/#viser.SceneApi.set_up_direction">[docs]</a>
@@ -924,8 +1048,10 @@
         <span class="p">)</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">R_threeworld_world</span><span class="o">.</span><span class="n">wxyz</span><span class="p">)):</span>
-            <span class="c1"># Set the orientation of the root node.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="c1"># Set the orientation of the root node. The root (&quot;&quot;) is a</span>
+            <span class="c1"># singleton on the client -- name-empty messages apply to it</span>
+            <span class="c1"># regardless of the stamped owner.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_queue_scene_message</span><span class="p">(</span>
                 <span class="n">_messages</span><span class="o">.</span><span class="n">SetOrientationMessage</span><span class="p">(</span>
                     <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">cast_vector</span><span class="p">(</span><span class="n">R_threeworld_world</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
                 <span class="p">)</span>
@@ -943,9 +1069,7 @@
 <span class="sd">        Args:</span>
 <span class="sd">            visible: Whether or not all scene nodes should be visible.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
-            <span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeVisibilityMessage</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">visible</span><span class="p">)</span>
-        <span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_scene_message</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">SetSceneNodeVisibilityMessage</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">visible</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="SceneApi.add_light_directional">
@@ -3481,14 +3605,14 @@
                 <span class="n">wxyz</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">wxyz</span><span class="p">)),</span>  <span class="c1"># type: ignore</span>
             <span class="p">)</span>
             <span class="n">message_orientation</span><span class="o">.</span><span class="n">excluded_self_client</span> <span class="o">=</span> <span class="n">client_id</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">message_orientation</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_queue_scene_message</span><span class="p">(</span><span class="n">message_orientation</span><span class="p">)</span>
 
             <span class="n">message_position</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">SetPositionMessage</span><span class="p">(</span>
                 <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
                 <span class="n">position</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">position</span><span class="p">)),</span>  <span class="c1"># type: ignore</span>
             <span class="p">)</span>
             <span class="n">message_position</span><span class="o">.</span><span class="n">excluded_self_client</span> <span class="o">=</span> <span class="n">client_id</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">message_position</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_queue_scene_message</span><span class="p">(</span><span class="n">message_position</span><span class="p">)</span>
 
         <span class="n">node_handle</span> <span class="o">=</span> <span class="n">SceneNodeHandle</span><span class="o">.</span><span class="n">_make</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">wxyz</span><span class="p">,</span> <span class="n">position</span><span class="p">,</span> <span class="n">visible</span>
@@ -3521,7 +3645,10 @@
         <span class="c1"># Remove all scene nodes.</span>
         <span class="n">handles</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
         <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="n">handles</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">handle</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;/WorldAxes&quot;</span><span class="p">:</span>
+            <span class="c1"># The broadcast scope keeps its default world-axes handle; a</span>
+            <span class="c1"># client-scoped &quot;/WorldAxes&quot; is an ordinary per-client override</span>
+            <span class="c1"># and resets away like everything else.</span>
+            <span class="k">if</span> <span class="n">handle</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;/WorldAxes&quot;</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner_id</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="c1"># Skip handles already removed by cascading.</span>
             <span class="k">if</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
@@ -3532,28 +3659,28 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">set_background_image</span><span class="p">(</span><span class="n">image</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></div>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_get_client_handle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ClientHandle</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Private helper for getting a client handle from its ID.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_client_handle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ClientHandle</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve the ClientHandle for a given client_id. Returns ``None``</span>
+<span class="sd">        when the client disconnected between queueing and dispatch --</span>
+<span class="sd">        callers early-return, dropping the event. Mirrors</span>
+<span class="sd">        ``GuiApi._resolve_client`` so the two APIs treat the same race the</span>
+<span class="sd">        same way.&quot;&quot;&quot;</span>
         <span class="c1"># Avoid circular imports.</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">._viser</span><span class="w"> </span><span class="kn">import</span> <span class="n">ViserServer</span>
 
-        <span class="c1"># Implementation-wise, note that MessageApi is never directly instantiated.</span>
-        <span class="c1"># Instead, it serves as a mixin/base class for either ViserServer, which</span>
-        <span class="c1"># maintains a registry of connected clients, or ClientHandle, which should</span>
-        <span class="c1"># only ever be dealing with its own client_id.</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">):</span>
-            <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_connected_clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No connected client with id </span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">handle</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="n">client_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">client_id</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_connected_clients</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">client_id</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">client_id</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span>
 
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_transform_controls_updates</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">TransformControlsUpdateMessage</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply pose update and fire `update_cb` with phase=&quot;update&quot;.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply pose update and fire `update_cb` with phase=&quot;update&quot;.</span>
+
+<span class="sd">        Registered via _register_owner_scoped_handler, like every node-keyed</span>
+<span class="sd">        handler below: only the scope whose owner the message echoes runs it.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># Prefer the active-drag map so a late update still resolves after the</span>
         <span class="c1"># gizmo was removed mid-drag (which pops it from the live registry).</span>
         <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_active_transform_drag_handles</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -3602,6 +3729,10 @@
         <span class="n">phase</span><span class="p">:</span> <span class="n">DragPhase</span><span class="p">,</span>
         <span class="n">event_client</span><span class="p">:</span> <span class="n">ClientHandle</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Unlike the click/drag/pointer events (whose `client` field is</span>
+        <span class="c1"># non-Optional, so an unresolvable client drops the event),</span>
+        <span class="c1"># TransformControlsEvent.client is Optional by contract: gizmo</span>
+        <span class="c1"># lifecycle callbacks still fire when the client can&#39;t be resolved.</span>
         <span class="n">event</span> <span class="o">=</span> <span class="n">TransformControlsEvent</span><span class="p">(</span>
             <span class="n">client</span><span class="o">=</span><span class="n">event_client</span>
             <span class="k">if</span> <span class="n">event_client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -3640,8 +3771,12 @@
         <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_from_node_name</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">click_cb</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
+        <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Client disconnected between queueing and dispatch; drop.</span>
+            <span class="k">return</span>
         <span class="n">event</span> <span class="o">=</span> <span class="n">SceneNodePointerEvent</span><span class="p">(</span>
-            <span class="n">client</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
+            <span class="n">client</span><span class="o">=</span><span class="n">client</span><span class="p">,</span>
             <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
             <span class="n">event</span><span class="o">=</span><span class="s2">&quot;click&quot;</span><span class="p">,</span>
             <span class="n">target</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span> <span class="n">handle</span><span class="p">),</span>
@@ -3720,10 +3855,16 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">matching</span><span class="p">:</span>
             <span class="k">return</span>
 
-        <span class="n">event</span> <span class="o">=</span> <span class="n">SceneNodeDragEvent</span><span class="p">(</span>
-            <span class="n">client</span><span class="o">=</span><span class="n">event_client</span>
+        <span class="n">client</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">event_client</span>
             <span class="k">if</span> <span class="n">event_client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">),</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Client disconnected between queueing and dispatch; drop.</span>
+            <span class="k">return</span>
+        <span class="n">event</span> <span class="o">=</span> <span class="n">SceneNodeDragEvent</span><span class="p">(</span>
+            <span class="n">client</span><span class="o">=</span><span class="n">client</span><span class="p">,</span>
             <span class="n">client_id</span><span class="o">=</span><span class="n">client_id</span><span class="p">,</span>
             <span class="n">target</span><span class="o">=</span><span class="n">cast</span><span class="p">(</span><span class="n">_RaycastSupportedSceneNodeHandle</span><span class="p">,</span> <span class="n">handle</span><span class="p">),</span>
             <span class="n">phase</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">phase</span><span class="p">,</span>
@@ -3746,6 +3887,9 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="n">client</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_client_handle</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Client disconnected between queueing and dispatch; drop.</span>
+            <span class="k">return</span>
         <span class="n">modifier</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">modifier</span>
 
         <span class="c1"># Build the typed event once for the actual gesture; the legacy</span>
@@ -3897,19 +4041,7 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
         <span class="n">normalized_modifier</span> <span class="o">=</span> <span class="n">_messages</span><span class="o">.</span><span class="n">_normalize_key_modifier</span><span class="p">(</span><span class="n">modifier</span><span class="p">)</span>
 
-        <span class="kn">from</span><span class="w"> </span><span class="nn">._viser</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClientHandle</span><span class="p">,</span> <span class="n">ViserServer</span>
-
         <span class="k">def</span><span class="w"> </span><span class="nf">decorator</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="kc">None</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="kc">None</span><span class="p">]:</span>
-            <span class="c1"># Server-scope and client-scope share the same client-side</span>
-            <span class="c1"># enable toggle. Coexistence would let one scope&#39;s</span>
-            <span class="c1"># disable silently deactivate the other&#39;s callbacks;</span>
-            <span class="c1"># enforce exclusivity instead.</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">):</span>
-                <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
-                    <span class="n">client</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_remove_all_pointer_callbacks</span><span class="p">()</span>
-            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ClientHandle</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_viser_server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">_remove_all_pointer_callbacks</span><span class="p">()</span>
-
             <span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="n">_PointerCallbackEntry</span><span class="p">(</span>
                     <span class="n">callback</span><span class="o">=</span><span class="n">func</span><span class="p">,</span>
@@ -3940,7 +4072,7 @@
                 <span class="p">}</span>
             <span class="p">),</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_queue_scene_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEnableMessage</span><span class="p">(</span>
                 <span class="n">event_type</span><span class="o">=</span><span class="n">event_type</span><span class="p">,</span> <span class="n">modifiers</span><span class="o">=</span><span class="n">modifiers</span>
             <span class="p">)</span>

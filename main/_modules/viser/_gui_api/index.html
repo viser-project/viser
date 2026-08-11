@@ -439,6 +439,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">asyncio</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbstractEventLoop</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">contextvars</span><span class="w"> </span><span class="kn">import</span> <span class="n">ContextVar</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">TYPE_CHECKING</span><span class="p">,</span>
@@ -503,6 +504,7 @@
     <span class="n">_colors_to_int_tuple</span><span class="p">,</span>
     <span class="n">_CommandHandleState</span><span class="p">,</span>
     <span class="n">_GuiButtonHandleState</span><span class="p">,</span>
+    <span class="n">_GuiHandle</span><span class="p">,</span>
     <span class="n">_GuiHandleState</span><span class="p">,</span>
     <span class="n">_GuiInputHandle</span><span class="p">,</span>
     <span class="n">_make_uuid</span><span class="p">,</span>
@@ -622,6 +624,20 @@
     <span class="n">_children</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">SupportsRemoveProtocol</span><span class="p">]</span>
 
 
+<span class="n">_context_owner_by_server</span><span class="p">:</span> <span class="n">ContextVar</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">GuiApi</span><span class="p">]]</span> <span class="o">=</span> <span class="n">ContextVar</span><span class="p">(</span>
+    <span class="s2">&quot;viser_gui_context_owner_by_server&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">{}</span>
+<span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;Which GuiApi owns the active (non-root) container context, keyed by</span>
+<span class="sd">``id()`` of the owning server&#39;s GuiApi. A ContextVar rather than</span>
+<span class="sd">thread-keyed state: asyncio callbacks interleave on one event-loop thread,</span>
+<span class="sd">and a ``with`` block suspended at an ``await`` must not leak its container</span>
+<span class="sd">context into unrelated callbacks -- each asyncio task runs in a copied</span>
+<span class="sd">Context, so only code inside the block sees the marker. Sync code keeps</span>
+<span class="sd">working like before (a thread has its own implicit Context). Values are</span>
+<span class="sd">treated as IMMUTABLE -- every update installs a fresh dict -- because</span>
+<span class="sd">copied Contexts share the mapping object itself.&quot;&quot;&quot;</span>
+
+
 <span class="n">_global_order_counter</span> <span class="o">=</span> <span class="mi">0</span>
 
 
@@ -665,9 +681,11 @@
 
     <span class="n">_target_container_from_thread_id</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;ID of container to put GUI elements into. Per-instance (NOT a shared</span>
-<span class="sd">    class attribute) -- otherwise a thread inside a ``with some_gui.add_folder()``</span>
-<span class="sd">    block would leak that container target into a *different* GuiApi instance</span>
-<span class="sd">    (e.g. server.gui vs a client.gui) and raise KeyError on the foreign uuid.&quot;&quot;&quot;</span>
+<span class="sd">    class attribute). Cross-instance nesting is DIRECTIONAL, resolved by</span>
+<span class="sd">    _get_container_uuid&#39;s thread-context check: a ``client.gui`` add inside</span>
+<span class="sd">    a ``with server.gui.add_folder()`` block nests in the server container</span>
+<span class="sd">    (the element&#39;s audience is a subset of the container&#39;s), while the</span>
+<span class="sd">    reverse raises instead of silently landing at the other scope&#39;s root.&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -695,6 +713,12 @@
             <span class="s2">&quot;root&quot;</span><span class="p">:</span> <span class="n">_RootGuiContainer</span><span class="p">({})</span>
         <span class="p">}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_modal_handle_from_uuid</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">GuiModalHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># Elements of THIS scope that were nested inside another scope&#39;s</span>
+        <span class="c1"># container (client elements inside server containers -- the only</span>
+        <span class="c1"># allowed direction). They are parented in the server GuiApi&#39;s</span>
+        <span class="c1"># container tree, so this scope&#39;s reset() and disconnect teardown</span>
+        <span class="c1"># can&#39;t reach them through the root container walk; track them here.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handles_in_foreign_containers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_GuiHandle</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_panel_handle_from_uuid</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">PanelHandle</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="c1"># Layout-update counter, bumped on every placement command (any panel)</span>
         <span class="c1"># and stamped onto the placement message (see</span>
@@ -1077,12 +1101,169 @@
                 <span class="p">)</span><span class="o">.</span><span class="n">add_done_callback</span><span class="p">(</span><span class="n">print_threadpool_errors</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_container_uuid</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get container ID associated with the current thread.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get container ID associated with the current thread.</span>
+
+<span class="sd">        When a container context from a DIFFERENT GuiApi of the same server</span>
+<span class="sd">        is active in the current Context, nesting is directional: a</span>
+<span class="sd">        client-scope add inside a server-scope container targets the</span>
+<span class="sd">        server&#39;s container, while the reverse raises -- silently placing the</span>
+<span class="sd">        element at this scope&#39;s root (the historical behavior) hid the</span>
+<span class="sd">        mistake.&quot;&quot;&quot;</span>
+        <span class="n">owner_api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context_owner</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">owner_api</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">owner_api</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">._viser</span><span class="w"> </span><span class="kn">import</span> <span class="n">ViserServer</span>
+
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">owner_api</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span>
+            <span class="p">):</span>
+                <span class="c1"># Client element into a server container: allowed (the</span>
+                <span class="c1"># element&#39;s audience is a subset of the container&#39;s). The</span>
+                <span class="c1"># element nests under the SERVER scope&#39;s active container.</span>
+                <span class="c1"># This is the one deliberate exception to scope-local</span>
+                <span class="c1"># removal: the server container&#39;s teardown cascades into</span>
+                <span class="c1"># cross-nested client elements, because an orphaned widget</span>
+                <span class="c1"># -- unlike a scene node, which keeps its pose -- has</span>
+                <span class="c1"># nowhere coherent to go.</span>
+                <span class="k">return</span> <span class="n">owner_api</span><span class="o">.</span><span class="n">_target_container_from_thread_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">(),</span> <span class="s2">&quot;root&quot;</span>
+                <span class="p">)</span>
+            <span class="c1"># Server (or other-client) element into a client container:</span>
+            <span class="c1"># every viewer outside that client scope couldn&#39;t see the</span>
+            <span class="c1"># container, so the element would dangle. Fail loudly.</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;A GUI container context from a client scope is active on &quot;</span>
+                <span class="s2">&quot;this thread, and elements with a broader audience cannot &quot;</span>
+                <span class="s2">&quot;nest inside it (they would dangle for every other client). &quot;</span>
+                <span class="s2">&quot;Client elements may nest inside server containers, but not &quot;</span>
+                <span class="s2">&quot;vice versa.&quot;</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_target_container_from_thread_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">(),</span> <span class="s2">&quot;root&quot;</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_container_handle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">container_uuid</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiContainerProtocol</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Resolve a container uuid to its handle, tolerating client</span>
+<span class="sd">        elements nested inside SERVER containers: the parent then lives in</span>
+<span class="sd">        the server GuiApi&#39;s registry rather than this one&#39;s.&quot;&quot;&quot;</span>
+        <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">container_uuid</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">handle</span>
+        <span class="n">server_gui</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_root_server</span><span class="p">()</span><span class="o">.</span><span class="n">gui</span>
+        <span class="k">if</span> <span class="n">server_gui</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="n">handle</span> <span class="o">=</span> <span class="n">server_gui</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">container_uuid</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">handle</span>
+        <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="n">container_uuid</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_release_cross_scope_nesting</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Bookkeeping-only detach of this (client-scoped) GuiApi&#39;s elements</span>
+<span class="sd">        from the server containers they were nested in. Called on</span>
+<span class="sd">        disconnect: the connection&#39;s buffer is already closed, so no removal</span>
+<span class="sd">        messages are sent -- we just unhook the handles from the server&#39;s</span>
+<span class="sd">        container tree so a later server-side container removal doesn&#39;t</span>
+<span class="sd">        cascade a remove into a dead connection.&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handles_in_foreign_containers</span><span class="p">:</span>
+            <span class="n">uuid</span><span class="p">,</span> <span class="n">handle</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handles_in_foreign_containers</span><span class="o">.</span><span class="n">popitem</span><span class="p">()</span>
+            <span class="c1"># Tombstone BEFORE detaching from the server parent: a user</span>
+            <span class="c1"># thread racing us with handle.remove() then bails at the</span>
+            <span class="c1"># already-removed check instead of finding a half-detached</span>
+            <span class="c1"># tree (its registry pops are tolerant of ours regardless).</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tombstone_subtree</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>
+            <span class="n">parent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_root_server</span><span class="p">()</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">parent_container_id</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">parent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">parent</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">uuid</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_tombstone_subtree</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">handle</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Recursively mark a cross-nested subtree removed and purge it from</span>
+<span class="sd">        this scope&#39;s registries WITHOUT queuing messages (the connection is</span>
+<span class="sd">        closed). Descendants must be tombstoned too: a surviving user</span>
+<span class="sd">        reference calling ``.remove()`` on one should get the ordinary</span>
+<span class="sd">        already-removed warning, not a KeyError from a parent that no</span>
+<span class="sd">        longer resolves. Mirrors the per-type drains in the remove()</span>
+<span class="sd">        implementations.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">._gui_handles</span><span class="w"> </span><span class="kn">import</span> <span class="n">GuiTabHandle</span>
+
+        <span class="c1"># Tabs keep their tombstone/uuid on the handle itself; everything</span>
+        <span class="c1"># else keeps them on `_impl`.</span>
+        <span class="n">is_tab</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">GuiTabHandle</span><span class="p">)</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="n">handle</span> <span class="k">if</span> <span class="n">is_tab</span> <span class="k">else</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span>
+        <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">removed</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">uuid</span> <span class="o">=</span> <span class="n">handle</span><span class="o">.</span><span class="n">_id</span> <span class="k">if</span> <span class="n">is_tab</span> <span class="k">else</span> <span class="n">handle</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_gui_input_handle_from_uuid</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">uuid</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">uuid</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="o">*</span><span class="nb">getattr</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="s2">&quot;_tab_handles&quot;</span><span class="p">,</span> <span class="p">()),</span>
+            <span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="s2">&quot;_children&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">values</span><span class="p">()),</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tombstone_subtree</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_root_server</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The ViserServer this GuiApi ultimately belongs to (itself for the</span>
+<span class="sd">        broadcast scope, the owning server for a client scope).&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">._viser</span><span class="w"> </span><span class="kn">import</span> <span class="n">ViserServer</span>
+
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="p">,</span> <span class="n">ViserServer</span><span class="p">)</span>
+            <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_owner</span><span class="o">.</span><span class="n">_viser_server</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_context_owner</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiApi</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The GuiApi owning the current Context&#39;s active (non-root)</span>
+<span class="sd">        container context on this API&#39;s server, if any.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">_context_owner_by_server</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">id</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_server</span><span class="p">()</span><span class="o">.</span><span class="n">gui</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_set_context_owner</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">owner</span><span class="p">:</span> <span class="n">GuiApi</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Install (or clear, with None) this server&#39;s context-owner marker</span>
+<span class="sd">        in the current Context. Copy-on-write: copied Contexts (sibling</span>
+<span class="sd">        asyncio tasks) share the mapping object, so it is never mutated.&quot;&quot;&quot;</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="nb">id</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_root_server</span><span class="p">()</span><span class="o">.</span><span class="n">gui</span><span class="p">)</span>
+        <span class="n">current</span> <span class="o">=</span> <span class="n">_context_owner_by_server</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">owner</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">current</span><span class="p">:</span>
+                <span class="n">updated</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">current</span><span class="p">)</span>
+                <span class="k">del</span> <span class="n">updated</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+                <span class="n">_context_owner_by_server</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">updated</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_context_owner_by_server</span><span class="o">.</span><span class="n">set</span><span class="p">({</span><span class="o">**</span><span class="n">current</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="n">owner</span><span class="p">})</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_set_container_uuid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">container_uuid</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set container ID associated with the current thread.&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_target_container_from_thread_id</span><span class="p">[</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">()]</span> <span class="o">=</span> <span class="n">container_uuid</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set container ID associated with the current thread, tracking</span>
+<span class="sd">        which GuiApi currently owns an active (non-root) container context</span>
+<span class="sd">        so cross-scope nesting stays directional (see _get_container_uuid).&quot;&quot;&quot;</span>
+        <span class="n">thread_id</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_target_container_from_thread_id</span><span class="p">[</span><span class="n">thread_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">container_uuid</span>
+        <span class="k">if</span> <span class="n">container_uuid</span> <span class="o">==</span> <span class="s2">&quot;root&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context_owner</span><span class="p">()</span> <span class="ow">is</span> <span class="bp">self</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_set_context_owner</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_context_owner</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_snapshot_container_context</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GuiApi</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Snapshot the active container context for a `with` block to</span>
+<span class="sd">        restore on exit: the OWNING GuiApi and its current target uuid.</span>
+<span class="sd">        Carrying the owner explicitly -- instead of re-deriving it from a</span>
+<span class="sd">        bare uuid at exit time -- keeps the restore correct even when the</span>
+<span class="sd">        snapshot container has been removed while the block was open (a</span>
+<span class="sd">        dangling uuid restores into the scope that owned it, exactly like a</span>
+<span class="sd">        removed-while-open container always has within a single scope).</span>
+<span class="sd">        Raises for disallowed nesting directions, via _get_container_uuid.&quot;&quot;&quot;</span>
+        <span class="n">container_uuid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_container_uuid</span><span class="p">()</span>
+        <span class="n">owner_api</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context_owner</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">owner_api</span> <span class="k">if</span> <span class="n">owner_api</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="p">,</span> <span class="n">container_uuid</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_restore_container_context</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">GuiApi</span><span class="p">,</span> <span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Restore an `__enter__`-time snapshot on `__exit__`. When the</span>
+<span class="sd">        snapshot belongs to another scope (a client container context nested</span>
+<span class="sd">        inside a server one), our own thread target -- set for the block</span>
+<span class="sd">        that is now exiting -- is dropped so later adds can&#39;t resolve</span>
+<span class="sd">        against it once the owning scope&#39;s context also exits.&quot;&quot;&quot;</span>
+        <span class="n">owner_api</span><span class="p">,</span> <span class="n">container_uuid</span> <span class="o">=</span> <span class="n">snapshot</span>
+        <span class="k">if</span> <span class="n">owner_api</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_target_container_from_thread_id</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">(),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">owner_api</span><span class="o">.</span><span class="n">_set_container_uuid</span><span class="p">(</span><span class="n">container_uuid</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_next_layout_counter</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Bump and return the layout-update counter. THE single home of the</span>
@@ -1103,6 +1284,11 @@
         <span class="n">root_container</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="p">[</span><span class="s2">&quot;root&quot;</span><span class="p">]</span>
         <span class="k">while</span> <span class="n">root_container</span><span class="o">.</span><span class="n">_children</span><span class="p">:</span>
             <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">root_container</span><span class="o">.</span><span class="n">_children</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="c1"># This scope&#39;s elements nested inside ANOTHER scope&#39;s containers</span>
+        <span class="c1"># (client elements in server containers) aren&#39;t reachable from this</span>
+        <span class="c1"># root; drain them explicitly.</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handles_in_foreign_containers</span><span class="p">:</span>
+            <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_handles_in_foreign_containers</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
         <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">_modal_handle_from_uuid</span><span class="p">:</span>
             <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_modal_handle_from_uuid</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="c1"># Panels are top-level entities (not under `root`), so drain them</span>
@@ -1449,7 +1635,12 @@
         <span class="c1"># &lt;form&gt; is well-formed.</span>
         <span class="n">container</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_container_uuid</span><span class="p">()</span>
         <span class="k">while</span> <span class="n">container</span> <span class="o">!=</span> <span class="s2">&quot;root&quot;</span><span class="p">:</span>
-            <span class="n">parent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_handle_from_uuid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">container</span><span class="p">)</span>
+            <span class="c1"># Resolve across scopes: a client-scope add_form() inside a</span>
+            <span class="c1"># server-scope form is just as invalid as a same-scope nesting.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">parent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_container_handle</span><span class="p">(</span><span class="n">container</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                <span class="k">break</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">GuiFormHandle</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                     <span class="s2">&quot;Nested forms are not supported: add_form() was called &quot;</span>
