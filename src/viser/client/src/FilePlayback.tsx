@@ -17,6 +17,8 @@ import { ViewerContext } from "./ViewerContext";
 import { defaultEnvironmentState } from "./EnvironmentState";
 import { isFormElement } from "./utils/isFormElement";
 import { PlaybackScenePanel } from "./PlaybackScenePanel";
+import { VISER_VERSION } from "./VersionInfo";
+import { notifications } from "@mantine/notifications";
 
 /** Toggle `paused` on spacebar, unless a form control is focused -- so typing a
  * space in the playback time/speed inputs doesn't toggle playback. */
@@ -128,6 +130,23 @@ function PlaybackInterface({
   useEffect(() => {
     deserialize(setStatus).then((data) => {
       console.log(loadedLogPrefix, data.viserVersion);
+      // Recordings aren't version-checked like live connections are, and the
+      // message format can drift between releases; warn instead of playing a
+      // mismatched file back silently wrong. (Embeds from as_html() bundle the
+      // client build that wrote them, so this only fires for .viser files.)
+      if (data.viserVersion !== VISER_VERSION) {
+        notifications.show({
+          id: "playback-version-mismatch",
+          title: "Version mismatch",
+          message:
+            `This recording was saved with Viser version ` +
+            `'${data.viserVersion}', but the viewer is version ` +
+            `'${VISER_VERSION}'. Playback may be incorrect.`,
+          color: "yellow",
+          autoClose: false,
+          withCloseButton: true,
+        });
+      }
       setRecording(data);
     });
   }, [reloadKey]);
