@@ -16,8 +16,7 @@ import asyncio
 import threading
 import time
 import warnings
-from contextlib import contextmanager
-from typing import Generator, cast
+from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -28,15 +27,7 @@ from viser import _messages
 from viser.infra import ClientId
 
 from .thread_isolation import run_isolated
-
-
-@contextmanager
-def _server() -> Generator[viser.ViserServer, None, None]:
-    server = viser.ViserServer(port=0, verbose=False)
-    try:
-        yield server
-    finally:
-        server.stop()
+from .utils import viser_server as _server
 
 
 def _setup_gizmo_recorder(server: viser.ViserServer):

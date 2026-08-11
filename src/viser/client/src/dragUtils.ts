@@ -216,6 +216,13 @@ export function motionExceedsThreshold(
  * are updated in place on every pointermove. */
 export type ActiveDragState = {
   nodeName: string;
+  /** Owner of the effective variant this drag started on, frozen at
+   * drag-start. Every phase of the drag echoes THIS owner: re-deriving it
+   * from the live store would misroute the final ``end`` when the node is
+   * removed (ownerOf(undefined) is the broadcast "") or when the effective
+   * variant flips mid-drag -- the scope that received ``start`` must be
+   * the one that receives ``end``. */
+  owner: string;
   /** Frozen at drag-start. Non-null for batched scene nodes (meshes,
    * GLBs, axes); ``null`` otherwise. */
   instanceIndex: number | null;

@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { ViserStandardMeshMaterial, ShadowSkinnedMesh } from "./MeshUtils";
 import { SkinnedMeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
-import { ViewerContext, ViewerMutable } from "../ViewerContext";
+import { ViewerContext, ViewerMutable, variantKey } from "../ViewerContext";
 import { useFrame } from "@react-three/fiber";
 import { normalizeScale } from "../utils/normalizeScale";
 
@@ -112,12 +112,17 @@ export const SkinnedMesh = React.forwardRef<
   // Get mutable once.
   const viewerMutable = viewer.mutable.current;
 
+  // Bone state is keyed per VARIANT: this mounted instance renders exactly
+  // one scope's variant, and must never read/claim the entry of a same-name
+  // variant from the other scope.
+  const stateKey = variantKey(message.owner, message.name);
+
   // Clean up geometry and skeleton when they change (they're created together).
   React.useEffect(() => {
     // The state entry can be deleted while this component is still mounted
     // (subtree-prefix removal in MessageHandler, reconnect clearing in
     // WebsocketInterface), so guard reads like the bone-message handlers do.
-    const state = viewerMutable.skinnedMeshState[message.name];
+    const state = viewerMutable.skinnedMeshState[stateKey];
     if (state !== undefined) {
       state.initialized = false;
       state.claimed = true;
@@ -137,14 +142,14 @@ export const SkinnedMesh = React.forwardRef<
       // run, or a new mount) can take the entry over.
       if (
         ownedEntryRef.current !== null &&
-        viewerMutable.skinnedMeshState[message.name] === ownedEntryRef.current
+        viewerMutable.skinnedMeshState[stateKey] === ownedEntryRef.current
       ) {
         ownedEntryRef.current.claimed = false;
       }
       if (skeleton) skeleton.dispose();
       if (geometry) geometry.dispose();
     };
-  }, [skeleton, geometry, message.name, viewerMutable.skinnedMeshState]);
+  }, [skeleton, geometry, stateKey, viewerMutable.skinnedMeshState]);
 
   // Check if we should render a shadow mesh.
   const shadowOpacity =
@@ -159,7 +164,7 @@ export const SkinnedMesh = React.forwardRef<
     // useFrame (priority -100000) earlier in the same rAF tick, while this
     // subscriber is still registered. R3F's subscriber loop has no try/catch,
     // so throwing here would skip the remaining subscribers and gl.render.
-    const state = viewerMutable.skinnedMeshState[message.name];
+    const state = viewerMutable.skinnedMeshState[stateKey];
     if (state === undefined) return;
     // Only one live instance may drive an entry. Normally the init effect
     // claims it; but FilePlayback can recreate the entry WITHOUT a remount

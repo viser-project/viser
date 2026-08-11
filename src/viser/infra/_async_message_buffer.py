@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import threading
 from asyncio.events import AbstractEventLoop
-from typing import AsyncGenerator, Callable, Dict, List, Sequence
+from typing import AsyncGenerator, Callable, Dict, Generator, List, Sequence
 
 from ._messages import Message
 
@@ -31,6 +32,12 @@ class AsyncMessageBuffer:
     window_duration_sec: float = 1.0 / 60.0
     done: bool = False
     atomic_counter: int = 0
+    _warned_push_after_done: bool = False
+    """One-shot latch for the dead-connection write warning in push()."""
+
+    _sanctioned_dead_writes: int = 0
+    """Nesting depth of ``sanctioned_dead_writes()`` scopes; nonzero
+    suppresses the dead-connection write warning."""
 
     generator_cursors: Dict[int, int] = dataclasses.field(default_factory=dict)
     """Per-active-connection consumption cursors (client id -> last message id
@@ -40,6 +47,24 @@ class AsyncMessageBuffer:
     that EVERY active generator has consumed -- a shared "any messages
     pending?" event is not a consumption watermark, since a backpressured
     client's cursor can sit arbitrarily far behind it."""
+
+    @contextlib.contextmanager
+    def sanctioned_dead_writes(self) -> Generator[None, None, None]:
+        """Suppress the dead-connection write warning for pushes inside this
+        scope. For cleanup emits that removal paths perform on behalf of the
+        user (e.g. the empty interaction-bindings broadcasts in a scene
+        node's ``remove()``): on a dead buffer they are benign no-ops, same
+        as the removal messages themselves. The depth is adjusted under
+        ``buffer_lock`` so concurrent scopes can't lose an update and wedge
+        the counter; a concurrent unsanctioned push slipping through
+        unwarned is still acceptable for a best-effort diagnostic."""
+        with self.buffer_lock:
+            self._sanctioned_dead_writes += 1
+        try:
+            yield
+        finally:
+            with self.buffer_lock:
+                self._sanctioned_dead_writes -= 1
 
     def remove_from_buffer(self, match_fn: Callable[[Message], bool]) -> None:
         """Remove messages that match some condition."""
@@ -57,6 +82,31 @@ class AsyncMessageBuffer:
         """Push a new message to our buffer, and remove old redundant ones."""
 
         assert isinstance(message, Message)
+
+        # A done buffer has no producer left to drain it: for a per-client
+        # buffer this means the client disconnected, and anything pushed via
+        # a stale handle silently accumulates forever. Warn ONCE per buffer
+        # so the dead-handle write is diagnosable without spamming loops
+        # that keep animating a departed client's elements. Removal messages
+        # are exempt: releasing elements of a departed client (e.g. inside
+        # on_client_disconnect, which runs after the buffer is closed) is
+        # ordinary cleanup, and a remove on a dead connection is a benign
+        # no-op rather than a leak in the making.
+        if (
+            self.done
+            and not self._warned_push_after_done
+            and message.lifecycle_phase != "remove"
+            and self._sanctioned_dead_writes == 0
+        ):
+            self._warned_push_after_done = True
+            import warnings
+
+            warnings.warn(
+                f"Queued a {type(message).__name__} on a closed connection "
+                "(e.g. via a handle owned by a disconnected client, or after "
+                "the server stopped); it will never be delivered.",
+                stacklevel=4,
+            )
 
         # Add message to buffer.
         redundancy_key = message.redundancy_key()

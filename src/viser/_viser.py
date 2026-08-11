@@ -568,6 +568,35 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
     these are used, for example via a client's
     :meth:`SceneApi.add_point_cloud()` method, created elements are local to
     only one specific client.
+
+    **Client state is ephemeral.** A client handle corresponds to a single
+    websocket connection: when the browser disconnects or reloads, elements
+    created through the handle are gone, and the reconnected browser is a new
+    client (new handle, new ``client_id``). Per-client state should therefore
+    be (re)built in :meth:`ViserServer.on_client_connect`, which fires again
+    on reconnect. State that must outlive a connection belongs client-side
+    (browser storage) or in application code keyed however the application
+    identifies its users; the server never retains per-client element state.
+
+    **Scene names shadow, not collide.** Each scene-tree name holds at most
+    one node per scope: adding a client-scoped node under a name the server
+    also uses creates an independent per-client variant that *shadows* the
+    server's node for this one client (the server's node, with its latest
+    state, shows again when the client-scoped variant is removed). State is
+    fully scope-local -- updates and removals from one scope never touch the
+    other scope's variant, and removing a node cascades only through its own
+    scope's descendants. A client-scoped node may be named under a
+    server-scoped parent (e.g. per-client annotations under a shared frame);
+    it survives the parent's removal, anchored at the parent's last pose,
+    until this handle removes it.
+
+    **GUI containers nest one way.** A client-scoped GUI element may be
+    added inside a server-scoped container context (``with
+    server.gui.add_folder(...): client.gui.add_button(...)``); it renders
+    inside the shared folder for this client only, and is removed along
+    with the folder. The reverse -- a server-scoped element inside a
+    client-scoped container -- raises, since no other client could see the
+    container.
     """
 
     def __init__(
@@ -578,6 +607,13 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._viser_server = server
 
         # Public attributes.
+        # client_id is assigned BEFORE the scene/gui APIs: SceneApi.__init__
+        # reads it (the owner id stamped on this scope's scene messages), and
+        # an attribute miss during construction would recurse through
+        # DeprecatedAttributeShim.__getattr__ (whose `self.scene` lookup is
+        # also unset at that point).
+        self.client_id: int = conn.client_id
+        """Unique ID for this client."""
         self.scene: SceneApi = SceneApi(
             self, thread_executor=server._thread_executor, event_loop=server._event_loop
         )
@@ -586,8 +622,6 @@ class ClientHandle(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             self, thread_executor=server._thread_executor, event_loop=server._event_loop
         )
         """Handle for interacting with the GUI."""
-        self.client_id: int = conn.client_id
-        """Unique ID for this client."""
         self.camera: CameraHandle = CameraHandle(self)
         """Handle for reading from and manipulating the client's viewport camera."""
 
@@ -1006,6 +1040,11 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self._connection = server
         self._connected_clients: dict[int, ClientHandle] = {}
         self._client_lock = threading.Lock()
+        # Lifecycle lock shared by every SceneApi (server- and
+        # client-scoped). Created BEFORE server.start(): a client can
+        # connect (and build its SceneApi) as soon as the server thread
+        # runs, which may be before `self.scene` exists below.
+        self._scene_lifecycle_lock = threading.RLock()
         self._client_connect_cb: list[Callable[[ClientHandle], None | Coroutine]] = []
         self._client_disconnect_cb: list[
             Callable[[ClientHandle], None | Coroutine]
@@ -1107,14 +1146,25 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             self.gui._drop_uploads_from_client(cast(infra.ClientId, conn.client_id))
             handle.gui._drop_uploads_from_client(cast(infra.ClientId, conn.client_id))
 
+            # Unhook this client's GUI elements from any SERVER containers
+            # they were nested in (bookkeeping only; the connection's buffer
+            # is closed). Otherwise a later server-side container removal
+            # would cascade removes into a dead connection.
+            handle.gui._release_cross_scope_nesting()
+
             # Drop any in-flight drag entries for this client; the
             # corresponding ``phase="end"`` will never arrive, so without
             # this the active-drag map leaks an entry per dropped drag and
-            # ``on_drag_end`` is silently skipped. The popped handle is
-            # passed in explicitly so the synthesized end events can still
-            # resolve ``event.client`` without the client being publicly
-            # listed.
+            # ``on_drag_end`` is silently skipped. BOTH scopes: owner-scoped
+            # dispatch routes drags on client-scoped nodes to the client's
+            # own SceneApi, so its map needs the same drain as the server's.
+            # The popped handle is passed in explicitly so the synthesized
+            # end events can still resolve ``event.client`` without the
+            # client being publicly listed.
             await self.scene._drop_active_drags_for_client(
+                cast(infra.ClientId, conn.client_id), event_client=handle
+            )
+            await handle.scene._drop_active_drags_for_client(
                 cast(infra.ClientId, conn.client_id), event_client=handle
             )
             await self._dispatch_client_callbacks(disconnect_cbs, handle)
@@ -1508,6 +1558,10 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         self, cb: Callable[[ClientHandle], NoneOrCoroutine]
     ) -> Callable[[ClientHandle], NoneOrCoroutine]:
         """Attach a callback to run for newly connected clients.
+
+        This is also where per-client state should be (re)built: client state
+        is ephemeral (see :class:`ClientHandle`), and a browser that
+        reconnects or reloads arrives here as a brand-new client.
 
         The callback can be either a standard function or an async function:
         - Standard functions (def) will be executed in a threadpool.

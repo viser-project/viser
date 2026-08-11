@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import functools
 import random
-from typing import Any, Callable, TypeVar, cast
+from contextlib import contextmanager
+from typing import Any, Callable, Generator, TypeVar, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -10,6 +11,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import viser
 import viser.transforms as vtf
 
 T = TypeVar("T", bound=vtf.MatrixLieGroup)
@@ -138,3 +140,13 @@ def assert_arrays_close(*arrays: npt.NDArray[np.floating] | float):
         np.testing.assert_allclose(array1, array2, rtol=rtol, atol=atol)
         assert not np.any(np.isnan(array1))
         assert not np.any(np.isnan(array2))
+
+
+@contextmanager
+def viser_server() -> Generator[viser.ViserServer, None, None]:
+    """Start a ViserServer on an ephemeral port and stop it on exit."""
+    server = viser.ViserServer(port=0, verbose=False)
+    try:
+        yield server
+    finally:
+        server.stop()

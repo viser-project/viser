@@ -12,6 +12,8 @@ from playwright.sync_api import FloatRect, Page, ViewportSize, expect
 
 import viser
 
+from .utils import get_client_handle
+
 # Wide enough to stay above the mobile breakpoint (xs = 36em = 576px), so the
 # floating layout -- not the bottom sheet -- is used.
 _VIEWPORT: ViewportSize = {"width": 1280, "height": 720}
@@ -187,19 +189,6 @@ def test_resize_left_grip_keeps_right_edge_pinned(viser_page: Page) -> None:
     assert abs((after["x"] + after["width"]) - right_before) < 12
 
 
-def _wait_for_client(server: viser.ViserServer) -> viser.ClientHandle:
-    """Return the first connected client, polling briefly for it to register."""
-    import time
-
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
-        clients = server.get_clients()
-        if clients:
-            return next(iter(clients.values()))
-        time.sleep(0.05)
-    raise RuntimeError("no client connected within timeout")
-
-
 def test_notification_offset_clear_of_left_dock(
     viser_page: Page, viser_server: viser.ViserServer
 ) -> None:
@@ -215,7 +204,7 @@ def test_notification_offset_clear_of_left_dock(
     panel = _panel_box(viser_page)
 
     # Raise a (non-auto-closing) notification from the server.
-    client = _wait_for_client(viser_server)
+    client = get_client_handle(viser_server)
     client.add_notification(
         "Docked test", "Should clear the GUI", auto_close_seconds=None
     )

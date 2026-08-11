@@ -5,7 +5,8 @@ import * as THREE from "three";
 import { TextureLoader } from "three";
 import { toMantineColor } from "./components/colorUtils";
 
-import { ViewerContext } from "./ViewerContext";
+import { createParkedSceneUpdates } from "./batchedSceneUpdates";
+import { ViewerContext, variantKey } from "./ViewerContext";
 import {
   FileTransferPart,
   FileTransferStartDownload,
@@ -20,7 +21,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Button, Progress } from "@mantine/core";
 import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
-import { rootNodeTemplate, SceneNode } from "./SceneTreeState";
+import { ownerOf, rootNodeTemplate, SceneNode } from "./SceneTreeState";
 import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
@@ -81,7 +82,6 @@ function useMessageHandler() {
   const viewer = useContext(ViewerContext)!;
   const viewerMutable = viewer.mutable.current;
 
-  const removeSceneNode = viewer.sceneTreeActions.removeSceneNode;
   const addSceneNode = viewer.sceneTreeActions.addSceneNode;
   const setTheme = viewer.guiActions.setTheme;
 
@@ -107,7 +107,9 @@ function useMessageHandler() {
     // Make sure scene node is in attributes.
     const currentNode = viewer.useSceneTree.get(message.name);
 
-    // Make sure parents exists.
+    // Make sure parents exists. (Rarely needed on the live wire -- the
+    // server sends same-scope virtual anchors for missing ancestors before
+    // the child -- but kept for old recordings.)
     const parentName = message.name.split("/").slice(0, -1).join("/");
     if (viewer.useSceneTree.get(parentName)?.message === undefined) {
       addSceneNodeMakeParents({
@@ -118,13 +120,16 @@ function useMessageHandler() {
         visibility: true,
       });
     }
-    addSceneNode(message);
+    const disposition = addSceneNode(message);
 
     // If the object is new or changed, we need to wait until it's created
     // before updating its pose. Updating the pose too early can cause
     // flickering when we replace objects (old object will take the pose of the new
-    // object while it's being loaded/mounted).
-    if (message !== currentNode?.message) {
+    // object while it's being loaded/mounted). Skipped when the add was
+    // parked in the shadow slot (lower-ranked variant): the EFFECTIVE node
+    // did not change, and freezing its pose on waitForMakeObject would wait
+    // for a remount that never happens.
+    if (disposition === "effective" && message !== currentNode?.message) {
       const pose = viewerMutable.nodePoseData[message.name];
       if (pose) {
         pose.poseUpdateState = "waitForMakeObject";
@@ -202,7 +207,9 @@ function useMessageHandler() {
         // bone update from the second loop onward. A real remove + re-add
         // deletes the entry first, so a NEW component still claims a fresh
         // object and the same-name re-add race stays protected.
-        const state = (viewerMutable.skinnedMeshState[message.name] ??= {
+        const state = (viewerMutable.skinnedMeshState[
+          variantKey(message.owner, message.name)
+        ] ??= {
           initialized: false,
           claimed: false,
           poses: [],
@@ -242,6 +249,14 @@ function useMessageHandler() {
 
     switch (message.type) {
       case "SceneNodeUpdateMessage": {
+        if (
+          viewer.sceneTreeActions.routeShadowedUpdate(
+            message.name,
+            message.owner,
+            { propsUpdates: message.updates },
+          )
+        )
+          return;
         return {
           kind: "sceneNodePropsUpdate",
           targetNode: message.name,
@@ -367,6 +382,7 @@ function useMessageHandler() {
       case "ScenePointerEnableMessage": {
         viewer.interaction.scenePointer.applyFiltersDelta(
           message.event_type,
+          message.owner ?? "",
           message.modifiers,
         );
         return;
@@ -433,23 +449,28 @@ function useMessageHandler() {
       // dereference throws inside the per-frame batch loop and drops the rest
       // of the batch.
       case "SetBoneOrientationMessage": {
-        const pose =
-          viewerMutable.skinnedMeshState[message.name]?.poses[
-            message.bone_index
+        // Keyed per variant: a bone update for a SHADOWED variant
+        // accumulates in that variant's own entry instead of corrupting
+        // the effective one.
+        const state =
+          viewerMutable.skinnedMeshState[
+            variantKey(message.owner, message.name)
           ];
+        const pose = state?.poses[message.bone_index];
         if (pose === undefined) break;
         pose.wxyz = message.wxyz;
-        viewerMutable.skinnedMeshState[message.name].dirty = true;
+        state.dirty = true;
         break;
       }
       case "SetBonePositionMessage": {
-        const pose =
-          viewerMutable.skinnedMeshState[message.name]?.poses[
-            message.bone_index
+        const state =
+          viewerMutable.skinnedMeshState[
+            variantKey(message.owner, message.name)
           ];
+        const pose = state?.poses[message.bone_index];
         if (pose === undefined) break;
         pose.position = message.position;
-        viewerMutable.skinnedMeshState[message.name].dirty = true;
+        state.dirty = true;
         break;
       }
       case "SetCameraLookAtMessage": {
@@ -622,6 +643,15 @@ function useMessageHandler() {
             updates: { wxyz: message.wxyz },
           };
         }
+        // Shadowed variant: accumulate its pose in the shadow slot.
+        if (
+          viewer.sceneTreeActions.routeShadowedUpdate(
+            message.name,
+            message.owner,
+            { wxyz: message.wxyz },
+          )
+        )
+          return;
         // All other nodes: write pose to mutable ref (no React re-render).
         const pose = viewerMutable.nodePoseData[message.name];
         if (pose) {
@@ -639,6 +669,14 @@ function useMessageHandler() {
         return;
       }
       case "SetPositionMessage": {
+        if (
+          viewer.sceneTreeActions.routeShadowedUpdate(
+            message.name,
+            message.owner,
+            { position: message.position },
+          )
+        )
+          return;
         // Write pose to mutable ref (no React re-render).
         const pose = viewerMutable.nodePoseData[message.name];
         if (pose) {
@@ -656,6 +694,14 @@ function useMessageHandler() {
         return;
       }
       case "SetSceneNodeVisibilityMessage": {
+        if (
+          viewer.sceneTreeActions.routeShadowedUpdate(
+            message.name,
+            message.owner,
+            { visibility: message.visible },
+          )
+        )
+          return;
         return {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
@@ -710,28 +756,32 @@ function useMessageHandler() {
         }
         return;
       }
-      // Remove a scene node and its children by name.
+      // Remove one scope's variant of a scene node, plus its same-scope
+      // descendants (needed for recordings from older servers, which sent a
+      // single remove per subtree; current servers enumerate descendants,
+      // making the recursion a no-op). Other scopes' variants survive.
       case "RemoveSceneNodeMessage": {
-        if (viewer.useSceneTree.get(message.name) === undefined) {
-          console.log("(OK) Skipping scene node removal for " + message.name);
-          return;
-        }
-        removeSceneNode(message.name);
-
-        // Clear skinned-mesh state for the removed node AND its descendants.
-        // `removeSceneNode` recurses the subtree, and this map is keyed by node
-        // name, so deleting only the exact name leaks any skinned mesh nested
-        // under a removed ancestor.
-        const subtreePrefix = message.name + "/";
-        for (const key of Object.keys(viewerMutable.skinnedMeshState)) {
-          if (key === message.name || key.startsWith(subtreePrefix)) {
-            delete viewerMutable.skinnedMeshState[key];
-          }
+        const owner = message.owner ?? "";
+        // Each removed variant's bone-state entry dies with it; other
+        // variants of the name (including a just-promoted one) keep theirs.
+        for (const name of viewer.sceneTreeActions.removeSceneNodeVariantSubtree(
+          message.name,
+          owner,
+        )) {
+          delete viewerMutable.skinnedMeshState[variantKey(owner, name)];
         }
         return;
       }
       // Set the drag-binding set for a particular scene node.
       case "SetSceneNodeDragBindingsMessage": {
+        if (
+          viewer.sceneTreeActions.routeShadowedUpdate(
+            message.name,
+            message.owner,
+            { dragBindings: [...message.bindings] },
+          )
+        )
+          return;
         return {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
@@ -739,6 +789,14 @@ function useMessageHandler() {
         };
       }
       case "SetSceneNodeClickBindingsMessage": {
+        if (
+          viewer.sceneTreeActions.routeShadowedUpdate(
+            message.name,
+            message.owner,
+            { clickBindings: [...message.bindings] },
+          )
+        )
+          return;
         return {
           kind: "sceneNodeAttrUpdate",
           targetNode: message.name,
@@ -989,34 +1047,44 @@ export function FrameSynchronizedMessageHandler() {
 
         // Handle all messages and accumulate batched updates.
         // Three kinds of updates are accumulated and applied as single setState calls:
-        // - attrUpdates: top-level SceneNode attributes (wxyz, position, visibility, etc.)
-        // - propsUpdates: message.props fields (batched_wxyzs, colors, etc.)
+        // - parked scene updates: SceneNode attributes (wxyz, visibility,
+        //   ...) and message.props fields, per (owner, name) -- see
+        //   batchedSceneUpdates.ts for the parking/routing semantics.
         // - guiUpdates: GUI component property updates
-        const attrUpdates: { [name: string]: Partial<SceneNode> } = {};
-        const propsUpdates: { [name: string]: { [key: string]: any } } = {};
+        const parked = createParkedSceneUpdates(
+          viewer.useSceneTree,
+          viewer.sceneTreeActions,
+        );
         const guiUpdates: { uuid: string; updates: { [key: string]: any } }[] =
           [];
 
         for (const msg of processBatch) {
+          // An add or variant remove flips the name's variant topology at
+          // receive time; parked updates for it must land first to keep
+          // wire order (see the drainFor contract).
+          if (
+            isSceneNodeMessage(msg) ||
+            msg.type === "RemoveSceneNodeMessage"
+          ) {
+            parked.drainFor(msg.name);
+          }
           const result = handleMessage(msg);
           if (result === undefined) continue;
           switch (result.kind) {
             case "sceneNodeAttrUpdate": {
-              const existing = attrUpdates[result.targetNode];
-              if (existing) {
-                Object.assign(existing, result.updates);
-              } else {
-                attrUpdates[result.targetNode] = { ...result.updates };
-              }
+              parked.parkAttr(
+                ownerOf(msg as { owner?: string }),
+                result.targetNode,
+                result.updates,
+              );
               break;
             }
             case "sceneNodePropsUpdate": {
-              const existing = propsUpdates[result.targetNode];
-              if (existing) {
-                Object.assign(existing, result.propsUpdates);
-              } else {
-                propsUpdates[result.targetNode] = { ...result.propsUpdates };
-              }
+              parked.parkProps(
+                ownerOf(msg as { owner?: string }),
+                result.targetNode,
+                result.propsUpdates,
+              );
               break;
             }
             case "guiUpdate":
@@ -1026,38 +1094,7 @@ export function FrameSynchronizedMessageHandler() {
         }
 
         // Apply all accumulated scene tree updates in a single set().
-        const mergedUpdates: { [name: string]: SceneNode } = {};
-
-        // Merge attribute-level updates (wxyz, position, visibility, etc.).
-        for (const [k, v] of Object.entries(attrUpdates)) {
-          const currentNode = viewer.useSceneTree.get(k);
-          if (currentNode === undefined) {
-            console.log(`(OK) Tried to update non-existent scene node ${k}`);
-            continue;
-          }
-          mergedUpdates[k] = { ...currentNode, ...v };
-        }
-
-        // Merge props-level updates (batched_wxyzs, colors, etc.).
-        for (const [k, v] of Object.entries(propsUpdates)) {
-          const currentNode = viewer.useSceneTree.get(k);
-          if (currentNode === undefined) {
-            console.log(`(OK) Tried to update non-existent scene node ${k}`);
-            continue;
-          }
-          const node = mergedUpdates[k] || currentNode;
-          mergedUpdates[k] = {
-            ...node,
-            message: {
-              ...node.message,
-              props: {
-                ...node.message.props,
-                ...v,
-              },
-            } as SceneNodeMessage,
-          };
-        }
-
+        const { mergedUpdates, visibilityNames } = parked.flush();
         if (Object.keys(mergedUpdates).length > 0) {
           viewer.useSceneTree.set(mergedUpdates);
         }
@@ -1114,12 +1151,12 @@ export function FrameSynchronizedMessageHandler() {
           });
         }
 
-        // Recompute effective visibility for nodes whose visibility changed.
-        // This needs to be done after updates are applied.
-        for (const [nodeName, nodeState] of Object.entries(attrUpdates)) {
-          if ("visibility" in nodeState) {
-            viewer.sceneTreeActions.computeEffectiveVisibility(nodeName);
-          }
+        // Recompute effective visibility for nodes whose visibility change
+        // actually merged into an effective variant (updates consumed into
+        // a shadow slot don't affect what renders). This needs to be done
+        // after updates are applied.
+        for (const name of visibilityNames) {
+          viewer.sceneTreeActions.computeEffectiveVisibility(name);
         }
 
         // A render request that arrived with no messages in front of it has

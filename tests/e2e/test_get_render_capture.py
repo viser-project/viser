@@ -22,7 +22,12 @@ from playwright.sync_api import Browser
 import viser
 import viser._client_autobuild
 
-from .utils import find_free_port, wait_for_connection, wait_for_server_ready
+from .utils import (
+    center_mean,
+    connect_client,
+    find_free_port,
+    wait_for_server_ready,
+)
 
 
 @pytest.fixture()
@@ -42,37 +47,6 @@ def own_server() -> Generator[viser.ViserServer, None, None]:
     server.stop()
 
 
-def _connect_client(
-    own_server: viser.ViserServer, browser: Browser
-) -> tuple[viser.ClientHandle, object, object]:
-    captured: list[viser.ClientHandle] = []
-    own_server.on_client_connect(lambda client: captured.append(client))
-    context = browser.new_context()
-    page = context.new_page()
-    wait_for_connection(page, own_server.get_port())
-    deadline = time.monotonic() + 10
-    while not captured and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert captured, "client never connected"
-    client = captured[0]
-    # Wait for the first camera update so get_render() can read camera state.
-    while client.camera._state.update_timestamp == 0.0 and (
-        time.monotonic() < deadline
-    ):
-        time.sleep(0.05)
-    assert client.camera._state.update_timestamp != 0.0, "camera never synced"
-    return client, page, context
-
-
-def _center_mean(img: np.ndarray) -> np.ndarray:
-    h, w = img.shape[:2]
-    return img[
-        h // 2 - h // 8 : h // 2 + h // 8,
-        w // 2 - w // 8 : w // 2 + w // 8,
-        :3,
-    ].mean(axis=(0, 1))
-
-
 def test_get_render_reflects_prior_scene_updates(
     own_server: viser.ViserServer, browser: Browser
 ) -> None:
@@ -81,7 +55,7 @@ def test_get_render_reflects_prior_scene_updates(
     down two different server buffers and the client needs a React commit
     before capturing) repeatedly, alternating colors so ANY stale frame
     fails the dominant-channel check."""
-    client, page, context = _connect_client(own_server, browser)
+    client, page, context = connect_client(own_server, browser)
     try:
         # A box that fills the view center from the default camera pose.
         box = own_server.scene.add_box(
@@ -93,7 +67,7 @@ def test_get_render_reflects_prior_scene_updates(
             img = client.get_render(
                 height=96, width=128, transport_format="png", timeout=30.0
             )
-            center = _center_mean(img)
+            center = center_mean(img)
             expected_channel = int(np.argmax(color))
             assert int(np.argmax(center)) == expected_channel, (
                 f"iteration {i}: set color {color} but captured center "
@@ -115,7 +89,7 @@ def test_get_render_reflects_fresh_node_poses(
     The capture hook's defensive pose sweep plus the one-frame commit wait
     must cover it; a capture of the box at the default pose (origin) or the
     previous box's position fails the centroid side check."""
-    client, page, context = _connect_client(own_server, browser)
+    client, page, context = connect_client(own_server, browser)
     try:
         h, w = 96, 128
 
@@ -174,7 +148,7 @@ def test_get_render_transport_formats_agree(
     on the center pixels, with corner pixels showing each format's
     background convention, and repeated solo captures (the same-frame fast
     path) staying stable. The default is JPEG."""
-    client, page, context = _connect_client(own_server, browser)
+    client, page, context = connect_client(own_server, browser)
     try:
         own_server.scene.add_box(
             "/box", color=(0, 120, 255), dimensions=(2.0, 2.0, 2.0)
@@ -186,7 +160,7 @@ def test_get_render_transport_formats_agree(
         # Stabilize first: capture until two consecutive frames agree.
         prev = None
         for _ in range(40):
-            cur = _center_mean(
+            cur = center_mean(
                 client.get_render(height=h, width=w, transport_format="png", timeout=30)
             )
             if prev is not None and np.allclose(cur, prev, atol=2.0):
@@ -219,7 +193,7 @@ def test_get_render_transport_formats_agree(
         # Back-to-back solo captures (no interleaved scene updates) take the
         # same-frame capture path; they must stay correct and identical-ish.
         again = client.get_render(height=h, width=w, transport_format="png", timeout=30)
-        assert np.allclose(_center_mean(again), _center_mean(png), atol=3.0)
+        assert np.allclose(center_mean(again), center_mean(png), atol=3.0)
     finally:
         page.close()  # type: ignore[attr-defined]
         context.close()  # type: ignore[attr-defined]
@@ -238,7 +212,7 @@ def test_get_render_does_not_leak_capture_state_into_splat_view(
     here as the capture's viewport size leaking across a frame boundary
     into the splat material (an in-page rAF probe can only ever see it if
     the same-frame repair did not happen)."""
-    client, page, context = _connect_client(own_server, browser)
+    client, page, context = connect_client(own_server, browser)
     try:
         rng = np.random.default_rng(0)
         n = 2000
@@ -303,7 +277,7 @@ def test_get_render_survives_hidden_unmounted_node_pose_update(
     too -- an undefined-only guard let the null through to a TypeError,
     failing the whole capture with a spurious "could not capture a frame"
     RuntimeError on a healthy client."""
-    client, page, context = _connect_client(own_server, browser)
+    client, page, context = connect_client(own_server, browser)
     try:
         tc = own_server.scene.add_transform_controls("/gizmo")
         time.sleep(1.0)  # Mount.

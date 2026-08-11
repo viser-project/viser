@@ -50,10 +50,26 @@ const IDLE: CanvasGesture = { kind: "idle" };
 
 export class ScenePointerController {
   private gesture: CanvasGesture = IDLE;
+  /** Modifier filters per event type, kept PER OWNER (broadcast scope ""
+   * plus this connection's client scope): both scopes may register scene
+   * pointer callbacks independently, and one scope disabling its filters
+   * must not deactivate the other's. Gesture engagement uses the union
+   * across owners; the server dispatches one ScenePointerMessage to every
+   * scope, each of which matches against its own registrations. */
   private readonly filters = new Map<
     ScenePointerEventType,
-    (KeyModifier | null)[]
+    Map<string, (KeyModifier | null)[]>
   >();
+
+  private unionFilter(
+    eventType: ScenePointerEventType,
+  ): (KeyModifier | null)[] | undefined {
+    const byOwner = this.filters.get(eventType);
+    if (byOwner === undefined) return undefined;
+    const out: (KeyModifier | null)[] = [];
+    for (const modifiers of byOwner.values()) out.push(...modifiers);
+    return out;
+  }
   /** Cleanup for window-level pointerup/pointercancel listeners
    * installed while a gesture is engaged. Null when idle. The
    * listeners catch releases that happen off the canvas -- a
@@ -106,23 +122,35 @@ export class ScenePointerController {
 
   applyFiltersDelta(
     eventType: ScenePointerEventType,
+    owner: string,
     modifiers: readonly (KeyModifier | null)[],
   ): void {
-    if (modifiers.length === 0) this.filters.delete(eventType);
-    else this.filters.set(eventType, [...modifiers]);
+    const byOwner = this.filters.get(eventType);
+    if (modifiers.length === 0) {
+      if (byOwner !== undefined) {
+        byOwner.delete(owner);
+        if (byOwner.size === 0) this.filters.delete(eventType);
+      }
+    } else if (byOwner === undefined) {
+      this.filters.set(eventType, new Map([[owner, [...modifiers]]]));
+    } else {
+      byOwner.set(owner, [...modifiers]);
+    }
     this.hover.refresh();
   }
 
   getFilter(
     eventType: ScenePointerEventType,
   ): readonly (KeyModifier | null)[] | undefined {
-    return this.filters.get(eventType);
+    return this.unionFilter(eventType);
   }
 
   anyFilterMatches(modifier: KeyModifier | null): boolean {
-    for (const list of this.filters.values()) {
-      for (const f of list) {
-        if (matchesModifierFilter(modifier, f)) return true;
+    for (const byOwner of this.filters.values()) {
+      for (const list of byOwner.values()) {
+        for (const f of list) {
+          if (matchesModifierFilter(modifier, f)) return true;
+        }
       }
     }
     return false;
@@ -143,7 +171,8 @@ export class ScenePointerController {
 
     const input: DragInput = { button, modifier: args.modifier };
     const eligible = new Set<ScenePointerEventType>();
-    for (const [eventType, modifiers] of this.filters) {
+    for (const eventType of this.filters.keys()) {
+      const modifiers = this.unionFilter(eventType)!;
       if (
         button === "left" &&
         modifiers.some((m) => matchesModifierFilter(args.modifier, m))
@@ -262,10 +291,20 @@ export class ScenePointerController {
     this.removeWindowListeners();
   }
 
-  resetForTest(): void {
-    this.cancelAny();
+  /** Drop every scope's filters. Called on (re)connect: owner ids are
+   * connection-scoped (a reconnected browser is a NEW client id), so any
+   * surviving per-owner entry is unreachable garbage that would keep its
+   * event type permanently engaged -- no disable for that owner can ever
+   * arrive. Broadcast-scope enables replay from the persistent buffer
+   * right after. */
+  clearFilters(): void {
     this.filters.clear();
     this.hover.refresh();
+  }
+
+  resetForTest(): void {
+    this.cancelAny();
+    this.clearFilters();
   }
 }
 

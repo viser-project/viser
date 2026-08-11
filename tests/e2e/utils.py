@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import socket
 import time
+from typing import TYPE_CHECKING
 
-from playwright.sync_api import Locator, Page
+import numpy as np
+from playwright.sync_api import Browser, BrowserContext, Locator, Page
+
+if TYPE_CHECKING:
+    import viser
 
 # ---------------------------------------------------------------------------
 # Network utilities
@@ -42,6 +47,66 @@ def find_gui_input(page: Page, label_text: str) -> Locator:
     label = page.locator("label", has_text=label_text)
     gui_row = label.locator("xpath=ancestor::div[contains(@class, 'Flex-root')][1]")
     return gui_row.locator("input:not([type='hidden'])")
+
+
+def get_client_handle(
+    server: viser.ViserServer, expected_count: int = 1, timeout: float = 10.0
+) -> viser.ClientHandle:
+    """Wait until ``expected_count`` clients are registered, return the newest.
+
+    Client handles register on the first camera message, which can trail the
+    websocket handshake that ``wait_for_connection`` observes.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        clients = server.get_clients()
+        if len(clients) >= expected_count:
+            return clients[max(clients.keys())]
+        time.sleep(0.05)
+    raise TimeoutError(
+        f"Expected {expected_count} connected client(s) within {timeout}s."
+    )
+
+
+def connect_client(
+    server: viser.ViserServer, browser: Browser
+) -> tuple[viser.ClientHandle, Page, BrowserContext]:
+    """Open a fresh browser context on ``server`` and return the NEW client's
+    handle once its camera has synced (required before ``get_render``).
+    Safe to call repeatedly on one server: only a client that was not
+    already connected is returned."""
+    captured: list = []
+    seen_ids = {c.client_id for c in server.get_clients().values()}
+    server.on_client_connect(
+        lambda client: (
+            captured.append(client) if client.client_id not in seen_ids else None
+        )
+    )
+    context = browser.new_context()
+    page = context.new_page()
+    wait_for_connection(page, server.get_port())
+    deadline = time.monotonic() + 10
+    while not captured and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert captured, "client never connected"
+    client = captured[-1]
+    while client.camera._state.update_timestamp == 0.0 and (
+        time.monotonic() < deadline
+    ):
+        time.sleep(0.05)
+    assert client.camera._state.update_timestamp != 0.0, "camera never synced"
+    return client, page, context
+
+
+def center_mean(img: np.ndarray) -> np.ndarray:
+    """Mean RGB of the center patch of a rendered frame (pixel-assertion
+    helper for get_render()-based tests)."""
+    h, w = img.shape[:2]
+    return img[
+        h // 2 - h // 8 : h // 2 + h // 8,
+        w // 2 - w // 8 : w // 2 + w // 8,
+        :3,
+    ].mean(axis=(0, 1))
 
 
 def wait_for_connection(page: Page, port: int) -> None:

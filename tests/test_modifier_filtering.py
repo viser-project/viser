@@ -307,48 +307,59 @@ def test_remove_click_callback_does_not_fire_cleanup_with_remaining_rect_select(
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
-def test_pointer_event_server_scope_clears_client_scope_and_vice_versa() -> None:
-    """Server-scope and per-client-scope ``on_pointer_event`` share the
-    same wire (the ``ScenePointerEnableMessage`` toggle on the client
-    side). Allowing both to register simultaneously would let one
-    scope's ``enable=False`` deactivate the other's callbacks. The API
-    enforces exclusivity: registering on one scope clears the other.
-
-    This is asserted indirectly -- we don't fully spin up a client
-    handle here; we only verify the cross-scope cleanup hook is wired
-    by checking that the server-scope list is cleared via a fake
-    client whose ``scene._scene_pointer_cb`` we observe."""
-    server = viser.ViserServer()
-
-    # Stand up a minimal stub client that satisfies the cross-scope
-    # cleanup branch -- it just needs ``.scene._scene_pointer_cb`` and
-    # ``.scene._remove_all_pointer_callbacks`` to be present.
-    fake_client = MagicMock(name="fake-client")
-    fake_client.client_id = ClientId(0)
-    fake_client._viser_server = server
-    fake_client.scene._scene_pointer_cb = []
-
-    def _stub_remove_all(**_kwargs: object) -> None:
-        fake_client.scene._scene_pointer_cb.clear()
-
-    fake_client.scene._remove_all_pointer_callbacks = MagicMock(
-        side_effect=_stub_remove_all
+def test_pointer_event_scopes_coexist() -> None:
+    """Server-scope and per-client-scope pointer callbacks coexist: the
+    ``ScenePointerEnableMessage`` filters are kept per owner on the client
+    (gesture engagement uses the union), so registrations in one scope
+    never clear the other's, and each scope's enable messages ride its own
+    connection stamped with its own owner."""
+    from .infra_utils import (
+        broadcast_messages,
+        client_buffer_messages,
+        make_synthetic_client,
     )
-    server._connected_clients[ClientId(0)] = fake_client
 
-    # Fake client populates its own list as if a client-scope
-    # registration had happened.
-    fake_client.scene._scene_pointer_cb.append(object())
-    assert len(fake_client.scene._scene_pointer_cb) == 1
+    server = viser.ViserServer()
+    client = make_synthetic_client(server, 5)
+
+    @client.scene.on_click()
+    def _client_cb(event: viser.SceneClickEvent) -> None:
+        del event
 
     @server.scene.on_click()
     def _server_cb(event: viser.SceneClickEvent) -> None:
         del event
 
-    # Server-scope registration should have cleared the client-scope list.
+    # Both scopes keep their registrations.
     assert len(server.scene._scene_pointer_cb) == 1
-    fake_client.scene._remove_all_pointer_callbacks.assert_called_once()
-    assert len(fake_client.scene._scene_pointer_cb) == 0
+    assert len(client.scene._scene_pointer_cb) == 1
+
+    # Each scope's enable message is stamped with its own owner.
+    server_enables = [
+        msg
+        for msg in broadcast_messages(server)
+        if isinstance(msg, _messages.ScenePointerEnableMessage)
+    ]
+    client_enables = [
+        msg
+        for msg in client_buffer_messages(client)
+        if isinstance(msg, _messages.ScenePointerEnableMessage)
+    ]
+    assert server_enables and all(msg.owner == "" for msg in server_enables)
+    assert client_enables and all(msg.owner == "5" for msg in client_enables)
+
+    # One scope clearing its callbacks leaves the other's untouched; the
+    # disable rides that scope's connection only (an empty-modifiers enable
+    # coalesced into the same redundancy slot).
+    client.scene.remove_click_callback()
+    assert len(client.scene._scene_pointer_cb) == 0
+    assert len(server.scene._scene_pointer_cb) == 1
+    latest_client_enable = [
+        msg
+        for msg in client_buffer_messages(client)
+        if isinstance(msg, _messages.ScenePointerEnableMessage)
+    ][-1]
+    assert latest_client_enable.modifiers == ()
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)

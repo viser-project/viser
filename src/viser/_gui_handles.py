@@ -103,6 +103,22 @@ class SupportsRemoveProtocol(Protocol):
     def remove(self) -> None: ...
 
 
+def _cascade_remove(child: SupportsRemoveProtocol) -> None:
+    """Remove a child as part of a parent's removal cascade, silently
+    skipping children that a concurrent disconnect teardown already
+    tombstoned -- remove() would warn "already removed" for a purely
+    internal race the user did not cause.
+
+    Best-effort: the unlocked check narrows the race window rather than
+    closing it (a teardown landing between this check and the removed-guard
+    inside remove() still warns, harmlessly). Closing it would need a lock
+    shared across all GUI removal paths, which the design avoids."""
+    impl = getattr(child, "_impl", child)  # Tabs carry `removed` directly.
+    if getattr(impl, "removed", False):
+        return
+    child.remove()
+
+
 class GuiPropsProtocol(Protocol):
     order: float
 
@@ -149,13 +165,18 @@ class _GuiButtonHandleState(_GuiHandleState[bool]):
 class _GuiHandle(Generic[T], AssignablePropsBase[_GuiHandleState]):
     def __init__(self, impl: _GuiHandleState[T]) -> None:
         super().__init__(impl=impl)
-        parent = self._impl.gui_api._container_handle_from_uuid[
-            self._impl.parent_container_id
-        ]
+        gui_api = self._impl.gui_api
+        parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
         parent._children[self._impl.uuid] = self
+        if self._impl.parent_container_id not in gui_api._container_handle_from_uuid:
+            # Client element nested inside a server container: the parent
+            # lives in the server GuiApi's registry, so this scope's reset()
+            # and disconnect teardown can't find it through the root
+            # container walk. Track it for those paths.
+            gui_api._handles_in_foreign_containers[self._impl.uuid] = self
 
         if isinstance(self, _GuiInputHandle):
-            self._impl.gui_api._gui_input_handle_from_uuid[self._impl.uuid] = self
+            gui_api._gui_input_handle_from_uuid[self._impl.uuid] = self
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
@@ -177,11 +198,18 @@ class _GuiHandle(Generic[T], AssignablePropsBase[_GuiHandleState]):
 
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
-        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
-        parent._children.pop(self._impl.uuid)
+        # Tolerant detach: a disconnect teardown racing this remove() may
+        # have already purged the parent and these registry entries
+        # (bookkeeping-only, no lock).
+        try:
+            parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
+            parent._children.pop(self._impl.uuid, None)
+        except KeyError:
+            pass
+        gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
         if isinstance(self, _GuiInputHandle):
-            gui_api._gui_input_handle_from_uuid.pop(self._impl.uuid)
+            gui_api._gui_input_handle_from_uuid.pop(self._impl.uuid, None)
 
 
 class _GuiInputHandle(
@@ -796,9 +824,9 @@ class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
         self._tab_handles: list[GuiTabHandle] = []
 
     def __post_init__(self) -> None:
-        parent = self._impl.gui_api._container_handle_from_uuid[
+        parent = self._impl.gui_api._resolve_container_handle(
             self._impl.parent_container_id
-        ]
+        )
         parent._children[self._impl.uuid] = self
 
     def remove(self) -> None:
@@ -825,9 +853,13 @@ class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
         # skips for a removed group (props_setattr would reject the write; the
         # client drops the whole entity via the remove message anyway).
         for tab in tuple(self._tab_handles):
-            tab.remove()
-        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
-        parent._children.pop(self._impl.uuid)
+            _cascade_remove(tab)
+        try:
+            parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
+            parent._children.pop(self._impl.uuid, None)
+        except KeyError:
+            pass  # Parent already torn down by a disconnect race.
+        gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
 
 @dataclasses.dataclass
@@ -838,7 +870,7 @@ class GuiTabHandle:
     _id: str  # Used as container ID of children.
     _label: str
     _icon: IconName | None
-    _container_id_restore: str | None = None
+    _container_id_restore: tuple[GuiApi, str] | None = None
     _children: dict[str, SupportsRemoveProtocol] = dataclasses.field(
         default_factory=dict
     )
@@ -864,14 +896,18 @@ class GuiTabHandle:
                 "This GuiTabHandle is already active as a context; it cannot "
                 "be re-entered inside itself."
             )
-        self._container_id_restore = self._parent._impl.gui_api._get_container_uuid()
+        self._container_id_restore = (
+            self._parent._impl.gui_api._snapshot_container_context()
+        )
         self._parent._impl.gui_api._set_container_uuid(self._id)
         return self
 
     def __exit__(self, *args) -> None:
         del args
         assert self._container_id_restore is not None
-        self._parent._impl.gui_api._set_container_uuid(self._container_id_restore)
+        self._parent._impl.gui_api._restore_container_context(
+            self._container_id_restore
+        )
         self._container_id_restore = None
 
     def __post_init__(self) -> None:
@@ -899,8 +935,8 @@ class GuiTabHandle:
         self._parent._rebuild_tab_props()
 
         for child in tuple(self._children.values()):
-            child.remove()
-        self._parent._impl.gui_api._container_handle_from_uuid.pop(self._id)
+            _cascade_remove(child)
+        self._parent._impl.gui_api._container_handle_from_uuid.pop(self._id, None)
 
 
 # The control panel's fixed uuid, shared with the client (CONTROL_PANEL_ID in
@@ -1312,7 +1348,7 @@ class PanelHandle(
         # message anyway).
         gui_api._panel_handle_from_uuid.pop(self._impl.uuid)
         for tab in tuple(self._tab_handles):
-            tab.remove()
+            _cascade_remove(tab)
 
 
 class MainPanelHandle(_PlacementMixin):
@@ -1351,12 +1387,12 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         super().__init__(impl=_impl)
         self._impl.gui_api._container_handle_from_uuid[self._impl.uuid] = self
         self._children = {}
-        parent = self._impl.gui_api._container_handle_from_uuid[
+        parent = self._impl.gui_api._resolve_container_handle(
             self._impl.parent_container_id
-        ]
+        )
         parent._children[self._impl.uuid] = self
 
-    _container_id_restore: str | None = None
+    _container_id_restore: tuple[GuiApi, str] | None = None
 
     def __enter__(self) -> Self:
         if self._container_id_restore is not None:
@@ -1368,14 +1404,14 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
                 "This GuiFolderHandle is already active as a context; it "
                 "cannot be re-entered inside itself."
             )
-        self._container_id_restore = self._impl.gui_api._get_container_uuid()
+        self._container_id_restore = self._impl.gui_api._snapshot_container_context()
         self._impl.gui_api._set_container_uuid(self._impl.uuid)
         return self
 
     def __exit__(self, *args) -> None:
         del args
         assert self._container_id_restore is not None
-        self._impl.gui_api._set_container_uuid(self._container_id_restore)
+        self._impl.gui_api._restore_container_context(self._container_id_restore)
         self._container_id_restore = None
 
     def remove(self) -> None:
@@ -1394,10 +1430,14 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
         for child in tuple(self._children.values()):
-            child.remove()
-        parent = gui_api._container_handle_from_uuid[self._impl.parent_container_id]
-        parent._children.pop(self._impl.uuid)
-        gui_api._container_handle_from_uuid.pop(self._impl.uuid)
+            _cascade_remove(child)
+        try:
+            parent = gui_api._resolve_container_handle(self._impl.parent_container_id)
+            parent._children.pop(self._impl.uuid, None)
+        except KeyError:
+            pass  # Parent already torn down by a disconnect race.
+        gui_api._container_handle_from_uuid.pop(self._impl.uuid, None)
+        gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
 
 class GuiFormHandle(GuiFolderHandle):
@@ -1502,21 +1542,21 @@ class GuiModalHandle:
 
     _gui_api: GuiApi
     _uuid: str  # Used as container ID of children.
-    _container_uuid_restore: str | None = None
+    _container_uuid_restore: tuple[GuiApi, str] | None = None
     _children: dict[str, SupportsRemoveProtocol] = dataclasses.field(
         default_factory=dict
     )
     closed: bool = False
 
     def __enter__(self) -> GuiModalHandle:
-        self._container_uuid_restore = self._gui_api._get_container_uuid()
+        self._container_uuid_restore = self._gui_api._snapshot_container_context()
         self._gui_api._set_container_uuid(self._uuid)
         return self
 
     def __exit__(self, *args) -> None:
         del args
         assert self._container_uuid_restore is not None
-        self._gui_api._set_container_uuid(self._container_uuid_restore)
+        self._gui_api._restore_container_context(self._container_uuid_restore)
         self._container_uuid_restore = None
 
     def __post_init__(self) -> None:
@@ -1536,7 +1576,7 @@ class GuiModalHandle:
             GuiCloseModalMessage(self._uuid),
         )
         for child in tuple(self._children.values()):
-            child.remove()
+            _cascade_remove(child)
         self._gui_api._container_handle_from_uuid.pop(self._uuid)
         self._gui_api._modal_handle_from_uuid.pop(self._uuid)
 
