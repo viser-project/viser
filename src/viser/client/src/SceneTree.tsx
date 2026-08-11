@@ -11,7 +11,7 @@ import {
   useThrottledMessageSender,
 } from "./WebsocketUtils";
 import { Html } from "@react-three/drei";
-import { useSceneTreeState } from "./SceneTreeState";
+import { ownerOf, useSceneTreeState } from "./SceneTreeState";
 import { rayToViserCoords } from "./WorldTransformUtils";
 import { HoverableContext, HoverState } from "./HoverContext";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
@@ -445,6 +445,7 @@ function createObjectFactory(
                 viewer.mutable.current.sendMessage({
                   type: "TransformControlsDragStartMessage",
                   name: message.name,
+                  owner: ownerOf(message),
                 });
               }}
               onDrag={(l) => {
@@ -485,6 +486,7 @@ function createObjectFactory(
                   name: message.name,
                   wxyz: wxyzArray,
                   position: positionArray,
+                  owner: ownerOf(message),
                 });
               }}
               onDragEnd={() => {
@@ -494,6 +496,7 @@ function createObjectFactory(
                   viewer.mutable.current.sendMessage({
                     type: "TransformControlsDragEndMessage",
                     name: message.name,
+                    owner: ownerOf(message),
                   });
                 }
               }}
@@ -1207,6 +1210,12 @@ export function SceneNodeThreeObject(props: { name: string }) {
                     ],
                     screen_pos: [mouseVectorOpenCV.x, mouseVectorOpenCV.y],
                     modifier: keyModifierFromEvent(e),
+                    // Echo the EFFECTIVE variant's owner: only the mounted
+                    // variant is interactive, and the server routes the
+                    // event to that scope's registry alone.
+                    owner: ownerOf(
+                      viewer.useSceneTree.get(props.name)?.message,
+                    ),
                   });
                 }
           }

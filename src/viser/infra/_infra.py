@@ -7,6 +7,7 @@ import base64
 import contextlib
 import dataclasses
 import gzip
+import hashlib
 import http
 import logging
 import mimetypes
@@ -15,6 +16,7 @@ import threading
 import time
 import webbrowser
 from asyncio.events import AbstractEventLoop
+from collections import Counter
 from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any, Callable, Generator, NewType, TypeVar
@@ -34,7 +36,7 @@ from websockets.typing import Subprotocol
 import viser  # Import for version checking.
 
 from ._async_message_buffer import AsyncMessageBuffer
-from ._messages import Message
+from ._messages import Message, is_binary_placeholder
 
 
 @dataclasses.dataclass
@@ -93,7 +95,43 @@ class StateSerializer:
         Returns:
             The recording as bytes.
         """
-        assert self in self._handler._record_handles, "serialize() was already called!"
+        # Unregister FIRST (under the record lock) so a message queued
+        # concurrently from another thread can't land in self._messages /
+        # self._binary_buffers while we're encoding below -- a late-arriving
+        # buffer would be missing from binaryBufferLengths and dangle.
+        with self._handler._record_lock:
+            assert self in self._handler._record_handles, (
+                "serialize() was already called!"
+            )
+            self._handler._record_handles.remove(self)
+
+        # Deduplicate identical binary buffers. Recordings often repeat large
+        # arrays byte-for-byte: a node removed and re-added mid-recording, the
+        # scene snapshot plus later re-sends, unchanged geometry alongside
+        # per-frame pose updates. zstd only catches repeats that land within
+        # its match window, so deduplicating here shrinks both the file and
+        # the decompressed payload the client must hold in memory. The client
+        # resolves placeholders through a buffer index, so two placeholders
+        # sharing an index need no client-side change (each still gets its own
+        # typed-array view). Equal bytes require equal sizes, so buffers whose
+        # size is unique in the recording skip hashing entirely.
+        size_counts = Counter(buf.nbytes for buf in self._binary_buffers)
+        unique_buffers: list[memoryview] = []
+        index_remap: list[int] = []
+        index_from_digest: dict[bytes, int] = {}
+        for buf in self._binary_buffers:
+            if size_counts[buf.nbytes] == 1:
+                index_remap.append(len(unique_buffers))
+                unique_buffers.append(buf)
+                continue
+            digest = hashlib.sha256(buf).digest()
+            if digest not in index_from_digest:
+                index_from_digest[digest] = len(unique_buffers)
+                unique_buffers.append(buf)
+            index_remap.append(index_from_digest[digest])
+        if len(unique_buffers) != len(self._binary_buffers):
+            for _, message_dict in self._messages:
+                _remap_binary_placeholder_indices(message_dict, index_remap)
 
         # Same hybrid format as the live wire path: msgpack metadata with
         # tagged placeholders for binary arrays, followed by raw aligned
@@ -103,25 +141,35 @@ class StateSerializer:
                 "durationSeconds": self._time,
                 "messages": self._messages,
                 "viserVersion": viser.__version__,
-                "binaryBufferLengths": tuple(b.nbytes for b in self._binary_buffers),
+                "binaryBufferLengths": tuple(b.nbytes for b in unique_buffers),
             }
         )
         assert isinstance(msgpack_payload, bytes)
-        with self._handler._record_lock:
-            self._handler._record_handles.remove(self)
 
-        # Build uncompressed inner payload:
+        # Uncompressed inner payload layout:
         #   [8 bytes] msgpack length (little-endian uint64)
         #   [N bytes] msgpack payload
         #   [P bytes] padding + aligned binary buffers...
         msgpack_len_header = len(msgpack_payload).to_bytes(8, "little")
         parts: list[bytes | memoryview] = [msgpack_len_header, msgpack_payload]
-        _append_aligned_buffers(parts, self._binary_buffers, 8 + len(msgpack_payload))
-        inner = b"".join(parts)
+        _append_aligned_buffers(parts, unique_buffers, 8 + len(msgpack_payload))
+        inner_size = sum(memoryview(p).nbytes for p in parts)
 
-        # Compress everything together. Recordings aren't latency-sensitive.
-        compressed = zstandard.ZstdCompressor(level=12).compress(inner)
-        return len(inner).to_bytes(8, "little") + compressed
+        # Compress everything together, streaming the parts through the
+        # compressor rather than concatenating them first -- the concatenated
+        # copy would briefly double peak memory for large scenes. Recordings
+        # aren't latency-sensitive, but threads=-1 (one per core) still helps:
+        # level-12 zstd is slow enough to be the bottleneck for big scenes.
+        compressor = zstandard.ZstdCompressor(level=12, threads=-1).compressobj(
+            size=inner_size
+        )
+        # Explicit statements (not a starred list display): flush() must not
+        # be evaluated until every part has been fed through compress(), and
+        # Python 3.8 evaluated `[a, *gen, f()]`'s f() before consuming gen.
+        out = [inner_size.to_bytes(8, "little")]
+        out.extend(compressor.compress(part) for part in parts)
+        out.append(compressor.flush())
+        return b"".join(out)
 
     def as_html(self, dark_mode: bool = False) -> str:
         """Get a standalone HTML string for the serialized scene.
@@ -835,6 +883,22 @@ class WebsockServer(WebsockMessageHandler):
         # Clean up the event loop to prevent reference leaks.
         event_loop.stop()
         event_loop.close()
+
+
+def _remap_binary_placeholder_indices(obj: Any, index_remap: list[int]) -> None:
+    """Rewrite the ``__binary_index`` of every binary placeholder (see
+    ``Message.as_serializable_dict``) through ``index_remap``. Placeholder
+    dicts are mutated in place; containers are only traversed, never
+    replaced."""
+    if isinstance(obj, dict):
+        if is_binary_placeholder(obj):
+            obj["__binary_index"] = index_remap[obj["__binary_index"]]
+        else:
+            for value in obj.values():
+                _remap_binary_placeholder_indices(value, index_remap)
+    elif isinstance(obj, (list, tuple)):
+        for value in obj:
+            _remap_binary_placeholder_indices(value, index_remap)
 
 
 # Pre-allocated padding bytes for 8-byte alignment.

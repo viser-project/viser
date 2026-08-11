@@ -1,14 +1,8 @@
-import * as msgpack from "@msgpack/msgpack";
-import { Message } from "./WebsocketMessages";
-import { ZSTDDecoder } from "zstddec";
 import {
-  replaceBinaryPlaceholders,
-  computeBinaryOffsets,
-} from "./BinaryMessageDecode";
-
-// Initialize zstd decoder at module load.
-const zstdDecoder = new ZSTDDecoder();
-const zstdReady = zstdDecoder.init();
+  SerializedMessages,
+  deserializeEmbeddedData,
+  deserializeZstdMsgpackFile,
+} from "./PlaybackDecode";
 
 import {
   Dispatch,
@@ -58,122 +52,6 @@ import {
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
 } from "@tabler/icons-react";
-
-/**
- * Decompress and decode a hybrid-format payload.
- *
- * Decompressed layout:
- *   [8 bytes] msgpack length (little-endian uint64)
- *   [N bytes] msgpack payload (with binary placeholders)
- *   [P bytes] padding + aligned binary buffers
- *
- * Binary placeholders are replaced with properly typed array views.
- */
-function decodeHybridPayload<T>(decompressed: Uint8Array): T {
-  const buf = decompressed.buffer as ArrayBuffer;
-  const base = decompressed.byteOffset;
-
-  // Read msgpack length from inner header.
-  const msgpackLength = Number(
-    new DataView(buf, base, 8).getBigUint64(0, true),
-  );
-
-  // Decode msgpack.
-  const msgpackData = new Uint8Array(buf, base + 8, msgpackLength);
-  const data = msgpack.decode(msgpackData) as T & {
-    binaryBufferLengths?: number[];
-  };
-
-  // Replace binary placeholders with typed array views.
-  const bufferLengths = data.binaryBufferLengths;
-  if (bufferLengths && bufferLengths.length > 0) {
-    const binaryOffsets = computeBinaryOffsets(
-      bufferLengths,
-      base + 8 + msgpackLength,
-    );
-    replaceBinaryPlaceholders(data, buf, binaryOffsets, bufferLengths);
-  }
-
-  return data;
-}
-
-/** Download, decompress, and deserialize a .viser recording file. */
-async function deserializeZstdMsgpackFile<T>(
-  fileUrl: string,
-  setStatus: (status: { downloaded: number; total: number }) => void,
-): Promise<T> {
-  const response = await fetch(fileUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch the file: ${response.statusText}`);
-  }
-
-  const totalLength = parseInt(response.headers.get("Content-Length")!);
-  setStatus({ downloaded: 0, total: totalLength });
-
-  // Stream the download to track progress.
-  const reader = response.body!.getReader();
-  const chunks: Uint8Array[] = [];
-  let downloadedLength = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    downloadedLength += value.length;
-    setStatus({ downloaded: downloadedLength, total: totalLength });
-  }
-
-  // Concatenate chunks into a single buffer.
-  const bytes = new Uint8Array(downloadedLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  // Read decompressed size from 8-byte little-endian header.
-  const view = new DataView(bytes.buffer);
-  const decompressedSize = Number(view.getBigUint64(0, true));
-  const compressedData = bytes.slice(8);
-
-  // Decompress and decode using shared hybrid format logic.
-  await zstdReady;
-  const decompressed = zstdDecoder.decode(compressedData, decompressedSize);
-  return decodeHybridPayload<T>(decompressed);
-}
-
-/** Deserialize embedded base64-encoded zstd-compressed data.
- * Used for static embedding in HTML pages (e.g., myst-nb documentation). */
-async function deserializeEmbeddedData<T>(
-  base64Data: string,
-  setStatus: (status: { downloaded: number; total: number }) => void,
-): Promise<T> {
-  // Decode base64 to Uint8Array.
-  const binaryString = atob(base64Data);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-
-  // Data is already embedded, so mark download as complete.
-  setStatus({ downloaded: 1.0, total: 1.0 });
-
-  // Read decompressed size from 8-byte little-endian header.
-  const view = new DataView(bytes.buffer);
-  const decompressedSize = Number(view.getBigUint64(0, true));
-  const compressedData = bytes.slice(8);
-
-  // Decompress and decode using shared hybrid format logic.
-  await zstdReady;
-  const decompressed = zstdDecoder.decode(compressedData, decompressedSize);
-  return decodeHybridPayload<T>(decompressed);
-}
-
-export interface SerializedMessages {
-  durationSeconds: number;
-  messages: [number, Message][]; // (time in seconds, message).
-  viserVersion: string;
-}
 
 /** Shared playback UI and timing logic for recorded scenes.
  *

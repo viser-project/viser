@@ -9,6 +9,8 @@
 export interface CameraFrustumMessage {
   type: "CameraFrustumMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     fov: number;
     aspect: number;
@@ -30,6 +32,8 @@ export interface CameraFrustumMessage {
 export interface GlbMessage {
   type: "GlbMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     glb_data: Uint8Array<ArrayBuffer>;
     cast_shadow: boolean;
@@ -44,6 +48,8 @@ export interface GlbMessage {
 export interface FrameMessage {
   type: "FrameMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     show_axes: boolean;
     axes_length: number;
@@ -63,6 +69,8 @@ export interface FrameMessage {
 export interface BatchedAxesMessage {
   type: "BatchedAxesMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     batched_wxyzs: Float32Array;
     batched_positions: Float32Array;
@@ -79,6 +87,8 @@ export interface BatchedAxesMessage {
 export interface GridMessage {
   type: "GridMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     width: number;
     height: number;
@@ -106,6 +116,8 @@ export interface GridMessage {
 export interface LabelMessage {
   type: "LabelMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     text: string;
     font_size_mode: "screen" | "scene";
@@ -131,6 +143,8 @@ export interface LabelMessage {
 export interface Gui3DMessage {
   type: "Gui3DMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: { order: number; container_uuid: string };
 }
 /** Point cloud message.
@@ -145,6 +159,8 @@ export interface Gui3DMessage {
 export interface PointCloudMessage {
   type: "PointCloudMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     points: Uint16Array | Float32Array;
     colors: Uint8Array<ArrayBuffer>;
@@ -162,6 +178,8 @@ export interface PointCloudMessage {
 export interface DirectionalLightMessage {
   type: "DirectionalLightMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     color: [number, number, number];
     intensity: number;
@@ -175,6 +193,8 @@ export interface DirectionalLightMessage {
 export interface AmbientLightMessage {
   type: "AmbientLightMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: { color: [number, number, number]; intensity: number };
 }
 /** Hemisphere light message.
@@ -184,6 +204,8 @@ export interface AmbientLightMessage {
 export interface HemisphereLightMessage {
   type: "HemisphereLightMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     sky_color: [number, number, number];
     ground_color: [number, number, number];
@@ -197,6 +219,8 @@ export interface HemisphereLightMessage {
 export interface PointLightMessage {
   type: "PointLightMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     color: [number, number, number];
     intensity: number;
@@ -212,6 +236,8 @@ export interface PointLightMessage {
 export interface RectAreaLightMessage {
   type: "RectAreaLightMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     color: [number, number, number];
     intensity: number;
@@ -226,6 +252,8 @@ export interface RectAreaLightMessage {
 export interface SpotLightMessage {
   type: "SpotLightMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     color: [number, number, number];
     intensity: number;
@@ -246,6 +274,8 @@ export interface SpotLightMessage {
 export interface MeshMessage {
   type: "MeshMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     vertices: Float32Array;
     faces: Uint32Array;
@@ -267,6 +297,8 @@ export interface MeshMessage {
 export interface BoxMessage {
   type: "BoxMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     dimensions: [number, number, number];
     color: [number, number, number];
@@ -287,6 +319,8 @@ export interface BoxMessage {
 export interface IcosphereMessage {
   type: "IcosphereMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     radius: number;
     subdivisions: number;
@@ -308,6 +342,8 @@ export interface IcosphereMessage {
 export interface CylinderMessage {
   type: "CylinderMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     radius: number;
     height: number;
@@ -330,6 +366,8 @@ export interface CylinderMessage {
 export interface SkinnedMeshMessage {
   type: "SkinnedMeshMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     vertices: Float32Array;
     faces: Uint32Array;
@@ -355,6 +393,8 @@ export interface SkinnedMeshMessage {
 export interface BatchedMeshesMessage {
   type: "BatchedMeshesMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     batched_wxyzs: Float32Array;
     batched_positions: Float32Array;
@@ -381,6 +421,8 @@ export interface BatchedMeshesMessage {
 export interface BatchedGlbMessage {
   type: "BatchedGlbMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     batched_wxyzs: Float32Array;
     batched_positions: Float32Array;
@@ -399,6 +441,8 @@ export interface BatchedGlbMessage {
 export interface TransformControlsMessage {
   type: "TransformControlsMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     scale: number;
     line_width: number;
@@ -420,6 +464,8 @@ export interface TransformControlsMessage {
 export interface ImageMessage {
   type: "ImageMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     _format: "jpeg" | "png";
     _data: Uint8Array<ArrayBuffer>;
@@ -437,6 +483,8 @@ export interface ImageMessage {
 export interface LineSegmentsMessage {
   type: "LineSegmentsMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     points: Float32Array;
     thickness: number;
@@ -452,6 +500,8 @@ export interface LineSegmentsMessage {
 export interface ArrowMessage {
   type: "ArrowMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     points: Float32Array;
     colors: Uint8Array<ArrayBuffer>;
@@ -468,6 +518,8 @@ export interface ArrowMessage {
 export interface CatmullRomSplineMessage {
   type: "CatmullRomSplineMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     points: Float32Array;
     curve_type: "centripetal" | "chordal" | "catmullrom";
@@ -487,6 +539,8 @@ export interface CatmullRomSplineMessage {
 export interface CubicBezierSplineMessage {
   type: "CubicBezierSplineMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: {
     points: Float32Array;
     control_points: Float32Array;
@@ -504,15 +558,21 @@ export interface CubicBezierSplineMessage {
 export interface GaussianSplatsMessage {
   type: "GaussianSplatsMessage";
   name: string;
+  owner: string;
+  virtual: boolean;
   props: { buffer: Uint32Array; scale: number | [number, number, number] };
 }
-/** Remove a particular node from the scene.
+/** Remove a particular node's variant, for the scope stamped in
+ * ``owner``, from the scene. Removal is scope-local: it never touches the
+ * other scope's variant of the same name (the server enumerates one such
+ * message per same-scope descendant; the client does not cascade).
  *
  * (automatically generated)
  */
 export interface RemoveSceneNodeMessage {
   type: "RemoveSceneNodeMessage";
   name: string;
+  owner: string;
 }
 /** GuiFolderMessage(uuid: 'str', container_uuid: 'str', props: 'GuiFolderProps')
  *
@@ -1273,10 +1333,16 @@ export interface ScenePointerMessage {
 /** Set the modifier-filter set for a scene pointer ``event_type``.
  *
  * An empty ``modifiers`` tuple disables all callbacks for that
- * ``event_type``. A non-empty tuple enables them, and the client uses
- * the filter list to gate gesture engagement: a pointerdown whose
- * held-modifier state doesn't match any filter is treated as if no
- * callback were registered (no rectangle drawn, no message sent).
+ * ``event_type`` in the sending scope. A non-empty tuple enables them,
+ * and the client uses the filter list to gate gesture engagement: a
+ * pointerdown whose held-modifier state doesn't match any filter is
+ * treated as if no callback were registered (no rectangle drawn, no
+ * message sent).
+ *
+ * Filters are kept per ``owner`` on the client and engagement uses the
+ * union across owners, so the broadcast scope and a client scope can
+ * register pointer callbacks independently -- one scope clearing its
+ * filters never deactivates the other's.
  *
  * (automatically generated)
  */
@@ -1293,6 +1359,7 @@ export interface ScenePointerEnableMessage {
     | "cmd/ctrl+alt+shift"
     | null
   )[];
+  owner: string;
 }
 /** Fog message.
  *
@@ -1350,6 +1417,7 @@ export interface SetBoneOrientationMessage {
   name: string;
   bone_index: number;
   wxyz: [number, number, number, number];
+  owner: string;
 }
 /** Server -> client message to set a skinned mesh bone's position.
  *
@@ -1362,6 +1430,7 @@ export interface SetBonePositionMessage {
   name: string;
   bone_index: number;
   position: [number, number, number];
+  owner: string;
 }
 /** Server -> client message to set the camera's position.
  *
@@ -1450,6 +1519,7 @@ export interface SetOrientationMessage {
   type: "SetOrientationMessage";
   name: string;
   wxyz: [number, number, number, number];
+  owner: string;
 }
 /** Server -> client message to set a scene node's position.
  *
@@ -1461,6 +1531,7 @@ export interface SetPositionMessage {
   type: "SetPositionMessage";
   name: string;
   position: [number, number, number];
+  owner: string;
 }
 /** Client -> server message when a transform control is updated.
  *
@@ -1473,6 +1544,7 @@ export interface TransformControlsUpdateMessage {
   name: string;
   wxyz: [number, number, number, number];
   position: [number, number, number];
+  owner: string;
 }
 /** Client -> server message when a transform control drag starts.
  *
@@ -1481,6 +1553,7 @@ export interface TransformControlsUpdateMessage {
 export interface TransformControlsDragStartMessage {
   type: "TransformControlsDragStartMessage";
   name: string;
+  owner: string;
 }
 /** Client -> server message when a transform control drag ends.
  *
@@ -1489,6 +1562,7 @@ export interface TransformControlsDragStartMessage {
 export interface TransformControlsDragEndMessage {
   type: "TransformControlsDragEndMessage";
   name: string;
+  owner: string;
 }
 /** Message for rendering a background image.
  *
@@ -1508,6 +1582,7 @@ export interface SetSceneNodeVisibilityMessage {
   type: "SetSceneNodeVisibilityMessage";
   name: string;
   visible: boolean;
+  owner: string;
 }
 /** Declare the drag-input combinations a scene node listens for.
  *
@@ -1537,6 +1612,7 @@ export interface SetSceneNodeDragBindingsMessage {
       | "cmd/ctrl+alt+shift"
       | null;
   }[];
+  owner: string;
 }
 /** Declare the click-input combinations a scene node listens for.
  *
@@ -1566,6 +1642,7 @@ export interface SetSceneNodeClickBindingsMessage {
       | "cmd/ctrl+alt+shift"
       | null;
   }[];
+  owner: string;
 }
 /** Message for clicked objects.
  *
@@ -1587,6 +1664,7 @@ export interface SceneNodeClickMessage {
     | "alt+shift"
     | "cmd/ctrl+alt+shift"
     | null;
+  owner: string;
 }
 /** Client -> server message for a scene-node drag (start/update/end).
  *
@@ -1616,6 +1694,7 @@ export interface SceneNodeDragMessage {
     | "alt+shift"
     | "cmd/ctrl+alt+shift"
     | null;
+  owner: string;
 }
 /** Reset GUI.
  *
@@ -1779,6 +1858,7 @@ export interface SceneNodeUpdateMessage {
   type: "SceneNodeUpdateMessage";
   name: string;
   updates: { [key: string]: any };
+  owner: string;
 }
 /** Message from server->client to configure parts of the GUI.
  *

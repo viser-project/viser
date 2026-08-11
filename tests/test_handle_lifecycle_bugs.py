@@ -16,8 +16,7 @@ import asyncio
 import threading
 import time
 import warnings
-from contextlib import contextmanager
-from typing import Generator, cast
+from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -28,15 +27,7 @@ from viser import _messages
 from viser.infra import ClientId
 
 from .thread_isolation import run_isolated
-
-
-@contextmanager
-def _server() -> Generator[viser.ViserServer, None, None]:
-    server = viser.ViserServer(port=0, verbose=False)
-    try:
-        yield server
-    finally:
-        server.stop()
+from .utils import viser_server as _server
 
 
 def _setup_gizmo_recorder(server: viser.ViserServer):
@@ -455,6 +446,107 @@ def test_gaussian_splat_subprop_update_does_not_alias_buffer() -> None:
         # already-queued message must stay untouched.
         s.centers = np.full((n, 3), 7.0, np.float32)
         assert np.array_equal(queued, before)
+
+
+def _add_test_splats(server: viser.ViserServer, n: int):
+    return server.scene.add_gaussian_splats(
+        "/splats",
+        centers=np.zeros((n, 3), np.float32),
+        covariances=np.tile(np.eye(3, dtype=np.float32) * 0.01, (n, 1, 1)),
+        rgbs=np.zeros((n, 3), np.uint8),
+        opacities=np.ones((n, 1), np.float32),
+    )
+
+
+def test_set_gaussians_round_trip() -> None:
+    """set_gaussians() must store values readable back through the per-property
+    getters, including when the Gaussian count changes."""
+    with _server() as server:
+        s = _add_test_splats(server, n=2)
+
+        m = 4  # Different count from the initial 2.
+        centers = np.arange(m * 3, dtype=np.float32).reshape(m, 3)
+        covariances = np.tile(np.eye(3, dtype=np.float32) * 0.25, (m, 1, 1))
+        rgbs = np.arange(m * 3, dtype=np.uint8).reshape(m, 3)
+        opacities = np.linspace(0.0, 1.0, m, dtype=np.float32).reshape(m, 1)
+        s.set_gaussians(centers, covariances, rgbs, opacities)
+
+        assert np.array_equal(s.centers, centers)
+        assert np.array_equal(s.rgbs, rgbs)
+        # Opacities are quantized to uint8 on the way in.
+        assert np.array_equal(
+            s.opacities, np.clip(opacities * 255.0, 0, 255).astype(np.uint8)
+        )
+        # Covariances round-trip through float16.
+        np.testing.assert_allclose(s.covariances, covariances, rtol=1e-3)
+
+        # Zero Gaussians is a valid state.
+        s.set_gaussians(
+            np.zeros((0, 3), np.float32),
+            np.zeros((0, 3, 3), np.float32),
+            np.zeros((0, 3), np.uint8),
+            np.zeros((0, 1), np.float32),
+        )
+        assert s.centers.shape == (0, 3)
+
+
+def test_set_gaussians_count_change_queues_single_update() -> None:
+    """A count-changing set_gaussians() must push exactly one buffer update: an
+    intermediate resize message would flash an all-default buffer on clients
+    whenever the ~60 Hz flush lands between the two pushes."""
+    with _server() as server:
+        s = _add_test_splats(server, n=2)
+
+        interface = s._impl.api._websock_interface
+        original_queue_message = interface.queue_message
+        buffer_updates: list[np.ndarray] = []
+
+        def spy(message) -> None:
+            if (
+                type(message).__name__ == "SceneNodeUpdateMessage"
+                and "buffer" in message.updates
+            ):
+                buffer_updates.append(message.updates["buffer"])
+            original_queue_message(message)
+
+        interface.queue_message = spy  # type: ignore[method-assign]
+        try:
+            m = 5
+            s.set_gaussians(
+                np.ones((m, 3), np.float32),
+                np.tile(np.eye(3, dtype=np.float32) * 0.01, (m, 1, 1)),
+                np.zeros((m, 3), np.uint8),
+                np.ones((m, 1), np.float32),
+            )
+        finally:
+            interface.queue_message = original_queue_message  # type: ignore[method-assign]
+
+        assert len(buffer_updates) == 1
+        # The queued snapshot must alias neither the live server-owned buffer
+        # (mutated in place by later sub-property writes) nor anything the
+        # caller can touch.
+        assert buffer_updates[0] is not s._impl.props.buffer
+        queued_before = buffer_updates[0].copy()
+        s.centers = np.full((m, 3), 7.0, np.float32)
+        assert np.array_equal(buffer_updates[0], queued_before)
+
+
+def test_set_gaussians_rejects_removed_handle() -> None:
+    """set_gaussians() on a removed handle must raise like property assignment
+    does, instead of queuing updates that resurrect the node on clients."""
+    with _server() as server:
+        n = 3
+        s = _add_test_splats(server, n=n)
+        s.remove()
+
+        for count in (n, n + 1):  # Same-count and resizing calls alike.
+            with pytest.raises(RuntimeError):
+                s.set_gaussians(
+                    np.zeros((count, 3), np.float32),
+                    np.tile(np.eye(3, dtype=np.float32) * 0.01, (count, 1, 1)),
+                    np.zeros((count, 3), np.uint8),
+                    np.ones((count, 1), np.float32),
+                )
 
 
 def test_upload_part_after_button_removal_still_acks_and_completes() -> None:

@@ -78,9 +78,12 @@ export type ViewerMutable = {
     rootWxyzAtCapture: [number, number, number, number];
   } | null;
 
-  // Skinned mesh state.
+  // Skinned mesh state, keyed PER VARIANT via variantKey(owner,
+  // name): each scope's variant of a name owns independent bone state, so
+  // bone updates for a shadowed variant accumulate without corrupting the
+  // effective one, and promotion finds the promoted variant's state intact.
   skinnedMeshState: {
-    [name: string]: {
+    [ownerAndName: string]: {
       initialized: boolean;
       // True once a mounted SkinnedMesh instance has claimed this entry.
       // Entries can be recreated without a remount (FilePlayback's loop and
@@ -101,6 +104,8 @@ export type ViewerMutable = {
   // triggering React re-renders on every pose update.
   nodePoseData: NodePoseDataMap;
 };
+
+export { variantKey } from "./SceneTreeState";
 
 export type ViewerContextContents = {
   // Non-mutable state.

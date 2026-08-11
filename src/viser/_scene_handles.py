@@ -26,10 +26,9 @@ import numpy.typing as npt
 from typing_extensions import Self, deprecated, override
 
 from . import _messages
-from ._assignable_props_api import AssignablePropsBase
+from ._assignable_props_api import AssignablePropsBase, colors_to_uint8
 from .infra._infra import (
     WebsockClientConnection,
-    WebsockMessageHandler,
     WebsockServer,
 )
 
@@ -47,15 +46,17 @@ def _set_pose_vector(
     current: np.ndarray,
     value: _PoseTupleT | np.ndarray,
     length: int,
-    websock: WebsockMessageHandler,
+    queue: Callable[[_messages.Message], None],
     make_message: Callable[[_PoseTupleT], _messages.Message],
 ) -> None:
     """Shared write path for the scene-node and skinned-bone pose setters.
 
     Casts and validates ``value``, no-ops if it is numerically unchanged from
     ``current``, and otherwise writes it into ``current`` in place and queues the
-    message built from the cast value. Keeping this in one place stops the four
-    near-identical wxyz/position setters from drifting apart.
+    message built from the cast value (via ``queue``, typically the owning
+    SceneApi's owner-stamping ``_queue_scene_message``). Keeping this in one
+    place stops the four near-identical wxyz/position setters from drifting
+    apart.
     """
     from ._scene_api import cast_vector
 
@@ -64,7 +65,7 @@ def _set_pose_vector(
     if np.allclose(value_arr, current):
         return
     current[:] = value_arr
-    websock.queue_message(make_message(value_cast))
+    queue(make_message(value_cast))
 
 
 def _queue_empty_interaction_bindings(
@@ -77,13 +78,9 @@ def _queue_empty_interaction_bindings(
     ``_make`` so the two can't drift; emits only -- callers own any
     ``drag_cb`` bookkeeping."""
     if had_click:
-        api._websock_interface.queue_message(
-            _messages.SetSceneNodeClickBindingsMessage(name, ())
-        )
+        api._queue_scene_message(_messages.SetSceneNodeClickBindingsMessage(name, ()))
     if had_drag:
-        api._websock_interface.queue_message(
-            _messages.SetSceneNodeDragBindingsMessage(name, ())
-        )
+        api._queue_scene_message(_messages.SetSceneNodeDragBindingsMessage(name, ()))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -250,7 +247,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     @override
     def _queue_update(self, name: str, value: Any) -> None:
-        self._impl.api._websock_interface.queue_message(
+        self._impl.api._queue_scene_message(
             _messages.SceneNodeUpdateMessage(self._impl.name, {name: value})
         )
 
@@ -275,9 +272,6 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         name = _normalize_node_name(name)
         message.name = name
 
-        # Ensure all ancestor nodes exist (creates intermediate frames as needed).
-        api._ensure_ancestors_exist(name)
-
         # Snapshot array props before the message is queued and persisted for
         # replay. The add_* methods use np.asarray casts that may alias the
         # caller's array; without a copy here, a caller mutating that array
@@ -296,6 +290,13 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         # is marked removed but still registered, where its remove() would
         # tear down the replacement's fresh state.
         with api._node_lifecycle_lock:
+            # Ensure all SAME-SCOPE ancestors exist (creates virtual anchor
+            # frames as needed; re-enters _make under the reentrant lifecycle
+            # lock). Scene state is scope-local: another scope's variant of
+            # an ancestor name neither satisfies nor blocks this scope's
+            # chain.
+            api._ensure_ancestors_exist(name)
+
             old_handle = api._handle_from_node_name.get(name)
             if old_handle is not None and not old_handle._impl.removed:
                 # 1. The old Python handle goes inert. Removal resolves by NAME,
@@ -328,9 +329,13 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                     had_drag=bool(old_handle._impl.drag_cb),
                 )
 
-            # Send message.
+            # Send message, stamped with this scope's owner id -- and marked
+            # virtual when this create is an auto-generated ancestor anchor
+            # (see SceneApi._creating_virtual_anchors).
             assert isinstance(message, _messages.Message)
-            api._websock_interface.queue_message(message)
+            if api._creating_virtual_anchors:
+                message.virtual = True  # type: ignore[attr-defined]
+            api._queue_scene_message(message)
 
             # Shallow copy is enough to decouple the handle from the queued
             # message: AssignablePropsBase.__init__ copies each top-level
@@ -356,10 +361,10 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             # entry in the buffer via its redundancy key.
             from ._scene_api import cast_vector
 
-            api._websock_interface.queue_message(
+            api._queue_scene_message(
                 _messages.SetOrientationMessage(name, cast_vector(out._impl.wxyz, 4))
             )
-            api._websock_interface.queue_message(
+            api._queue_scene_message(
                 _messages.SetPositionMessage(name, cast_vector(out._impl.position, 3))
             )
 
@@ -384,7 +389,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             self._impl.wxyz,
             wxyz,
             4,
-            self._impl.api._websock_interface,
+            self._impl.api._queue_scene_message,
             lambda v: _messages.SetOrientationMessage(self._impl.name, v),
         )
 
@@ -401,7 +406,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             self._impl.position,
             position,
             3,
-            self._impl.api._websock_interface,
+            self._impl.api._queue_scene_message,
             lambda v: _messages.SetPositionMessage(self._impl.name, v),
         )
 
@@ -414,7 +419,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
     def visible(self, visible: bool) -> None:
         if visible == self._impl.visible:
             return
-        self._impl.api._websock_interface.queue_message(
+        self._impl.api._queue_scene_message(
             _messages.SetSceneNodeVisibilityMessage(self._impl.name, visible)
         )
         self._impl.visible = visible
@@ -471,12 +476,16 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             # dispatch is about to snapshot -- losing the user's required
             # on_drag_end.
             drag_active = api._is_drag_active_for(node_name)
-            _queue_empty_interaction_bindings(
-                api,
-                node_name,
-                had_click=len(impl.click_cb) > 0,
-                had_drag=had_drag,
-            )
+            # These emits are part of the removal: on a dead per-client
+            # buffer (remove() from on_client_disconnect) they are benign
+            # no-ops and must not trip the dead-connection write warning.
+            with api._websock_interface.get_message_buffer().sanctioned_dead_writes():
+                _queue_empty_interaction_bindings(
+                    api,
+                    node_name,
+                    had_click=len(impl.click_cb) > 0,
+                    had_drag=had_drag,
+                )
             # Clear AFTER both emits (the snapshots above key them): if an
             # emit raises mid-remove, the handle keeps its callback state, so
             # a RETRY re-emits everything -- clearing first left a retry
@@ -506,12 +515,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         if parent_children is not None:
             parent_children.discard(self._impl.name)
 
-        # Send a RemoveSceneNodeMessage per descendant so redundancy keys
-        # clean up their creation messages from the broadcast buffer.
+        # Send a RemoveSceneNodeMessage per SAME-SCOPE descendant so
+        # redundancy keys clean up their creation messages from the buffer.
+        # Cascade is scope-local by design: the client does not recurse on
+        # removes (this enumeration is the complete removal set), and the
+        # other scope's variants of these names -- including any children
+        # hanging from their own scope's virtual anchors -- are untouched.
         for node_name in to_remove:
-            api._websock_interface.queue_message(
-                _messages.RemoveSceneNodeMessage(node_name)
-            )
+            api._queue_scene_message(_messages.RemoveSceneNodeMessage(node_name))
 
     def _on_remove(self) -> None:
         """Release any subclass-specific registries for this node.
@@ -651,7 +662,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
             bindings.append(
                 _messages.DragBinding(button=entry.button, modifier=entry.modifier)
             )
-        self._impl.api._websock_interface.queue_message(
+        self._impl.api._queue_scene_message(
             _messages.SetSceneNodeDragBindingsMessage(self._impl.name, tuple(bindings))
         )
 
@@ -936,7 +947,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         # Queue the message BEFORE committing the cache. If
         # ``queue_message`` raises, the cache stays at its previous
         # value so the next state change retries the publish.
-        self._impl.api._websock_interface.queue_message(
+        self._impl.api._queue_scene_message(
             _messages.SetSceneNodeClickBindingsMessage(self._impl.name, bindings)
         )
         self._impl._last_published_click_bindings = bindings
@@ -1224,6 +1235,70 @@ class GaussianSplatHandle(
 
         self.buffer = new_buffer
 
+    @staticmethod
+    def _pack_centers(buffer: np.ndarray, centers: np.ndarray) -> None:
+        buffer[:, 0:3] = np.ascontiguousarray(centers, dtype=np.float32).view(np.uint32)
+
+    @staticmethod
+    def _pack_covariances(buffer: np.ndarray, covariances: np.ndarray) -> None:
+        # Extract upper-triangular terms: indices [0,1,2,4,5,8] from flattened 3x3.
+        cov_triu = covariances.reshape((-1, 9))[:, np.array([0, 1, 2, 4, 5, 8])]
+        cov_triu_f16 = np.ascontiguousarray(cov_triu, dtype=np.float16)
+        buffer[:, 4:7] = cov_triu_f16.view(np.uint32)
+
+    @staticmethod
+    def _pack_rgba(
+        buffer: np.ndarray,
+        rgbs: np.ndarray | None = None,
+        opacities: np.ndarray | None = None,
+    ) -> None:
+        rgba = buffer[:, 7:8].view(np.uint8).reshape(-1, 4)
+        if rgbs is not None:
+            rgba[:, :3] = colors_to_uint8(rgbs)
+        if opacities is not None:
+            rgba[:, 3:4] = colors_to_uint8(opacities)
+        buffer[:, 7:8] = rgba.view(np.uint32)
+
+    def set_gaussians(
+        self,
+        centers: np.ndarray,
+        covariances: np.ndarray,
+        rgbs: np.ndarray,
+        opacities: np.ndarray,
+    ) -> None:
+        """Atomically update all Gaussian attributes, including count changes.
+
+        This is the preferred fast path when per-frame updates may change the
+        number of Gaussians: all attributes land in a single buffer update,
+        preventing transient mixed-state frames from sequential property
+        assignments (centers/covariances/rgbs/opacities one-by-one). A call
+        that leaves the buffer numerically unchanged sends no message.
+        """
+        assert centers.ndim == 2 and centers.shape[1] == 3, (
+            f"centers must have shape (N, 3), got {centers.shape}"
+        )
+        num_gaussians = centers.shape[0]
+        assert covariances.ndim == 3 and covariances.shape == (num_gaussians, 3, 3), (
+            f"covariances must have shape ({num_gaussians}, 3, 3), got {covariances.shape}"
+        )
+        assert rgbs.ndim == 2 and rgbs.shape == (num_gaussians, 3), (
+            f"rgbs must have shape ({num_gaussians}, 3), got {rgbs.shape}"
+        )
+        assert opacities.ndim == 2 and opacities.shape == (num_gaussians, 1), (
+            f"opacities must have shape ({num_gaussians}, 1), got {opacities.shape}"
+        )
+
+        # Assemble the full buffer locally, then store it with a single
+        # property assignment: props_setattr rejects writes to removed handles,
+        # resizes or copies in place as needed, and queues exactly one private
+        # snapshot for the wire. Routing a resize through _ensure_buffer_size
+        # here would queue an extra all-default buffer message first.
+        buffer = np.zeros((num_gaussians, 8), dtype=np.uint32)
+        self._pack_centers(buffer, centers)
+        self._pack_covariances(buffer, covariances)
+        self._pack_rgba(buffer, rgbs=rgbs, opacities=opacities)
+        self.buffer = buffer
+
     @property
     def centers(self) -> npt.NDArray[np.float32]:
         """Centers of the Gaussians. Shape: (N, 3). Synchronized automatically when assigned."""
@@ -1235,7 +1310,7 @@ class GaussianSplatHandle(
             f"centers must have shape (N, 3), got {centers.shape}"
         )
         self._ensure_buffer_size(centers.shape[0])
-        self.buffer[:, 0:3] = centers.astype(np.float32).view(np.uint32)
+        self._pack_centers(self.buffer, centers)
         # Queue a private snapshot: the stored buffer is mutated in place by
         # later sub-property assignments, possibly while the event loop is still
         # serializing this message. Matches the guard in props_setattr.
@@ -1249,15 +1324,11 @@ class GaussianSplatHandle(
 
     @rgbs.setter
     def rgbs(self, rgbs: np.ndarray) -> None:
-        from ._assignable_props_api import colors_to_uint8
-
         assert rgbs.ndim == 2 and rgbs.shape[1] == 3, (
             f"rgbs must have shape (N, 3), got {rgbs.shape}"
         )
         self._ensure_buffer_size(rgbs.shape[0])
-        rgba = self.buffer[:, 7:8].view(np.uint8).reshape(-1, 4)
-        rgba[:, :3] = colors_to_uint8(rgbs)
-        self.buffer[:, 7:8] = rgba.view(np.uint32)
+        self._pack_rgba(self.buffer, rgbs=rgbs)
         self._queue_update("buffer", self.buffer.copy())
 
     @property
@@ -1269,15 +1340,11 @@ class GaussianSplatHandle(
 
     @opacities.setter
     def opacities(self, opacities: np.ndarray) -> None:
-        from ._assignable_props_api import colors_to_uint8
-
         assert opacities.ndim == 2 and opacities.shape[1] == 1, (
             f"opacities must have shape (N, 1), got {opacities.shape}"
         )
         self._ensure_buffer_size(opacities.shape[0])
-        rgba = self.buffer[:, 7:8].view(np.uint8).reshape(-1, 4)
-        rgba[:, 3:4] = colors_to_uint8(opacities)
-        self.buffer[:, 7:8] = rgba.view(np.uint32)
+        self._pack_rgba(self.buffer, opacities=opacities)
         self._queue_update("buffer", self.buffer.copy())
 
     @property
@@ -1306,10 +1373,7 @@ class GaussianSplatHandle(
             f"covariances must have shape (N, 3, 3), got {covariances.shape}"
         )
         self._ensure_buffer_size(covariances.shape[0])
-        # Extract upper-triangular terms: indices [0,1,2,4,5,8] from flattened 3x3.
-        cov_triu = covariances.reshape((-1, 9))[:, np.array([0, 1, 2, 4, 5, 8])]
-        cov_triu_f16 = cov_triu.astype(np.float16)
-        self.buffer[:, 4:7] = np.ascontiguousarray(cov_triu_f16).view(np.uint32)
+        self._pack_covariances(self.buffer, covariances)
         self._queue_update("buffer", self.buffer.copy())
 
 
@@ -1367,7 +1431,7 @@ class MeshSkinnedBoneHandle:
             self._impl.wxyz,
             wxyz,
             4,
-            self._impl.websock_interface,
+            self._impl.mesh_impl.api._queue_scene_message,
             lambda v: _messages.SetBoneOrientationMessage(
                 self._impl.name, self._impl.bone_index, v
             ),
@@ -1387,7 +1451,7 @@ class MeshSkinnedBoneHandle:
             self._impl.position,
             position,
             3,
-            self._impl.websock_interface,
+            self._impl.mesh_impl.api._queue_scene_message,
             lambda v: _messages.SetBonePositionMessage(
                 self._impl.name, self._impl.bone_index, v
             ),
@@ -1784,14 +1848,14 @@ class Gui3dContainerHandle(
         self._gui_api._container_handle_from_uuid[self._container_id] = self
 
     def __enter__(self) -> Gui3dContainerHandle:
-        self._container_id_restore = self._gui_api._get_container_uuid()
+        self._container_id_restore = self._gui_api._snapshot_container_context()
         self._gui_api._set_container_uuid(self._container_id)
         return self
 
     def __exit__(self, *args) -> None:
         del args
         assert self._container_id_restore is not None
-        self._gui_api._set_container_uuid(self._container_id_restore)
+        self._gui_api._restore_container_context(self._container_id_restore)
         self._container_id_restore = None
 
     @override

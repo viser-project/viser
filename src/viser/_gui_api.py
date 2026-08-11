@@ -12,6 +12,7 @@ import warnings
 from asyncio import AbstractEventLoop
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -76,6 +77,7 @@ from ._gui_handles import (
     _colors_to_int_tuple,
     _CommandHandleState,
     _GuiButtonHandleState,
+    _GuiHandle,
     _GuiHandleState,
     _GuiInputHandle,
     _make_uuid,
@@ -195,6 +197,20 @@ class _RootGuiContainer:
     _children: dict[str, SupportsRemoveProtocol]
 
 
+_context_owner_by_server: ContextVar[dict[int, GuiApi]] = ContextVar(
+    "viser_gui_context_owner_by_server", default={}
+)
+"""Which GuiApi owns the active (non-root) container context, keyed by
+``id()`` of the owning server's GuiApi. A ContextVar rather than
+thread-keyed state: asyncio callbacks interleave on one event-loop thread,
+and a ``with`` block suspended at an ``await`` must not leak its container
+context into unrelated callbacks -- each asyncio task runs in a copied
+Context, so only code inside the block sees the marker. Sync code keeps
+working like before (a thread has its own implicit Context). Values are
+treated as IMMUTABLE -- every update installs a fresh dict -- because
+copied Contexts share the mapping object itself."""
+
+
 _global_order_counter = 0
 
 
@@ -236,9 +252,11 @@ class GuiApi:
 
     _target_container_from_thread_id: dict[int, str]
     """ID of container to put GUI elements into. Per-instance (NOT a shared
-    class attribute) -- otherwise a thread inside a ``with some_gui.add_folder()``
-    block would leak that container target into a *different* GuiApi instance
-    (e.g. server.gui vs a client.gui) and raise KeyError on the foreign uuid."""
+    class attribute). Cross-instance nesting is DIRECTIONAL, resolved by
+    _get_container_uuid's thread-context check: a ``client.gui`` add inside
+    a ``with server.gui.add_folder()`` block nests in the server container
+    (the element's audience is a subset of the container's), while the
+    reverse raises instead of silently landing at the other scope's root."""
 
     def __init__(
         self,
@@ -266,6 +284,12 @@ class GuiApi:
             "root": _RootGuiContainer({})
         }
         self._modal_handle_from_uuid: dict[str, GuiModalHandle] = {}
+        # Elements of THIS scope that were nested inside another scope's
+        # container (client elements inside server containers -- the only
+        # allowed direction). They are parented in the server GuiApi's
+        # container tree, so this scope's reset() and disconnect teardown
+        # can't reach them through the root container walk; track them here.
+        self._handles_in_foreign_containers: dict[str, _GuiHandle[Any]] = {}
         self._panel_handle_from_uuid: dict[str, PanelHandle] = {}
         # Layout-update counter, bumped on every placement command (any panel)
         # and stamped onto the placement message (see
@@ -648,12 +672,169 @@ class GuiApi:
                 ).add_done_callback(print_threadpool_errors)
 
     def _get_container_uuid(self) -> str:
-        """Get container ID associated with the current thread."""
+        """Get container ID associated with the current thread.
+
+        When a container context from a DIFFERENT GuiApi of the same server
+        is active in the current Context, nesting is directional: a
+        client-scope add inside a server-scope container targets the
+        server's container, while the reverse raises -- silently placing the
+        element at this scope's root (the historical behavior) hid the
+        mistake."""
+        owner_api = self._context_owner()
+        if owner_api is not None and owner_api is not self:
+            from ._viser import ViserServer
+
+            if isinstance(owner_api._owner, ViserServer) and not isinstance(
+                self._owner, ViserServer
+            ):
+                # Client element into a server container: allowed (the
+                # element's audience is a subset of the container's). The
+                # element nests under the SERVER scope's active container.
+                # This is the one deliberate exception to scope-local
+                # removal: the server container's teardown cascades into
+                # cross-nested client elements, because an orphaned widget
+                # -- unlike a scene node, which keeps its pose -- has
+                # nowhere coherent to go.
+                return owner_api._target_container_from_thread_id.get(
+                    threading.get_ident(), "root"
+                )
+            # Server (or other-client) element into a client container:
+            # every viewer outside that client scope couldn't see the
+            # container, so the element would dangle. Fail loudly.
+            raise RuntimeError(
+                "A GUI container context from a client scope is active on "
+                "this thread, and elements with a broader audience cannot "
+                "nest inside it (they would dangle for every other client). "
+                "Client elements may nest inside server containers, but not "
+                "vice versa."
+            )
         return self._target_container_from_thread_id.get(threading.get_ident(), "root")
 
+    def _resolve_container_handle(self, container_uuid: str) -> GuiContainerProtocol:
+        """Resolve a container uuid to its handle, tolerating client
+        elements nested inside SERVER containers: the parent then lives in
+        the server GuiApi's registry rather than this one's."""
+        handle = self._container_handle_from_uuid.get(container_uuid)
+        if handle is not None:
+            return handle
+        server_gui = self._root_server().gui
+        if server_gui is not self:
+            handle = server_gui._container_handle_from_uuid.get(container_uuid)
+            if handle is not None:
+                return handle
+        raise KeyError(container_uuid)
+
+    def _release_cross_scope_nesting(self) -> None:
+        """Bookkeeping-only detach of this (client-scoped) GuiApi's elements
+        from the server containers they were nested in. Called on
+        disconnect: the connection's buffer is already closed, so no removal
+        messages are sent -- we just unhook the handles from the server's
+        container tree so a later server-side container removal doesn't
+        cascade a remove into a dead connection."""
+        while self._handles_in_foreign_containers:
+            uuid, handle = self._handles_in_foreign_containers.popitem()
+            # Tombstone BEFORE detaching from the server parent: a user
+            # thread racing us with handle.remove() then bails at the
+            # already-removed check instead of finding a half-detached
+            # tree (its registry pops are tolerant of ours regardless).
+            self._tombstone_subtree(handle)
+            parent = self._root_server().gui._container_handle_from_uuid.get(
+                handle._impl.parent_container_id
+            )
+            if parent is not None:
+                parent._children.pop(uuid, None)
+
+    def _tombstone_subtree(self, handle: Any) -> None:
+        """Recursively mark a cross-nested subtree removed and purge it from
+        this scope's registries WITHOUT queuing messages (the connection is
+        closed). Descendants must be tombstoned too: a surviving user
+        reference calling ``.remove()`` on one should get the ordinary
+        already-removed warning, not a KeyError from a parent that no
+        longer resolves. Mirrors the per-type drains in the remove()
+        implementations."""
+        from ._gui_handles import GuiTabHandle
+
+        # Tabs keep their tombstone/uuid on the handle itself; everything
+        # else keeps them on `_impl`.
+        is_tab = isinstance(handle, GuiTabHandle)
+        state = handle if is_tab else handle._impl
+        if state.removed:
+            return
+        state.removed = True
+        uuid = handle._id if is_tab else handle._impl.uuid
+        self._gui_input_handle_from_uuid.pop(uuid, None)
+        self._container_handle_from_uuid.pop(uuid, None)
+        for child in (
+            *getattr(handle, "_tab_handles", ()),
+            *tuple(getattr(handle, "_children", {}).values()),
+        ):
+            self._tombstone_subtree(child)
+
+    def _root_server(self):
+        """The ViserServer this GuiApi ultimately belongs to (itself for the
+        broadcast scope, the owning server for a client scope)."""
+        from ._viser import ViserServer
+
+        return (
+            self._owner
+            if isinstance(self._owner, ViserServer)
+            else self._owner._viser_server
+        )
+
+    def _context_owner(self) -> GuiApi | None:
+        """The GuiApi owning the current Context's active (non-root)
+        container context on this API's server, if any."""
+        return _context_owner_by_server.get().get(id(self._root_server().gui))
+
+    def _set_context_owner(self, owner: GuiApi | None) -> None:
+        """Install (or clear, with None) this server's context-owner marker
+        in the current Context. Copy-on-write: copied Contexts (sibling
+        asyncio tasks) share the mapping object, so it is never mutated."""
+        key = id(self._root_server().gui)
+        current = _context_owner_by_server.get()
+        if owner is None:
+            if key in current:
+                updated = dict(current)
+                del updated[key]
+                _context_owner_by_server.set(updated)
+        else:
+            _context_owner_by_server.set({**current, key: owner})
+
     def _set_container_uuid(self, container_uuid: str) -> None:
-        """Set container ID associated with the current thread."""
-        self._target_container_from_thread_id[threading.get_ident()] = container_uuid
+        """Set container ID associated with the current thread, tracking
+        which GuiApi currently owns an active (non-root) container context
+        so cross-scope nesting stays directional (see _get_container_uuid)."""
+        thread_id = threading.get_ident()
+        self._target_container_from_thread_id[thread_id] = container_uuid
+        if container_uuid == "root":
+            if self._context_owner() is self:
+                self._set_context_owner(None)
+        else:
+            self._set_context_owner(self)
+
+    def _snapshot_container_context(self) -> tuple[GuiApi, str]:
+        """Snapshot the active container context for a `with` block to
+        restore on exit: the OWNING GuiApi and its current target uuid.
+        Carrying the owner explicitly -- instead of re-deriving it from a
+        bare uuid at exit time -- keeps the restore correct even when the
+        snapshot container has been removed while the block was open (a
+        dangling uuid restores into the scope that owned it, exactly like a
+        removed-while-open container always has within a single scope).
+        Raises for disallowed nesting directions, via _get_container_uuid."""
+        container_uuid = self._get_container_uuid()
+        owner_api = self._context_owner()
+        return (owner_api if owner_api is not None else self, container_uuid)
+
+    def _restore_container_context(self, snapshot: tuple[GuiApi, str]) -> None:
+        """Restore an `__enter__`-time snapshot on `__exit__`. When the
+        snapshot belongs to another scope (a client container context nested
+        inside a server one), our own thread target -- set for the block
+        that is now exiting -- is dropped so later adds can't resolve
+        against it once the owning scope's context also exits."""
+        owner_api, container_uuid = snapshot
+        if owner_api is not self:
+            self._target_container_from_thread_id.pop(threading.get_ident(), None)
+        owner_api._set_container_uuid(container_uuid)
 
     def _next_layout_counter(self) -> int:
         """Bump and return the layout-update counter. THE single home of the
@@ -672,6 +853,11 @@ class GuiApi:
         root_container = self._container_handle_from_uuid["root"]
         while root_container._children:
             next(iter(root_container._children.values())).remove()
+        # This scope's elements nested inside ANOTHER scope's containers
+        # (client elements in server containers) aren't reachable from this
+        # root; drain them explicitly.
+        while self._handles_in_foreign_containers:
+            next(iter(self._handles_in_foreign_containers.values())).remove()
         while self._modal_handle_from_uuid:
             next(iter(self._modal_handle_from_uuid.values())).close()
         # Panels are top-level entities (not under `root`), so drain them
@@ -1003,7 +1189,12 @@ class GuiApi:
         # <form> is well-formed.
         container = self._get_container_uuid()
         while container != "root":
-            parent = self._container_handle_from_uuid.get(container)
+            # Resolve across scopes: a client-scope add_form() inside a
+            # server-scope form is just as invalid as a same-scope nesting.
+            try:
+                parent = self._resolve_container_handle(container)
+            except KeyError:
+                break
             if isinstance(parent, GuiFormHandle):
                 raise ValueError(
                     "Nested forms are not supported: add_form() was called "

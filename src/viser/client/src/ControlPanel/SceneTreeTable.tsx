@@ -19,7 +19,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { useForm } from "@mantine/form";
 import { ViewerContext } from "../ViewerContext";
-import { SceneNode } from "../SceneTreeState";
+import { ownerOf, SceneNode } from "../SceneTreeState";
 import { shallowArrayEqual } from "../utils/shallowArrayEqual";
 import {
   ScenePropDescriptor,
@@ -27,6 +27,7 @@ import {
 } from "../WebsocketMessages";
 import { parseToRgb, toMantineColor } from "../components/colorUtils";
 import {
+  Badge,
   Box,
   Checkbox,
   Flex,
@@ -608,9 +609,21 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
     (node) => node?.children,
     shallowArrayEqual,
   );
-  const messageType = viewer.useSceneTree(
+  // One subscription for the row's message-derived facts (scenes can hold
+  // thousands of rows; every extra per-row selector multiplies the
+  // subscriber walk on each store write). Variant provenance: client-local
+  // variants get a badge (they exist only on THIS client, possibly
+  // shadowing a server node of the same name), and virtual anchors --
+  // auto-created ancestor frames that render nothing -- are de-emphasized.
+  const [messageType, nodeIsClientLocal, nodeIsVirtual] = viewer.useSceneTree(
     props.nodeName,
-    (node) => node?.message.type,
+    (node) =>
+      [
+        node?.message.type,
+        node !== undefined && ownerOf(node.message) !== "",
+        (node?.message as { virtual?: boolean } | undefined)?.virtual ?? false,
+      ] as const,
+    shallowArrayEqual,
   );
   const expandable = (childrenName?.length ?? 0) > 0;
   const [expanded, { toggle: toggleExpanded }] = useDisclosure(false);
@@ -735,11 +748,29 @@ const SceneTreeTableRow = React.memo(function SceneTreeTableRow(props: {
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
+            ...(nodeIsVirtual && { opacity: 0.45, fontStyle: "italic" }),
           }}
         >
           <span style={{ opacity: "0.3" }}>/</span>
           {props.nodeName.split("/").at(-1)}
         </Box>
+        {nodeIsClientLocal ? (
+          <Tooltip
+            label={
+              nodeIsVirtual
+                ? "Auto-created anchor for client-local children"
+                : "Client-local: only this client sees this node"
+            }
+          >
+            <Badge
+              size="xs"
+              variant="light"
+              style={{ flexShrink: 0, textTransform: "none" }}
+            >
+              local
+            </Badge>
+          </Tooltip>
+        ) : null}
         {overrideVisibility !== undefined ? (
           <Box
             className={editIconWrapper}
