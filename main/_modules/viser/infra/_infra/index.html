@@ -434,6 +434,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">gzip</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">http</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">mimetypes</span>
@@ -442,6 +443,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">webbrowser</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">asyncio.events</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbstractEventLoop</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Coroutine</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Generator</span><span class="p">,</span> <span class="n">NewType</span><span class="p">,</span> <span class="n">TypeVar</span>
@@ -461,7 +463,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">viser</span>  <span class="c1"># Import for version checking.</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">._async_message_buffer</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncMessageBuffer</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">._messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">Message</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">Message</span><span class="p">,</span> <span class="n">is_binary_placeholder</span>
 
 
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span>
@@ -527,7 +529,43 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The recording as bytes.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">assert</span> <span class="bp">self</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">,</span> <span class="s2">&quot;serialize() was already called!&quot;</span>
+        <span class="c1"># Unregister FIRST (under the record lock) so a message queued</span>
+        <span class="c1"># concurrently from another thread can&#39;t land in self._messages /</span>
+        <span class="c1"># self._binary_buffers while we&#39;re encoding below -- a late-arriving</span>
+        <span class="c1"># buffer would be missing from binaryBufferLengths and dangle.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_lock</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="bp">self</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">,</span> <span class="p">(</span>
+                <span class="s2">&quot;serialize() was already called!&quot;</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+        <span class="c1"># Deduplicate identical binary buffers. Recordings often repeat large</span>
+        <span class="c1"># arrays byte-for-byte: a node removed and re-added mid-recording, the</span>
+        <span class="c1"># scene snapshot plus later re-sends, unchanged geometry alongside</span>
+        <span class="c1"># per-frame pose updates. zstd only catches repeats that land within</span>
+        <span class="c1"># its match window, so deduplicating here shrinks both the file and</span>
+        <span class="c1"># the decompressed payload the client must hold in memory. The client</span>
+        <span class="c1"># resolves placeholders through a buffer index, so two placeholders</span>
+        <span class="c1"># sharing an index need no client-side change (each still gets its own</span>
+        <span class="c1"># typed-array view). Equal bytes require equal sizes, so buffers whose</span>
+        <span class="c1"># size is unique in the recording skip hashing entirely.</span>
+        <span class="n">size_counts</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">buf</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">buf</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_binary_buffers</span><span class="p">)</span>
+        <span class="n">unique_buffers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">memoryview</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">index_remap</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">index_from_digest</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">buf</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_binary_buffers</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">size_counts</span><span class="p">[</span><span class="n">buf</span><span class="o">.</span><span class="n">nbytes</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">index_remap</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">unique_buffers</span><span class="p">))</span>
+                <span class="n">unique_buffers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">digest</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span><span class="o">.</span><span class="n">digest</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">digest</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">index_from_digest</span><span class="p">:</span>
+                <span class="n">index_from_digest</span><span class="p">[</span><span class="n">digest</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_buffers</span><span class="p">)</span>
+                <span class="n">unique_buffers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+            <span class="n">index_remap</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">index_from_digest</span><span class="p">[</span><span class="n">digest</span><span class="p">])</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_buffers</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_binary_buffers</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">message_dict</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_messages</span><span class="p">:</span>
+                <span class="n">_remap_binary_placeholder_indices</span><span class="p">(</span><span class="n">message_dict</span><span class="p">,</span> <span class="n">index_remap</span><span class="p">)</span>
 
         <span class="c1"># Same hybrid format as the live wire path: msgpack metadata with</span>
         <span class="c1"># tagged placeholders for binary arrays, followed by raw aligned</span>
@@ -537,25 +575,35 @@
                 <span class="s2">&quot;durationSeconds&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_time</span><span class="p">,</span>
                 <span class="s2">&quot;messages&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_messages</span><span class="p">,</span>
                 <span class="s2">&quot;viserVersion&quot;</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">__version__</span><span class="p">,</span>
-                <span class="s2">&quot;binaryBufferLengths&quot;</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_binary_buffers</span><span class="p">),</span>
+                <span class="s2">&quot;binaryBufferLengths&quot;</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">unique_buffers</span><span class="p">),</span>
             <span class="p">}</span>
         <span class="p">)</span>
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_lock</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
-        <span class="c1"># Build uncompressed inner payload:</span>
+        <span class="c1"># Uncompressed inner payload layout:</span>
         <span class="c1">#   [8 bytes] msgpack length (little-endian uint64)</span>
         <span class="c1">#   [N bytes] msgpack payload</span>
         <span class="c1">#   [P bytes] padding + aligned binary buffers...</span>
         <span class="n">msgpack_len_header</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">)</span>
         <span class="n">parts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">bytes</span> <span class="o">|</span> <span class="nb">memoryview</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">msgpack_len_header</span><span class="p">,</span> <span class="n">msgpack_payload</span><span class="p">]</span>
-        <span class="n">_append_aligned_buffers</span><span class="p">(</span><span class="n">parts</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_binary_buffers</span><span class="p">,</span> <span class="mi">8</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">))</span>
-        <span class="n">inner</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+        <span class="n">_append_aligned_buffers</span><span class="p">(</span><span class="n">parts</span><span class="p">,</span> <span class="n">unique_buffers</span><span class="p">,</span> <span class="mi">8</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">))</span>
+        <span class="n">inner_size</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">memoryview</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">)</span>
 
-        <span class="c1"># Compress everything together. Recordings aren&#39;t latency-sensitive.</span>
-        <span class="n">compressed</span> <span class="o">=</span> <span class="n">zstandard</span><span class="o">.</span><span class="n">ZstdCompressor</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span><span class="o">.</span><span class="n">compress</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span>
-        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="n">compressed</span></div>
+        <span class="c1"># Compress everything together, streaming the parts through the</span>
+        <span class="c1"># compressor rather than concatenating them first -- the concatenated</span>
+        <span class="c1"># copy would briefly double peak memory for large scenes. Recordings</span>
+        <span class="c1"># aren&#39;t latency-sensitive, but threads=-1 (one per core) still helps:</span>
+        <span class="c1"># level-12 zstd is slow enough to be the bottleneck for big scenes.</span>
+        <span class="n">compressor</span> <span class="o">=</span> <span class="n">zstandard</span><span class="o">.</span><span class="n">ZstdCompressor</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">threads</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">compressobj</span><span class="p">(</span>
+            <span class="n">size</span><span class="o">=</span><span class="n">inner_size</span>
+        <span class="p">)</span>
+        <span class="c1"># Explicit statements (not a starred list display): flush() must not</span>
+        <span class="c1"># be evaluated until every part has been fed through compress(), and</span>
+        <span class="c1"># Python 3.8 evaluated `[a, *gen, f()]`&#39;s f() before consuming gen.</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">[</span><span class="n">inner_size</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">)]</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">compressor</span><span class="o">.</span><span class="n">compress</span><span class="p">(</span><span class="n">part</span><span class="p">)</span> <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">compressor</span><span class="o">.</span><span class="n">flush</span><span class="p">())</span>
+        <span class="k">return</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StateSerializer.as_html">
@@ -1331,6 +1379,22 @@
         <span class="n">event_loop</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
         <span class="n">event_loop</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_remap_binary_placeholder_indices</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">index_remap</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rewrite the ``__binary_index`` of every binary placeholder (see</span>
+<span class="sd">    ``Message.as_serializable_dict``) through ``index_remap``. Placeholder</span>
+<span class="sd">    dicts are mutated in place; containers are only traversed, never</span>
+<span class="sd">    replaced.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">is_binary_placeholder</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+            <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;__binary_index&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">index_remap</span><span class="p">[</span><span class="n">obj</span><span class="p">[</span><span class="s2">&quot;__binary_index&quot;</span><span class="p">]]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obj</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="n">_remap_binary_placeholder_indices</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">index_remap</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+        <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obj</span><span class="p">:</span>
+            <span class="n">_remap_binary_placeholder_indices</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">index_remap</span><span class="p">)</span>
 
 
 <span class="c1"># Pre-allocated padding bytes for 8-byte alignment.</span>
