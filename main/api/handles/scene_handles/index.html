@@ -2272,6 +2272,30 @@ tuple of (x, y, z) for per-axis scaling.</p>
 </ul>
 </dd>
 </dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.GaussianSplatHandle.set_gaussians">
+<span class="sig-name descname"><span class="pre">set_gaussians</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">centers</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">covariances</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rgbs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opacities</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_scene_handles/#GaussianSplatHandle.set_gaussians"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.GaussianSplatHandle.set_gaussians" title="Link to this definition">¶</a></dt>
+<dd><p>Atomically update all Gaussian attributes, including count changes.</p>
+<p>This is the preferred fast path when per-frame updates may change the
+number of Gaussians: all attributes land in a single buffer update,
+preventing transient mixed-state frames from sequential property
+assignments (centers/covariances/rgbs/opacities one-by-one). A call
+that leaves the buffer numerically unchanged sends no message.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>centers</strong> (<em>ndarray</em>)</p></li>
+<li><p><strong>covariances</strong> (<em>ndarray</em>)</p></li>
+<li><p><strong>rgbs</strong> (<em>ndarray</em>)</p></li>
+<li><p><strong>opacities</strong> (<em>ndarray</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py property">
 <dt class="sig sig-object py" id="viser.GaussianSplatHandle.centers">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">centers</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">NDArray</span><span class="p"><span class="pre">[</span></span><span class="pre">float32</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#viser.GaussianSplatHandle.centers" title="Link to this definition">¶</a></dt>
@@ -5164,6 +5188,7 @@ deprecated <a class="reference internal" href="#viser.TransformControlsHandle.on
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.GaussianSplatHandle.set_gaussians"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.set_gaussians()</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.centers"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.centers</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.rgbs"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.rgbs</span></code></a></li>
 <li><a class="reference internal" href="#viser.GaussianSplatHandle.opacities"><code class="docutils literal notranslate"><span class="pre">GaussianSplatHandle.opacities</span></code></a></li>
