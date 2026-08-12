@@ -994,6 +994,120 @@
 <span class="n">NoneOrCoroutine</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;NoneOrCoroutine&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">)</span>
 
 
+<div class="viewcode-block" id="LocalStorageHandle">
+<a class="viewcode-back" href="../../../api/handles/client_handles/#viser.LocalStorageHandle">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LocalStorageHandle</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A handle for reading and writing this client&#39;s browser localStorage.</span>
+
+<span class="sd">    Keys are namespaced in the browser under a viser-specific prefix, so</span>
+<span class="sd">    values written here can&#39;t collide with — and :meth:`clear` can&#39;t wipe —</span>
+<span class="sd">    localStorage state that other applications keep on the same origin.</span>
+<span class="sd">    The prefix is an implementation detail: keys passed to these methods</span>
+<span class="sd">    should be the bare, unprefixed names.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_client</span> <span class="o">=</span> <span class="n">client</span>
+
+<div class="viewcode-block" id="LocalStorageHandle.set_item">
+<a class="viewcode-back" href="../../../api/handles/client_handles/#viser.LocalStorageHandle.set_item">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set a key.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageSetItemMessage</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LocalStorageHandle.remove_item">
+<a class="viewcode-back" href="../../../api/handles/client_handles/#viser.LocalStorageHandle.remove_item">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove a key.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageRemoveItemMessage</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear all keys that were written through this API. Other</span>
+<span class="sd">        localStorage state on the client&#39;s origin is left untouched.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageClearMessage</span><span class="p">()</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="LocalStorageHandle.get_item">
+<a class="viewcode-back" href="../../../api/handles/client_handles/#viser.LocalStorageHandle.get_item">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a value, or ``None`` if the key is absent.</span>
+
+<span class="sd">        Failure semantics match :meth:`ClientHandle.get_render`.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            key: Key to read.</span>
+<span class="sd">            timeout: Optional maximum seconds to wait for the value. ``None``</span>
+<span class="sd">                (default) waits indefinitely; a disconnect still raises</span>
+<span class="sd">                promptly either way. Set this to bound a client that stays</span>
+<span class="sd">                connected but never returns a response (raises</span>
+<span class="sd">                ``TimeoutError``).</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RuntimeError: If the client disconnects before responding, or if</span>
+<span class="sd">                the browser blocks localStorage access.</span>
+<span class="sd">            TimeoutError: If ``timeout`` is set and exceeded.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">request_uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
+        <span class="n">response</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+        <span class="n">ready_event</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">got_response</span><span class="p">(</span>
+            <span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageGetItemResponseMessage</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">client_id</span>
+            <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">request_uuid</span> <span class="o">!=</span> <span class="n">request_uuid</span><span class="p">:</span>
+                <span class="k">return</span>
+            <span class="n">response</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">value</span>
+            <span class="n">response</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">error</span>
+            <span class="n">ready_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
+            <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageGetItemResponseMessage</span><span class="p">,</span> <span class="n">got_response</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
+                <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageGetItemRequestMessage</span><span class="p">(</span>
+                    <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">request_uuid</span><span class="o">=</span><span class="n">request_uuid</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="c1"># Poll rather than wait unbounded: a client that DISCONNECTS (tab</span>
+            <span class="c1"># closed, network drop) never sends a response, so this raises as</span>
+            <span class="c1"># soon as it leaves _connected_clients instead of hanging the</span>
+            <span class="c1"># caller (same rationale as get_render()).</span>
+            <span class="n">deadline</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">timeout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">+</span> <span class="n">timeout</span>
+            <span class="k">while</span> <span class="ow">not</span> <span class="n">ready_event</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">client_id</span>
+                    <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_viser_server</span><span class="o">.</span><span class="n">_connected_clients</span>
+                <span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="s2">&quot;localStorage request failed: the client disconnected &quot;</span>
+                        <span class="s2">&quot;before returning a response.&quot;</span>
+                    <span class="p">)</span>
+                <span class="k">if</span> <span class="n">deadline</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">deadline</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">TimeoutError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;localStorage request timed out after </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s: &quot;</span>
+                        <span class="s2">&quot;the client did not return a response.&quot;</span>
+                    <span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">unregister_handler</span><span class="p">(</span>
+                <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageGetItemResponseMessage</span><span class="p">,</span> <span class="n">got_response</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">response</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to read localStorage: </span><span class="si">{</span><span class="n">response</span><span class="p">[</span><span class="s1">&#39;error&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span></div>
+</div>
+
+
+
 <span class="c1"># Don&#39;t inherit from RenamedAttributeCompatShim during type checking, because</span>
 <span class="c1"># this will unnecessarily suppress type errors. (from the overriding of</span>
 <span class="c1"># __getattr__).</span>
@@ -1065,6 +1179,8 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for interacting with the GUI.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">camera</span><span class="p">:</span> <span class="n">CameraHandle</span> <span class="o">=</span> <span class="n">CameraHandle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for reading from and manipulating the client&#39;s viewport camera.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">local_storage</span><span class="p">:</span> <span class="n">LocalStorageHandle</span> <span class="o">=</span> <span class="n">LocalStorageHandle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for reading and writing the client&#39;s browser localStorage.&quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="ClientHandle.flush">
 <a class="viewcode-back" href="../../../api/handles/client_handles/#viser.ClientHandle.flush">[docs]</a>

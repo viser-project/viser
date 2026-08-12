@@ -494,6 +494,12 @@ container.</p>
 <dd><p>Handle for reading from and manipulating the client’s viewport camera.</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="viser.ClientHandle.local_storage">
+<span class="sig-name descname"><span class="pre">local_storage</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#viser.LocalStorageHandle" title="viser._viser.LocalStorageHandle"><span class="pre">LocalStorageHandle</span></a></em><a class="headerlink" href="#viser.ClientHandle.local_storage" title="Link to this definition">¶</a></dt>
+<dd><p>Handle for reading and writing the client’s browser localStorage.</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="viser.ClientHandle.flush">
 <span class="sig-name descname"><span class="pre">flush</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_viser/#ClientHandle.flush"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.ClientHandle.flush" title="Link to this definition">¶</a></dt>
@@ -615,6 +621,77 @@ finished (more likely on fast displays, where frames are short relative
 to decode time). When that matters, capture after the asset has had a
 moment to load.</p>
 </div>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="viser.LocalStorageHandle">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">viser.</span></span><span class="sig-name descname"><span class="pre">LocalStorageHandle</span></span><a class="reference internal" href="../../../_modules/viser/_viser/#LocalStorageHandle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.LocalStorageHandle" title="Link to this definition">¶</a></dt>
+<dd><p>A handle for reading and writing this client’s browser localStorage.</p>
+<p>Keys are namespaced in the browser under a viser-specific prefix, so
+values written here can’t collide with — and <code class="xref py py-meth docutils literal notranslate"><span class="pre">clear()</span></code> can’t wipe —
+localStorage state that other applications keep on the same origin.
+The prefix is an implementation detail: keys passed to these methods
+should be the bare, unprefixed names.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.LocalStorageHandle.set_item">
+<span class="sig-name descname"><span class="pre">set_item</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_viser/#LocalStorageHandle.set_item"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.LocalStorageHandle.set_item" title="Link to this definition">¶</a></dt>
+<dd><p>Set a key.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>key</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>value</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.LocalStorageHandle.remove_item">
+<span class="sig-name descname"><span class="pre">remove_item</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_viser/#LocalStorageHandle.remove_item"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.LocalStorageHandle.remove_item" title="Link to this definition">¶</a></dt>
+<dd><p>Remove a key.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>key</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="viser.LocalStorageHandle.get_item">
+<span class="sig-name descname"><span class="pre">get_item</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../_modules/viser/_viser/#LocalStorageHandle.get_item"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#viser.LocalStorageHandle.get_item" title="Link to this definition">¶</a></dt>
+<dd><p>Return a value, or <code class="docutils literal notranslate"><span class="pre">None</span></code> if the key is absent.</p>
+<p>Failure semantics match <a class="reference internal" href="#viser.ClientHandle.get_render" title="viser.ClientHandle.get_render"><code class="xref py py-meth docutils literal notranslate"><span class="pre">ClientHandle.get_render()</span></code></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>key</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Key to read.</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> | </em><em>None</em>) – Optional maximum seconds to wait for the value. <code class="docutils literal notranslate"><span class="pre">None</span></code>
+(default) waits indefinitely; a disconnect still raises
+promptly either way. Set this to bound a client that stays
+connected but never returns a response (raises
+<code class="docutils literal notranslate"><span class="pre">TimeoutError</span></code>).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#RuntimeError" title="(in Python v3.14)"><strong>RuntimeError</strong></a> – If the client disconnects before responding, or if
+    the browser blocks localStorage access.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#TimeoutError" title="(in Python v3.14)"><strong>TimeoutError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">timeout</span></code> is set and exceeded.</p></li>
+</ul>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a> | None</p>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>
@@ -742,11 +819,18 @@ False to disable auto-close.</p>
 <li><a class="reference internal" href="#viser.ClientHandle.scene"><code class="docutils literal notranslate"><span class="pre">ClientHandle.scene</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.gui"><code class="docutils literal notranslate"><span class="pre">ClientHandle.gui</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.camera"><code class="docutils literal notranslate"><span class="pre">ClientHandle.camera</span></code></a></li>
+<li><a class="reference internal" href="#viser.ClientHandle.local_storage"><code class="docutils literal notranslate"><span class="pre">ClientHandle.local_storage</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.flush"><code class="docutils literal notranslate"><span class="pre">ClientHandle.flush()</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.atomic"><code class="docutils literal notranslate"><span class="pre">ClientHandle.atomic()</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.send_file_download"><code class="docutils literal notranslate"><span class="pre">ClientHandle.send_file_download()</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.add_notification"><code class="docutils literal notranslate"><span class="pre">ClientHandle.add_notification()</span></code></a></li>
 <li><a class="reference internal" href="#viser.ClientHandle.get_render"><code class="docutils literal notranslate"><span class="pre">ClientHandle.get_render()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#viser.LocalStorageHandle"><code class="docutils literal notranslate"><span class="pre">LocalStorageHandle</span></code></a><ul>
+<li><a class="reference internal" href="#viser.LocalStorageHandle.set_item"><code class="docutils literal notranslate"><span class="pre">LocalStorageHandle.set_item()</span></code></a></li>
+<li><a class="reference internal" href="#viser.LocalStorageHandle.remove_item"><code class="docutils literal notranslate"><span class="pre">LocalStorageHandle.remove_item()</span></code></a></li>
+<li><a class="reference internal" href="#viser.LocalStorageHandle.get_item"><code class="docutils literal notranslate"><span class="pre">LocalStorageHandle.get_item()</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#viser.NotificationHandle"><code class="docutils literal notranslate"><span class="pre">NotificationHandle</span></code></a><ul>
