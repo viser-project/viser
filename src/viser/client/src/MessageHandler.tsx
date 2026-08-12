@@ -42,6 +42,12 @@ function swapBackgroundTexture(
 // Every new load and every synchronous clear bumps the uniform's token; an
 // async callback installs its result only if the token is still current.
 const backgroundTextureSeq = new WeakMap<THREE.IUniform, number>();
+
+// Namespace for keys written via the server-side localStorage API. Keys are
+// prefixed on write/read and clear() only touches prefixed keys, so a viser
+// server can't read or clobber unrelated data on a shared browser origin.
+const LOCAL_STORAGE_PREFIX = "viser-user:";
+
 function bumpBackgroundTextureSeq(uniform: THREE.IUniform): number {
   const next = (backgroundTextureSeq.get(uniform) ?? 0) + 1;
   backgroundTextureSeq.set(uniform, next);
@@ -339,7 +345,10 @@ function useMessageHandler() {
       // Set a key in localStorage.
       case "LocalStorageSetItemMessage": {
         try {
-          localStorage.setItem(message.key, message.value);
+          localStorage.setItem(
+            LOCAL_STORAGE_PREFIX + message.key,
+            message.value,
+          );
         } catch (error) {
           console.error("Failed to set localStorage item:", error);
         }
@@ -348,16 +357,23 @@ function useMessageHandler() {
       // Remove a key from localStorage.
       case "LocalStorageRemoveItemMessage": {
         try {
-          localStorage.removeItem(message.key);
+          localStorage.removeItem(LOCAL_STORAGE_PREFIX + message.key);
         } catch (error) {
           console.error("Failed to remove localStorage item:", error);
         }
         return;
       }
-      // Clear all localStorage.
+      // Clear all keys written through the viser localStorage API.
       case "LocalStorageClearMessage": {
         try {
-          localStorage.clear();
+          // Deliberately scoped to our prefix: the page's origin may be
+          // shared with other applications (e.g. statically-hosted clients),
+          // whose keys a viser server should never be able to wipe.
+          for (const key of Object.keys(localStorage)) {
+            if (key.startsWith(LOCAL_STORAGE_PREFIX)) {
+              localStorage.removeItem(key);
+            }
+          }
         } catch (error) {
           console.error("Failed to clear localStorage:", error);
         }
@@ -368,7 +384,7 @@ function useMessageHandler() {
         let value: string | null = null;
         let error: string | null = null;
         try {
-          value = localStorage.getItem(message.key);
+          value = localStorage.getItem(LOCAL_STORAGE_PREFIX + message.key);
         } catch (caught) {
           error = caught instanceof Error ? caught.message : String(caught);
         }

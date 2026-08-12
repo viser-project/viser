@@ -2621,7 +2621,7 @@ class LocalStorageRemoveItemMessage(Message, include_in_scene_serialization=Fals
 
 @dataclasses.dataclass
 class LocalStorageClearMessage(Message, include_in_scene_serialization=False):
-    """Clear all keys from the client's localStorage."""
+    """Clear all viser-written keys from the client's localStorage."""
 
 
 @dataclasses.dataclass

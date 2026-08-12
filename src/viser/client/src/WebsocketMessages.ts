@@ -2140,7 +2140,7 @@ export interface LocalStorageRemoveItemMessage {
   type: "LocalStorageRemoveItemMessage";
   key: string;
 }
-/** Clear all keys from the client's localStorage.
+/** Clear all viser-written keys from the client's localStorage.
  *
  * (automatically generated)
  */
