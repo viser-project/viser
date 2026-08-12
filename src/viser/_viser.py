@@ -1448,10 +1448,10 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # including scene-adjacent Set*Message variants that target a
             # removed scene node by `name` but aren't entity-declared. The
             # per-message taxonomy is Message.targets_entity_state -- the ONE
-            # definition, shared with the same-name-replacement purge -- with
-            # set-based id matching inlined here so the sweep stays a single
-            # pass over the buffer rather than per-name predicate calls.
-            # Skip the walk entirely when nothing was tombstoned this round.
+            # definition, shared with the same-name-replacement purge --
+            # materialized as the buffer's entity-state index, so the sweep
+            # touches only the tombstoned entities' buckets rather than
+            # walking the whole buffer.
             #
             # These deletes are NOT floor-gated, unlike the tombstones above:
             # an update targeting a removed entity is dead weight for EVERY
@@ -1463,29 +1463,16 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # "update /x": a ghost node other clients don't have. push()
             # already purges pending updates on Remove with no floor gate;
             # this sweep follows the same reasoning.
-            if removed_ids_by_type:
-                for msg_id, message in buffer.message_from_id.items():
-                    phase = message.lifecycle_phase
-                    if phase in ("update_dict", "update_simple"):
-                        assert (
-                            message.entity_type is not None
-                            and message.entity_id_field is not None
+            for entity_type, entity_ids in removed_ids_by_type.items():
+                for entity_id in entity_ids:
+                    remove_message_ids.extend(
+                        buffer.ids_from_entity_state_key.get(
+                            (entity_type, entity_id), ()
                         )
-                        entity_id = getattr(message, message.entity_id_field)
-                        if entity_id in removed_ids_by_type.get(
-                            message.entity_type, ()
-                        ):
-                            remove_message_ids.append(msg_id)
-                    elif phase is None:
-                        name = getattr(message, "name", None)
-                        if name is not None and name in removed_ids_by_type.get(
-                            "scene", ()
-                        ):
-                            remove_message_ids.append(msg_id)
+                    )
 
             for msg_id in remove_message_ids:
-                message = buffer.message_from_id.pop(msg_id)
-                buffer.id_from_redundancy_key.pop(message.redundancy_key(), None)
+                buffer.pop_message_locked(msg_id)
 
     def get_host(self) -> str:
         """Returns the host address of the Viser server.

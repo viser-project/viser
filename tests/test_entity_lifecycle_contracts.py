@@ -299,18 +299,23 @@ def test_gc_two_pass_purges_update_buffered_after_tombstone() -> None:
     # Wipe any startup traffic so we control the ordering exactly.
     buf.message_from_id.clear()
     buf.id_from_redundancy_key.clear()
+    buf.ids_from_entity_state_key.clear()
 
     remove = RemoveSceneNodeMessage(name="/ghost")
     update = SceneNodeUpdateMessage(name="/ghost", updates={"visible": False})
-    # Remove at low id, Update at high id -- the reorder scenario.
-    buf.message_from_id[10] = remove
-    buf.id_from_redundancy_key[remove.redundancy_key()] = 10
-    buf.message_from_id[20] = update
-    buf.id_from_redundancy_key[update.redundancy_key()] = 20
+    # Remove first, Update after: the update lands at a HIGHER id than the
+    # tombstone -- exactly the ordering push()'s remove-time purge cannot
+    # see. Pushed through the real write path so the buffer's entity-state
+    # index (which the GC's second pass consults) is populated.
+    buf.push(remove)
+    buf.push(update)
+    remove_id = next(mid for mid, m in buf.message_from_id.items() if m is remove)
+    update_id = next(mid for mid, m in buf.message_from_id.items() if m is update)
+    assert remove_id < update_id
 
     server._run_garbage_collector(force=True)
-    assert 10 not in buf.message_from_id, "tombstone not purged"
-    assert 20 not in buf.message_from_id, "late update survived tombstone"
+    assert remove_id not in buf.message_from_id, "tombstone not purged"
+    assert update_id not in buf.message_from_id, "late update survived tombstone"
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)

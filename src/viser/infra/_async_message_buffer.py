@@ -5,9 +5,42 @@ import contextlib
 import dataclasses
 import threading
 from asyncio.events import AbstractEventLoop
-from typing import AsyncGenerator, Callable, Dict, Generator, List, Sequence
+from typing import (
+    AsyncGenerator,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 from ._messages import Message
+
+
+def _entity_state_key(message: Message) -> Optional[Tuple[str, str]]:
+    """The (entity_type, entity_id) coordinates under which a message is
+    indexed in ``AsyncMessageBuffer.ids_from_entity_state_key``, or None for
+    messages that carry no per-entity state.
+
+    This is the materialized form of ``Message.targets_entity_state``: a
+    message is indexed under exactly the keys for which that predicate
+    returns True (update messages under their declared entity, phase-less
+    name-keyed messages under ``("scene", name)``). The two must never
+    disagree -- the index exists so per-entity purges don't scan the buffer,
+    not to redefine the taxonomy."""
+    phase = message.lifecycle_phase
+    if phase in ("update_dict", "update_simple"):
+        if message.entity_type is not None and message.entity_id_field is not None:
+            return (message.entity_type, getattr(message, message.entity_id_field))
+        return None
+    if phase is None:
+        name = getattr(message, "name", None)
+        if name is not None:
+            return ("scene", name)
+    return None
 
 
 @dataclasses.dataclass
@@ -24,6 +57,14 @@ class AsyncMessageBuffer:
     message_counter: int = 0
     message_from_id: Dict[int, Message] = dataclasses.field(default_factory=dict)
     id_from_redundancy_key: Dict[str, int] = dataclasses.field(default_factory=dict)
+    ids_from_entity_state_key: Dict[Tuple[str, str], Set[int]] = dataclasses.field(
+        default_factory=dict
+    )
+    """Buffered per-entity state messages, indexed by ``_entity_state_key``.
+    Keeps same-name replacement, remove-time update purges, and the GC sweep
+    O(per-entity messages) instead of O(buffer). Maintained under
+    ``buffer_lock`` by every path that inserts into or deletes from
+    ``message_from_id``."""
 
     buffer_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     """Lock to prevent race conditions when pushing messages from different threads."""
@@ -66,17 +107,52 @@ class AsyncMessageBuffer:
             with self.buffer_lock:
                 self._sanctioned_dead_writes -= 1
 
+    def pop_message_locked(self, message_id: int) -> Optional[Message]:
+        """Delete one message from the buffer and every index that refers to
+        it, returning the message (or None if the id is absent). The caller
+        must hold ``buffer_lock``: this is THE single deletion primitive, so
+        the redundancy and entity-state indices cannot drift from
+        ``message_from_id``."""
+        message = self.message_from_id.pop(message_id, None)
+        if message is None:
+            return None
+        # Unmap the redundancy slot only if it still points at THIS message:
+        # slots for colliding keys point at the newest holder, and a blind
+        # pop here would orphan that newer message's mapping.
+        redundancy_key = message.redundancy_key()
+        if self.id_from_redundancy_key.get(redundancy_key) == message_id:
+            del self.id_from_redundancy_key[redundancy_key]
+        entity_key = _entity_state_key(message)
+        if entity_key is not None:
+            ids = self.ids_from_entity_state_key.get(entity_key)
+            if ids is not None:
+                ids.discard(message_id)
+                if not ids:
+                    del self.ids_from_entity_state_key[entity_key]
+        return message
+
     def remove_from_buffer(self, match_fn: Callable[[Message], bool]) -> None:
         """Remove messages that match some condition."""
 
         with self.buffer_lock:
             # Remove messages that match the condition.
-            for id, message in filter(
-                lambda kv_pair: match_fn(self.message_from_id[kv_pair[0]]),
-                tuple(self.message_from_id.items()),
-            ):
-                self.message_from_id.pop(id)
-                self.id_from_redundancy_key.pop(message.redundancy_key())
+            for id in [
+                id for id, message in self.message_from_id.items() if match_fn(message)
+            ]:
+                self.pop_message_locked(id)
+
+    def remove_entity_state_from_buffer(self, entity_type: str, entity_id: str) -> None:
+        """Purge every buffered message carrying per-entity state for one
+        entity -- exactly the messages ``targets_entity_state`` matches, via
+        the entity-state index rather than a full-buffer scan. Used by
+        same-name scene node replacement, where a per-add O(buffer) scan
+        made re-add loops quadratic in scene size."""
+        with self.buffer_lock:
+            ids = self.ids_from_entity_state_key.get((entity_type, entity_id))
+            if not ids:
+                return
+            for message_id in tuple(ids):
+                self.pop_message_locked(message_id)
 
     def push(self, message: Message) -> None:
         """Push a new message to our buffer, and remove old redundant ones."""
@@ -126,25 +202,33 @@ class AsyncMessageBuffer:
             # On Remove, drop pending Updates for the same entity so a
             # removed entity leaves no residue in the buffer. (Create+Remove
             # coalesce via the redundancy key below; Updates use a separate
-            # namespace, so they need explicit purging.)
+            # namespace, so they need explicit purging.) Resolved through the
+            # entity-state index; only the update phases are purged here --
+            # phase-less name-keyed messages in the same index bucket are
+            # left for remove()'s own explicit empty-binding broadcasts.
             if purge_entity_type is not None:
-                stale_ids = [
-                    mid
-                    for mid, m in self.message_from_id.items()
-                    if m.lifecycle_phase in ("update_dict", "update_simple")
-                    and m.entity_type == purge_entity_type
-                    and m.entity_id_field is not None
-                    and getattr(m, m.entity_id_field, None) == purge_entity_id
-                ]
-                for mid in stale_ids:
-                    stale = self.message_from_id.pop(mid)
-                    stale_key = stale.redundancy_key()
-                    if stale_key is not None:
-                        self.id_from_redundancy_key.pop(stale_key, None)
+                assert purge_entity_id is not None
+                indexed_ids = self.ids_from_entity_state_key.get(
+                    (purge_entity_type, purge_entity_id)
+                )
+                if indexed_ids:
+                    stale_ids = [
+                        mid
+                        for mid in indexed_ids
+                        if self.message_from_id[mid].lifecycle_phase
+                        in ("update_dict", "update_simple")
+                    ]
+                    for mid in stale_ids:
+                        self.pop_message_locked(mid)
 
             new_message_id = self.message_counter
             self.message_from_id[new_message_id] = message
             self.message_counter += 1
+            entity_key = _entity_state_key(message)
+            if entity_key is not None:
+                self.ids_from_entity_state_key.setdefault(entity_key, set()).add(
+                    new_message_id
+                )
 
             # If an existing message with the same key already exists in our buffer, we
             # don't need the old one anymore. :-)
@@ -152,8 +236,8 @@ class AsyncMessageBuffer:
                 redundancy_key is not None
                 and redundancy_key in self.id_from_redundancy_key
             ):
-                old_message_id = self.id_from_redundancy_key.pop(redundancy_key)
-                self.message_from_id.pop(old_message_id)
+                old_message_id = self.id_from_redundancy_key[redundancy_key]
+                self.pop_message_locked(old_message_id)
             self.id_from_redundancy_key[redundancy_key] = new_message_id
 
             # Pulse message event to notify consumers that a new message is
@@ -287,10 +371,7 @@ class AsyncMessageBuffer:
                         # If we're not persisting messages, remove them from
                         # the buffer.
                         with self.buffer_lock:
-                            message = self.message_from_id.pop(last_sent_id, None)
-                            if message is not None:
-                                redundancy_key = message.redundancy_key()
-                                self.id_from_redundancy_key.pop(redundancy_key, None)
+                            message = self.pop_message_locked(last_sent_id)
 
                     if (
                         message is not None
