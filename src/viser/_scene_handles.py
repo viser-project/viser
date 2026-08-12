@@ -1520,6 +1520,35 @@ class ArrowsHandle(
 ):
     """Handle for arrow objects."""
 
+    @property
+    @deprecated("The 'line_width' property is deprecated and has no effect.")
+    def line_width(self) -> float:
+        """Deprecated; arrows no longer have a line-width fallback rendering
+        path.
+
+        .. deprecated::
+            Reads return the legacy default (1.0); writes warn and are
+            ignored.
+        """
+        warnings.warn(
+            "The 'line_width' property is deprecated and has no effect: "
+            "arrows no longer have a line-width fallback rendering path.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return 1.0
+
+    @line_width.setter
+    @deprecated("The 'line_width' property is deprecated and has no effect.")
+    def line_width(self, value: float) -> None:
+        del value
+        warnings.warn(
+            "The 'line_width' property is deprecated and has no effect: "
+            "arrows no longer have a line-width fallback rendering path.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
 
 class SplineCatmullRomHandle(
     SceneNodeHandle,

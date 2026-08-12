@@ -109,14 +109,18 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       // smooth edge falloff, depth-tested but not depth-written, on top of
       // the opaque depth-anchoring core.
       const showFringe = (worldUnits ?? false) && !(dashed ?? false);
-      const fringeMatRef = React.useRef<LineMaterial>(null);
-      React.useLayoutEffect(() => {
-        const mat = fringeMatRef.current;
+      // The fringe define is applied via callback ref rather than an effect
+      // keyed on showFringe: the fringe material remounts when the
+      // segments/dashed JSX branch flips while showFringe stays true, and an
+      // effect keyed on showFringe would skip the fresh material -- leaving
+      // it without VISER_LINE_FRINGE, rendered as a transparent duplicate of
+      // the core instead of the antialiasing skirt.
+      const setFringeMatRef = React.useCallback((mat: LineMaterial | null) => {
         if (!mat) return;
         mat.defines.VISER_LINE_FRINGE = "";
         mat.worldUnits = true;
         mat.needsUpdate = true;
-      }, [showFringe]);
+      }, []);
 
       const effectiveColor = vertexColors ? 0xffffff : color;
 
@@ -156,7 +160,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       // the core only.
       const fringeMaterialJsx = (
         <lineMaterial
-          ref={fringeMatRef}
+          ref={setFringeMatRef}
           color={effectiveColor}
           vertexColors={Boolean(vertexColors)}
           resolution={[size.width, size.height]}
