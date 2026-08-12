@@ -1172,7 +1172,7 @@ class SceneApi:
         )
         return LineSegmentsHandle._make(self, message, name, wxyz, position, visible)
 
-    @deprecated_positional_shim
+    @overload
     def add_arrows(
         self,
         name: str,
@@ -1186,6 +1186,41 @@ class SceneApi:
         wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         visible: bool = True,
+    ) -> ArrowsHandle: ...
+
+    @overload
+    @deprecated("The `line_width` parameter is deprecated and has no effect.")
+    def add_arrows(
+        self,
+        name: str,
+        points: np.ndarray,
+        colors: np.ndarray | RgbTupleOrArray,
+        *,
+        line_width: Never,
+        shaft_radius: float = 0.02,
+        head_radius: float = 0.05,
+        head_length: float = 0.1,
+        scale: float | tuple[float, float, float] = 1.0,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+    ) -> ArrowsHandle: ...
+
+    @deprecated_positional_shim
+    def add_arrows(  # pyright: ignore[reportInconsistentOverload]
+        self,
+        name: str,
+        points: np.ndarray,
+        colors: np.ndarray | RgbTupleOrArray,
+        *,
+        shaft_radius: float = 0.02,
+        head_radius: float = 0.05,
+        head_length: float = 0.1,
+        scale: float | tuple[float, float, float] = 1.0,
+        wxyz: tuple[float, float, float, float] | np.ndarray = (1.0, 0.0, 0.0, 0.0),
+        position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
+        visible: bool = True,
+        **_deprecated_kwargs,
     ) -> ArrowsHandle:
         """Add arrows to the scene.
 
@@ -1212,6 +1247,22 @@ class SceneApi:
         Returns:
             Handle for manipulating scene node.
         """
+        if "line_width" in _deprecated_kwargs:
+            # Accepted-and-ignored rather than remapped: unlike the spline /
+            # line-segment APIs, arrows have no thickness equivalent -- the
+            # old prop only affected a client fallback rendering path that no
+            # longer exists.
+            warnings.warn(
+                "The `line_width` parameter is deprecated and has no effect: "
+                "arrows no longer have a line-width fallback rendering path.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            _deprecated_kwargs.pop("line_width")
+        if _deprecated_kwargs:
+            raise TypeError(
+                f"Unexpected keyword arguments: {list(_deprecated_kwargs.keys())}"
+            )
         points_array = np.asarray(points, dtype=np.float32)
         if (
             points_array.ndim != 3

@@ -67,7 +67,8 @@ class ViserTunnel:
         def call_on_disconnect() -> None:
             try:
                 self._disconnect_event.wait()
-            except EOFError:
+            except (EOFError, BrokenPipeError, ConnectionResetError):
+                # Manager already gone; see wait_job in on_connect.
                 return
             callback()
 
@@ -93,7 +94,10 @@ class ViserTunnel:
                 # race-free.
                 if self._shared_state["status"] != "connected":
                     return
-            except EOFError:
+            except (EOFError, BrokenPipeError, ConnectionResetError):
+                # Manager already gone (interpreter teardown after a failed
+                # tunnel) -- the same trio close() tolerates when it sets
+                # _connect_event; the proxy read can raise any of them.
                 return
             callback(self._shared_state["max_conn_count"])
 
