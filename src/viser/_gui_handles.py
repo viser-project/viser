@@ -1440,6 +1440,10 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
         gui_api._handles_in_foreign_containers.pop(self._impl.uuid, None)
 
 
+class GuiRowHandle(GuiFolderHandle):
+    """Use as a context to place GUI elements side by side."""
+
+
 class GuiFormHandle(GuiFolderHandle):
     """Use as a context to place GUI elements into a form.
 
