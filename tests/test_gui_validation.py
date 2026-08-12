@@ -14,6 +14,8 @@ import pytest
 import viser
 import viser._client_autobuild
 
+from .utils import viser_server
+
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_add_dropdown_rejects_empty_options() -> None:
@@ -45,51 +47,51 @@ def test_folder_context_rejects_overlapping_entry() -> None:
     second enter -- self-nesting or a concurrent enter from another thread --
     raises instead of corrupting the first block's restore slot. Sequential
     re-entry stays legal."""
-    server = viser.ViserServer()
-    folder = server.gui.add_folder("F")
+    with viser_server() as server:
+        folder = server.gui.add_folder("F")
 
-    # Self-nesting.
-    with folder:
-        with pytest.raises(RuntimeError, match="one active"):
-            with folder:
-                pass
-
-    # Concurrent entry from another thread while the block is held open.
-    entered = threading.Event()
-    release = threading.Event()
-
-    def hold_open() -> None:
+        # Self-nesting.
         with folder:
-            entered.set()
-            release.wait(timeout=5.0)
+            with pytest.raises(RuntimeError, match="one active"):
+                with folder:
+                    pass
 
-    thread = threading.Thread(target=hold_open)
-    thread.start()
-    try:
-        assert entered.wait(timeout=5.0)
-        with pytest.raises(RuntimeError, match="another thread"):
+        # Concurrent entry from another thread while the block is held open.
+        entered = threading.Event()
+        release = threading.Event()
+
+        def hold_open() -> None:
             with folder:
-                pass
-    finally:
-        release.set()
-        thread.join(timeout=5.0)
-    assert not thread.is_alive()
+                entered.set()
+                release.wait(timeout=5.0)
 
-    # Sequential re-entry after both blocks closed works, and elements land
-    # in the folder.
-    with folder:
-        button = server.gui.add_button("ok")
-    assert button._impl.parent_container_id == folder._impl.uuid
+        thread = threading.Thread(target=hold_open)
+        thread.start()
+        try:
+            assert entered.wait(timeout=5.0)
+            with pytest.raises(RuntimeError, match="another thread"):
+                with folder:
+                    pass
+        finally:
+            release.set()
+            thread.join(timeout=5.0)
+        assert not thread.is_alive()
+
+        # Sequential re-entry after both blocks closed works, and elements
+        # land in the folder.
+        with folder:
+            button = server.gui.add_button("ok")
+        assert button._impl.parent_container_id == folder._impl.uuid
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_tab_context_rejects_overlapping_entry() -> None:
     """Same overlapping-entry contract for tab handles."""
-    server = viser.ViserServer()
-    tab = server.gui.add_tab_group().add_tab("T")
-    with tab:
-        with pytest.raises(RuntimeError, match="one active"):
-            with tab:
-                pass
-    with tab:  # Sequential re-entry is fine.
-        server.gui.add_button("ok")
+    with viser_server() as server:
+        tab = server.gui.add_tab_group().add_tab("T")
+        with tab:
+            with pytest.raises(RuntimeError, match="one active"):
+                with tab:
+                    pass
+        with tab:  # Sequential re-entry is fine.
+            server.gui.add_button("ok")

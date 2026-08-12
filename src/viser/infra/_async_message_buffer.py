@@ -20,29 +20,6 @@ from typing import (
 from ._messages import Message
 
 
-def _entity_state_key(message: Message) -> Optional[Tuple[str, str]]:
-    """The (entity_type, entity_id) coordinates under which a message is
-    indexed in ``AsyncMessageBuffer.ids_from_entity_state_key``, or None for
-    messages that carry no per-entity state.
-
-    This is the materialized form of ``Message.targets_entity_state``: a
-    message is indexed under exactly the keys for which that predicate
-    returns True (update messages under their declared entity, phase-less
-    name-keyed messages under ``("scene", name)``). The two must never
-    disagree -- the index exists so per-entity purges don't scan the buffer,
-    not to redefine the taxonomy."""
-    phase = message.lifecycle_phase
-    if phase in ("update_dict", "update_simple"):
-        if message.entity_type is not None and message.entity_id_field is not None:
-            return (message.entity_type, getattr(message, message.entity_id_field))
-        return None
-    if phase is None:
-        name = getattr(message, "name", None)
-        if name is not None:
-            return ("scene", name)
-    return None
-
-
 @dataclasses.dataclass
 class AsyncMessageBuffer:
     """Async iterable for keeping a persistent buffer of messages.
@@ -60,11 +37,11 @@ class AsyncMessageBuffer:
     ids_from_entity_state_key: Dict[Tuple[str, str], Set[int]] = dataclasses.field(
         default_factory=dict
     )
-    """Buffered per-entity state messages, indexed by ``_entity_state_key``.
-    Keeps same-name replacement, remove-time update purges, and the GC sweep
-    O(per-entity messages) instead of O(buffer). Maintained under
-    ``buffer_lock`` by every path that inserts into or deletes from
-    ``message_from_id``."""
+    """Buffered per-entity state messages, indexed by
+    ``Message.entity_state_key()``. Keeps same-name replacement, remove-time
+    update purges, and the GC sweep O(per-entity messages) instead of
+    O(buffer). Maintained under ``buffer_lock`` by every path that inserts
+    into or deletes from ``message_from_id``."""
 
     buffer_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     """Lock to prevent race conditions when pushing messages from different threads."""
@@ -122,7 +99,7 @@ class AsyncMessageBuffer:
         redundancy_key = message.redundancy_key()
         if self.id_from_redundancy_key.get(redundancy_key) == message_id:
             del self.id_from_redundancy_key[redundancy_key]
-        entity_key = _entity_state_key(message)
+        entity_key = message.entity_state_key()
         if entity_key is not None:
             ids = self.ids_from_entity_state_key.get(entity_key)
             if ids is not None:
@@ -184,10 +161,9 @@ class AsyncMessageBuffer:
                 stacklevel=4,
             )
 
-        # Add message to buffer.
+        # Pre-compute per-message keys outside the lock.
         redundancy_key = message.redundancy_key()
-
-        # Pre-compute entity coordinates outside the lock.
+        entity_key = message.entity_state_key()
         purge_entity_type: str | None = None
         purge_entity_id: str | None = None
         if (
@@ -203,32 +179,27 @@ class AsyncMessageBuffer:
             # removed entity leaves no residue in the buffer. (Create+Remove
             # coalesce via the redundancy key below; Updates use a separate
             # namespace, so they need explicit purging.) Resolved through the
-            # entity-state index; only the update phases are purged here --
-            # phase-less name-keyed messages in the same index bucket are
-            # left for remove()'s own explicit empty-binding broadcasts.
+            # entity-state index; the phase-less name-keyed messages that
+            # share the bucket are left for remove()'s own explicit
+            # empty-binding broadcasts.
             if purge_entity_type is not None:
                 assert purge_entity_id is not None
                 indexed_ids = self.ids_from_entity_state_key.get(
                     (purge_entity_type, purge_entity_id)
                 )
                 if indexed_ids:
-                    stale_ids = [
-                        mid
-                        for mid in indexed_ids
-                        if self.message_from_id[mid].lifecycle_phase
-                        in ("update_dict", "update_simple")
-                    ]
-                    for mid in stale_ids:
-                        self.pop_message_locked(mid)
+                    for mid in tuple(indexed_ids):
+                        if self.message_from_id[mid].lifecycle_phase is not None:
+                            self.pop_message_locked(mid)
 
             new_message_id = self.message_counter
             self.message_from_id[new_message_id] = message
             self.message_counter += 1
-            entity_key = _entity_state_key(message)
             if entity_key is not None:
-                self.ids_from_entity_state_key.setdefault(entity_key, set()).add(
-                    new_message_id
-                )
+                ids = self.ids_from_entity_state_key.get(entity_key)
+                if ids is None:
+                    ids = self.ids_from_entity_state_key[entity_key] = set()
+                ids.add(new_message_id)
 
             # If an existing message with the same key already exists in our buffer, we
             # don't need the old one anymore. :-)

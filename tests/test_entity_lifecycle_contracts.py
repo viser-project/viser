@@ -326,36 +326,31 @@ def test_same_name_readd_purges_stale_state_only() -> None:
     the buffer's entity-state index; the sibling invariant tests in
     test_message_buffer.py pin the index itself, this pins the end-to-end
     replacement path."""
-    from .test_message_buffer import _assert_entity_index_consistent
+    from .infra_utils import assert_entity_index_consistent, broadcast_messages
+    from .utils import viser_server
 
-    server = viser.ViserServer()
-    buf = server._websock_server._broadcast_buffer
+    with viser_server() as server:
+        bystander = server.scene.add_frame("/bystander")
+        bystander.position = (7.0, 8.0, 9.0)
 
-    bystander = server.scene.add_frame("/bystander")
-    bystander.position = (7.0, 8.0, 9.0)
+        target = server.scene.add_frame("/target")
+        target.position = (9.0, 9.0, 9.0)
+        server.scene.add_frame("/target")  # Same-name replacement.
 
-    target = server.scene.add_frame("/target")
-    target.position = (9.0, 9.0, 9.0)
-    server.scene.add_frame("/target")  # Same-name replacement.
+        def positions_for(name: str) -> list:
+            return [
+                m.position
+                for m in broadcast_messages(server)
+                if isinstance(m, SetPositionMessage) and m.name == name
+            ]
 
-    target_positions = [
-        m.position
-        for m in buf.message_from_id.values()
-        if isinstance(m, SetPositionMessage) and m.name == "/target"
-    ]
-    # The old pose is purged; what remains is the replacement's forced
-    # default-pose broadcast (which live clients need, since they keep node
-    # state across same-name creates).
-    assert target_positions == [(0.0, 0.0, 0.0)]
+        # The old pose is purged; what remains is the replacement's forced
+        # default-pose broadcast (which live clients need, since they keep
+        # node state across same-name creates).
+        assert positions_for("/target") == [(0.0, 0.0, 0.0)]
+        assert positions_for("/bystander") == [(7.0, 8.0, 9.0)]
 
-    bystander_positions = [
-        m.position
-        for m in buf.message_from_id.values()
-        if isinstance(m, SetPositionMessage) and m.name == "/bystander"
-    ]
-    assert bystander_positions == [(7.0, 8.0, 9.0)]
-
-    _assert_entity_index_consistent(buf)
+        assert_entity_index_consistent(server._websock_server._broadcast_buffer)
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)

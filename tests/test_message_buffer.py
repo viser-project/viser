@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Dict, Generator, Set, Tuple
+from typing import Generator
 
 from viser import _messages as vm
-from viser.infra._async_message_buffer import AsyncMessageBuffer, _entity_state_key
+from viser.infra._async_message_buffer import AsyncMessageBuffer
 
+from .infra_utils import assert_entity_index_consistent
 from .thread_isolation import run_isolated
 
 
@@ -64,25 +65,6 @@ def _sync_buffer() -> Generator[AsyncMessageBuffer, None, None]:
         loop.close()
 
 
-def _assert_entity_index_consistent(buffer: AsyncMessageBuffer) -> None:
-    """The entity-state index must be exactly the index recomputed from the
-    buffer's contents -- no stale ids, no missing ids, no empty buckets --
-    and bucket membership must agree with ``Message.targets_entity_state``,
-    the taxonomy the index materializes."""
-    expected: Dict[Tuple[str, str], Set[int]] = {}
-    for mid, message in buffer.message_from_id.items():
-        key = _entity_state_key(message)
-        if key is not None:
-            expected.setdefault(key, set()).add(mid)
-    assert buffer.ids_from_entity_state_key == expected
-
-    probes = set(buffer.ids_from_entity_state_key) | {("scene", "/never-added")}
-    for probe in probes:
-        for mid, message in buffer.message_from_id.items():
-            in_bucket = mid in buffer.ids_from_entity_state_key.get(probe, set())
-            assert in_bucket == message.targets_entity_state(*probe)
-
-
 def _frame_message(name: str) -> vm.FrameMessage:
     return vm.FrameMessage(
         name=name,
@@ -107,17 +89,17 @@ def test_entity_state_index_tracks_buffer_mutations() -> None:
         buffer.push(vm.SetSceneNodeClickBindingsMessage("/a", bindings=()))
         buffer.push(_frame_message("/b"))
         buffer.push(vm.SetPositionMessage("/b", (0.0, 1.0, 0.0)))
-        _assert_entity_index_consistent(buffer)
+        assert_entity_index_consistent(buffer)
 
         # Redundancy replacement: a second position update for /a supersedes
         # the first in-place; the index must drop the replaced id.
         buffer.push(vm.SetPositionMessage("/a", (2.0, 0.0, 0.0)))
-        _assert_entity_index_consistent(buffer)
+        assert_entity_index_consistent(buffer)
         assert len(buffer.ids_from_entity_state_key[("scene", "/a")]) == 3
 
         # Remove-phase push purges /a's pending updates (but not bindings).
         buffer.push(vm.RemoveSceneNodeMessage("/a"))
-        _assert_entity_index_consistent(buffer)
+        assert_entity_index_consistent(buffer)
 
         # Predicate-based removal keeps the index consistent too.
         buffer.remove_from_buffer(
@@ -126,7 +108,7 @@ def test_entity_state_index_tracks_buffer_mutations() -> None:
                 and m.lifecycle_phase == "update_simple"
             )
         )
-        _assert_entity_index_consistent(buffer)
+        assert_entity_index_consistent(buffer)
 
 
 def test_remove_entity_state_matches_predicate_purge() -> None:
@@ -154,7 +136,7 @@ def test_remove_entity_state_matches_predicate_purge() -> None:
         buffer.remove_entity_state_from_buffer("scene", "/a")
 
         assert before - set(buffer.message_from_id) == expected_removed
-        _assert_entity_index_consistent(buffer)
+        assert_entity_index_consistent(buffer)
         # /a's create and /b's messages survive.
         survivors = {type(m).__name__ for m in buffer.message_from_id.values()}
         assert "FrameMessage" in survivors
@@ -165,7 +147,7 @@ def test_remove_entity_state_matches_predicate_purge() -> None:
 
         # Purging an entity with no state is a no-op.
         buffer.remove_entity_state_from_buffer("scene", "/never-added")
-        _assert_entity_index_consistent(buffer)
+        assert_entity_index_consistent(buffer)
 
 
 def test_remove_phase_push_purges_updates_but_not_bindings() -> None:
@@ -183,4 +165,4 @@ def test_remove_phase_push_purges_updates_but_not_bindings() -> None:
         assert "SetPositionMessage" not in kinds
         assert "SetSceneNodeClickBindingsMessage" in kinds
         assert "RemoveSceneNodeMessage" in kinds
-        _assert_entity_index_consistent(buffer)
+        assert_entity_index_consistent(buffer)

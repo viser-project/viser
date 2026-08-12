@@ -953,6 +953,42 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self._impl._last_published_click_bindings = bindings
 
 
+class _SupportsThickness(Protocol):
+    """Line-style props shared by every handle carrying the deprecated
+    ``line_width`` alias."""
+
+    thickness: float
+    thickness_units: Literal["screen", "world"]
+
+
+def _get_deprecated_line_width(handle: _SupportsThickness) -> float:
+    """Shared body of the deprecated ``line_width`` getters."""
+    warnings.warn(
+        "The 'line_width' property is deprecated. Use 'thickness' instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return handle.thickness
+
+
+def _set_deprecated_line_width(handle: _SupportsThickness, value: float) -> None:
+    """Shared body of the deprecated ``line_width`` setters."""
+    warnings.warn(
+        "The 'line_width' property is deprecated; assigning it forces "
+        "thickness_units='screen' so the value keeps its historical "
+        "pixel meaning. Use 'thickness' with 'thickness_units' instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    # line_width was always screen-space pixels; pin the units so the
+    # assigned value keeps that meaning even on a handle created with the
+    # new world-space thickness defaults. Units first: on a live client the
+    # transient (old thickness, "screen") state renders as a briefly-thin
+    # line rather than a world-units-wide ribbon.
+    handle.thickness_units = "screen"
+    handle.thickness = value
+
+
 class CameraFrustumHandle(
     _RaycastSupportedSceneNodeHandle,
     _messages.CameraFrustumProps,
@@ -968,30 +1004,12 @@ class CameraFrustumHandle(
             Use 'thickness' instead; it is interpreted in the units given
             by 'thickness_units'.
         """
-        warnings.warn(
-            "The 'line_width' property is deprecated. Use 'thickness' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.thickness
+        return _get_deprecated_line_width(self)
 
     @line_width.setter
     @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
     def line_width(self, value: float) -> None:
-        warnings.warn(
-            "The 'line_width' property is deprecated; assigning it forces "
-            "thickness_units='screen' so the value keeps its historical "
-            "pixel meaning. Use 'thickness' with 'thickness_units' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # line_width was always screen-space pixels; pin the units so the
-        # assigned value keeps that meaning even on a handle created with
-        # the new world-space thickness defaults. Units first: on a live
-        # client the transient (old thickness, "screen") state renders as a
-        # briefly-thin line rather than a world-units-wide ribbon.
-        self.thickness_units = "screen"
-        self.thickness = value
+        _set_deprecated_line_width(self, value)
 
     _image: np.ndarray | None
     _jpeg_quality: int | None
@@ -1488,30 +1506,12 @@ class LineSegmentsHandle(
             Use 'thickness' instead; it is interpreted in the units given
             by 'thickness_units'.
         """
-        warnings.warn(
-            "The 'line_width' property is deprecated. Use 'thickness' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.thickness
+        return _get_deprecated_line_width(self)
 
     @line_width.setter
     @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
     def line_width(self, value: float) -> None:
-        warnings.warn(
-            "The 'line_width' property is deprecated; assigning it forces "
-            "thickness_units='screen' so the value keeps its historical "
-            "pixel meaning. Use 'thickness' with 'thickness_units' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # line_width was always screen-space pixels; pin the units so the
-        # assigned value keeps that meaning even on a handle created with
-        # the new world-space thickness defaults. Units first: on a live
-        # client the transient (old thickness, "screen") state renders as a
-        # briefly-thin line rather than a world-units-wide ribbon.
-        self.thickness_units = "screen"
-        self.thickness = value
+        _set_deprecated_line_width(self, value)
 
 
 class ArrowsHandle(
@@ -1536,30 +1536,12 @@ class SplineCatmullRomHandle(
             Use 'thickness' instead; it is interpreted in the units given
             by 'thickness_units'.
         """
-        warnings.warn(
-            "The 'line_width' property is deprecated. Use 'thickness' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.thickness
+        return _get_deprecated_line_width(self)
 
     @line_width.setter
     @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
     def line_width(self, value: float) -> None:
-        warnings.warn(
-            "The 'line_width' property is deprecated; assigning it forces "
-            "thickness_units='screen' so the value keeps its historical "
-            "pixel meaning. Use 'thickness' with 'thickness_units' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # line_width was always screen-space pixels; pin the units so the
-        # assigned value keeps that meaning even on a handle created with
-        # the new world-space thickness defaults. Units first: on a live
-        # client the transient (old thickness, "screen") state renders as a
-        # briefly-thin line rather than a world-units-wide ribbon.
-        self.thickness_units = "screen"
-        self.thickness = value
+        _set_deprecated_line_width(self, value)
 
     @property
     @deprecated("The 'positions' property is deprecated. Use 'points' instead.")
@@ -1606,30 +1588,12 @@ class SplineCubicBezierHandle(
             Use 'thickness' instead; it is interpreted in the units given
             by 'thickness_units'.
         """
-        warnings.warn(
-            "The 'line_width' property is deprecated. Use 'thickness' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.thickness
+        return _get_deprecated_line_width(self)
 
     @line_width.setter
     @deprecated("The 'line_width' property is deprecated. Use 'thickness' instead.")
     def line_width(self, value: float) -> None:
-        warnings.warn(
-            "The 'line_width' property is deprecated; assigning it forces "
-            "thickness_units='screen' so the value keeps its historical "
-            "pixel meaning. Use 'thickness' with 'thickness_units' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # line_width was always screen-space pixels; pin the units so the
-        # assigned value keeps that meaning even on a handle created with
-        # the new world-space thickness defaults. Units first: on a live
-        # client the transient (old thickness, "screen") state renders as a
-        # briefly-thin line rather than a world-units-wide ribbon.
-        self.thickness_units = "screen"
-        self.thickness = value
+        _set_deprecated_line_width(self, value)
 
     @property
     @deprecated(
