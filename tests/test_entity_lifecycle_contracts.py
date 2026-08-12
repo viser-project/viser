@@ -319,6 +319,46 @@ def test_gc_two_pass_purges_update_buffered_after_tombstone() -> None:
 
 
 @patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_same_name_readd_purges_stale_state_only() -> None:
+    """Same-name replacement purges the OLD node's buffered per-entity state
+    (a late joiner must never apply the old pose to the new node) while
+    leaving other nodes' buffered state untouched. The purge goes through
+    the buffer's entity-state index; the sibling invariant tests in
+    test_message_buffer.py pin the index itself, this pins the end-to-end
+    replacement path."""
+    from .test_message_buffer import _assert_entity_index_consistent
+
+    server = viser.ViserServer()
+    buf = server._websock_server._broadcast_buffer
+
+    bystander = server.scene.add_frame("/bystander")
+    bystander.position = (7.0, 8.0, 9.0)
+
+    target = server.scene.add_frame("/target")
+    target.position = (9.0, 9.0, 9.0)
+    server.scene.add_frame("/target")  # Same-name replacement.
+
+    target_positions = [
+        m.position
+        for m in buf.message_from_id.values()
+        if isinstance(m, SetPositionMessage) and m.name == "/target"
+    ]
+    # The old pose is purged; what remains is the replacement's forced
+    # default-pose broadcast (which live clients need, since they keep node
+    # state across same-name creates).
+    assert target_positions == [(0.0, 0.0, 0.0)]
+
+    bystander_positions = [
+        m.position
+        for m in buf.message_from_id.values()
+        if isinstance(m, SetPositionMessage) and m.name == "/bystander"
+    ]
+    assert bystander_positions == [(7.0, 8.0, 9.0)]
+
+    _assert_entity_index_consistent(buf)
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
 def test_gc_purges_set_position_after_scene_remove() -> None:
     """Scene-node pose ``Set*Message`` variants (declared ``update_simple``)
     must be purged when their target scene node has a tombstone, so a reused
