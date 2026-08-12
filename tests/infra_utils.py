@@ -43,3 +43,15 @@ def make_synthetic_client(server: viser.ViserServer, client_id: int) -> ClientHa
         client_id, _ClientHandleState(buffer, server._event_loop)
     )
     return ClientHandle(conn, server)
+
+
+def assert_entity_index_consistent(buffer: AsyncMessageBuffer) -> None:
+    """The buffer's entity-state index must be exactly the index recomputed
+    from its contents via ``Message.entity_state_key()`` -- no stale ids, no
+    missing ids, no empty buckets."""
+    expected: dict = {}
+    for mid, message in buffer.message_from_id.items():
+        key = message.entity_state_key()
+        if key is not None:
+            expected.setdefault(key, set()).add(mid)
+    assert buffer.ids_from_entity_state_key == expected
