@@ -890,11 +890,13 @@ class GuiTabHandle:
 
     def __enter__(self) -> GuiTabHandle:
         if self._container_id_restore is not None:
-            # See GuiFolderHandle.__enter__: a single restore slot can't nest
-            # the same tab inside itself.
+            # See GuiFolderHandle.__enter__: a single restore slot can't
+            # support overlapping `with` blocks on the same handle.
             raise RuntimeError(
-                "This GuiTabHandle is already active as a context; it cannot "
-                "be re-entered inside itself."
+                "This GuiTabHandle is already active as a context -- either "
+                "nested inside its own `with` block, or entered concurrently "
+                "from another thread. A handle supports only one active "
+                "`with` block at a time (sequential re-entry is fine)."
             )
         self._container_id_restore = (
             self._parent._impl.gui_api._snapshot_container_context()
@@ -1396,13 +1398,17 @@ class GuiFolderHandle(_GuiHandle[None], GuiFolderProps):
 
     def __enter__(self) -> Self:
         if self._container_id_restore is not None:
-            # A single restore slot can't nest the SAME handle inside itself;
-            # doing so would strand the container pointer inside this folder,
-            # silently misplacing every later element. (Sequential re-entry --
-            # `with f: ...` twice -- is fine; __exit__ clears the slot.)
+            # A single restore slot can't support overlapping `with` blocks on
+            # the SAME handle: self-nesting would strand the container pointer
+            # inside this folder, silently misplacing every later element, and
+            # a concurrent enter from another thread would corrupt the other
+            # block's restore. (Sequential re-entry -- `with f: ...` twice --
+            # is fine; __exit__ clears the slot.)
             raise RuntimeError(
-                "This GuiFolderHandle is already active as a context; it "
-                "cannot be re-entered inside itself."
+                "This GuiFolderHandle is already active as a context -- either "
+                "nested inside its own `with` block, or entered concurrently "
+                "from another thread. A handle supports only one active "
+                "`with` block at a time (sequential re-entry is fine)."
             )
         self._container_id_restore = self._impl.gui_api._snapshot_container_context()
         self._impl.gui_api._set_container_uuid(self._impl.uuid)

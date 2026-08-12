@@ -105,6 +105,23 @@ def test_handle_line_width_alias(server: viser.ViserServer) -> None:
     assert handle.thickness == 0.07
 
 
+def test_handle_line_width_setter_forces_screen_units(
+    server: viser.ViserServer,
+) -> None:
+    """Assigning the deprecated alias keeps its historical pixel meaning:
+    even on a handle created with world-space thickness, the setter pins
+    thickness_units to "screen" so a v1.0.x "3 px" intent doesn't become 3
+    world units."""
+    handle = server.scene.add_line_segments(
+        "/segments-world", points=_SEGMENT_POINTS, colors=(255, 0, 0)
+    )
+    assert handle.thickness_units == "world"
+    with pytest.warns(DeprecationWarning, match="screen"):
+        handle.line_width = 3.0
+    assert handle.thickness == 3.0
+    assert handle.thickness_units == "screen"
+
+
 def test_unknown_kwargs_still_rejected(server: viser.ViserServer) -> None:
     with pytest.raises(TypeError, match="Unexpected keyword"):
         server.scene.add_line_segments(
