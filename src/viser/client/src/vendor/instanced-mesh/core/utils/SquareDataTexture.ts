@@ -385,10 +385,23 @@ export class SquareDataTexture extends DataTexture {
         ? gl.NONE
         : gl.BROWSER_DEFAULT_WEBGL;
 
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, this.flipY);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, this.premultiplyAlpha);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, this.unpackAlignment);
-    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, unpackConversion);
+    // LOCAL PATCH: go through renderer.state so three's pixel-store cache
+    // (added in r184) stays coherent. Raw gl.pixelStorei calls here would
+    // leave stale cache entries, making three skip its own pixelStorei before
+    // later texture uploads (e.g. flipY image textures uploading un-flipped).
+    (renderer.state as any).pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, this.flipY);
+    (renderer.state as any).pixelStorei(
+      gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,
+      this.premultiplyAlpha,
+    );
+    (renderer.state as any).pixelStorei(
+      gl.UNPACK_ALIGNMENT,
+      this.unpackAlignment,
+    );
+    (renderer.state as any).pixelStorei(
+      gl.UNPACK_COLORSPACE_CONVERSION_WEBGL,
+      unpackConversion,
+    );
 
     for (const { count, row } of info) {
       gl.texSubImage2D(

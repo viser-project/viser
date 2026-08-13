@@ -119,3 +119,23 @@ lists every divergence from upstream.
   invariant to preserve is "every `instanceIndex` dereference in a hook is
   behind a null gate, and dispose leaves no geometry (main or LOD) retaining
   the attribute."
+
+### 6. Partial texture updates go through three's pixel-store state cache
+
+- **File:** `core/utils/SquareDataTexture.ts`
+- **What:** the four `gl.pixelStorei(...)` calls in `updateRows` (unpack
+  flip-Y, premultiply-alpha, alignment, colorspace conversion) are routed
+  through `renderer.state.pixelStorei(...)` instead of the raw WebGL
+  context.
+- **Why:** three r184 added a pixel-store parameter cache to `WebGLState`,
+  and `WebGLTextures` now skips redundant `gl.pixelStorei` calls when the
+  cached value matches. Raw calls here silently change the real GL state
+  behind the cache's back, so a later three-managed upload with a matching
+  cached value (e.g. a `flipY: true` image texture, the default for
+  `TextureLoader`) skips its own `pixelStorei` and uploads with the wrong
+  unpack state -- upside-down images, wrong alpha, or wrong colors. Before
+  r184 three re-asserted these parameters unconditionally, so the raw calls
+  were harmless. No save/restore is needed: three re-asserts through the
+  now-coherent cache before each of its own uploads.
+- **Re-apply check:** every `pixelStorei` in this file must target
+  `renderer.state`, never the raw `gl` context.
