@@ -1,5 +1,6 @@
 import {
   Checkbox,
+  Collapse,
   ColorInput,
   Select,
   TextInput,
@@ -22,6 +23,16 @@ export const theme = createTheme({
     medium: "500",
   },
   components: {
+    // Mantine 9's Collapse hides collapsed content with <Activity>, which
+    // unmounts effects in the hidden subtree (e.g. an upload-progress
+    // notification driven from a collapsed panel would freeze). Mantine 8
+    // kept collapsed content mounted with effects running via display:none;
+    // preserve that behavior.
+    Collapse: Collapse.extend({
+      defaultProps: {
+        keepMountedMode: "display-none",
+      },
+    }),
     Checkbox: Checkbox.extend({
       defaultProps: {
         radius: "xs",
