@@ -4,7 +4,6 @@ import { vanillaExtractPlugin } from "@vanilla-extract/vite-plugin";
 
 import viteTsconfigPaths from "vite-tsconfig-paths";
 import svgrPlugin from "vite-plugin-svgr";
-import eslint from "vite-plugin-eslint";
 import browserslistToEsbuild from "browserslist-to-esbuild";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { compressHtml } from "./vite-plugin-compress-html.mts";
@@ -19,8 +18,6 @@ export default defineConfig(({ command }) => {
   return {
     plugins: [
       react(),
-      // ESLint only needed during development.
-      ...(isDev ? [eslint({ failOnError: false, failOnWarning: false })] : []),
       viteTsconfigPaths(),
       svgrPlugin(),
       vanillaExtractPlugin(),
@@ -39,8 +36,7 @@ export default defineConfig(({ command }) => {
       // Disable code splitting to ensure single file output.
       rollupOptions: {
         output: {
-          manualChunks: undefined,
-          inlineDynamicImports: true,
+          codeSplitting: false,
         },
       },
     },
@@ -50,7 +46,7 @@ export default defineConfig(({ command }) => {
       ...(!isDev && { plugins: () => [react()] }),
       rollupOptions: {
         output: {
-          inlineDynamicImports: true,
+          codeSplitting: false,
         },
       },
     },
