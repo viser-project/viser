@@ -20,7 +20,7 @@ export const SkinnedMesh = React.forwardRef<
   const viewer = React.useContext(ViewerContext)!;
 
   // Reference to bones for animation updates.
-  const bonesRef = React.useRef<THREE.Bone[]>();
+  const bonesRef = React.useRef<THREE.Bone[] | undefined>(undefined);
   // The exact skinnedMeshState entry this instance has claimed (set by the
   // init effect below). MessageHandler builds a FRESH entry object per
   // SkinnedMeshMessage, so on a same-tick delete + re-add of the same name a

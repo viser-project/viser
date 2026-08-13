@@ -111,7 +111,7 @@ function OrbitOriginTool({
   crosshairVisible,
 }: {
   forceShow: boolean;
-  pivotRef: React.RefObject<THREE.Group>;
+  pivotRef: React.RefObject<THREE.Group | null>;
   onDragStart: () => void;
   onPivotChange: (matrix: THREE.Matrix4) => void;
   update: () => void;

@@ -59,7 +59,7 @@ export const BatchedLabelManager: React.FC<{
     Set<string>
   >(new Set());
   const backgroundInstanceRefsRef = React.useRef<
-    Map<string, React.RefObject<THREE.Object3D>>
+    Map<string, React.RefObject<THREE.Object3D | null>>
   >(new Map());
 
   // Dirty flags for batching sync() calls - synced in useFrame.

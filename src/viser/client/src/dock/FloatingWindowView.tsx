@@ -784,8 +784,8 @@ function FloatingStackDivider({
   pinnedPx,
   setWindowHeight,
 }: {
-  stackRef: React.RefObject<HTMLDivElement>;
-  paperRef: React.RefObject<HTMLDivElement>;
+  stackRef: React.RefObject<HTMLDivElement | null>;
+  paperRef: React.RefObject<HTMLDivElement | null>;
   dividerIndex: number;
   stack: GroupId[];
   /** False while the window is collapsed (all bars, D38): nothing to trade,

@@ -613,7 +613,7 @@ function SplitDivider({
   /** False when both sides of the divider are minimized strips: nothing can
    * resize, so it shows no resize cursor and ignores drags. */
   resizable: boolean;
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   onResize: (deltaPx: number, containerPx: number) => void;
   /** Revert whatever per-frame onResize calls applied (Escape mid-drag). */
   onCancel: () => void;

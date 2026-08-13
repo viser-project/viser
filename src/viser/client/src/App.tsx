@@ -1059,7 +1059,9 @@ function Viewer2DCanvas() {
 
   return (
     <canvas
-      ref={(el) => (viewer.mutable.current.canvas2d = el)}
+      ref={(el) => {
+        viewer.mutable.current.canvas2d = el;
+      }}
       style={{
         position: "absolute",
         zIndex: 1,

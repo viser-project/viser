@@ -3,7 +3,7 @@ import React from "react";
 import { useDisclosure } from "@mantine/hooks";
 
 const BottomPanelContext = React.createContext<null | {
-  wrapperRef: React.RefObject<HTMLDivElement>;
+  wrapperRef: React.RefObject<HTMLDivElement | null>;
   expanded: boolean;
   toggleExpanded: () => void;
 }>(null);

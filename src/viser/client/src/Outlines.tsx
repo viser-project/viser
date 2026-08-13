@@ -58,8 +58,12 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
     const contextSize = gl.getDrawingBufferSize(new THREE.Vector2());
 
     const oldAngle = React.useRef(0);
-    const oldGeometry = React.useRef<THREE.BufferGeometry>();
-    const oldPosition = React.useRef<THREE.BufferAttribute>();
+    const oldGeometry = React.useRef<THREE.BufferGeometry | undefined>(
+      undefined,
+    );
+    const oldPosition = React.useRef<THREE.BufferAttribute | undefined>(
+      undefined,
+    );
     const oldPositionVersion = React.useRef(-1);
     // The creased clone WE own for the current outline mesh, or null when the
     // mesh shares the parent's geometry. Recording the disposable resource
