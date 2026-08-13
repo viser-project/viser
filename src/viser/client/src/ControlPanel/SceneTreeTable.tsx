@@ -329,7 +329,6 @@ function EditNodePropsInner({
       }
     }
     prevInitialValuesRef.current = initialValues;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeMessage]);
 
   const handleSubmit = (values: Record<string, string>) => {

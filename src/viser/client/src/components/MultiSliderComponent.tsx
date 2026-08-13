@@ -141,7 +141,6 @@ export function MultiSlider({
     };
     // `updateValue`/`getValueFromPosition` are captured at drag start, matching
     // the previous behavior (only the active thumb moves during a drag).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThumb, disabled]);
 
   const handleMouseDown = (event: React.MouseEvent) => {

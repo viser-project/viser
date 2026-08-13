@@ -397,7 +397,6 @@ function ControlPanelDockSync({
         ops.addFloatingPane(layout, CONTROL_PANEL_ID, x, y, width).layout,
     );
     // Initial placement only; later width changes are applied below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // THE placement coordinator: one pass over the control panel + every
@@ -590,7 +589,6 @@ function ControlPanelDockSync({
     // signature, not the layout object: per-frame gesture commits clone the
     // layout ~60x/s while the panel's element identity is stable, and each
     // re-run pays ~5 subtree querySelectors plus attribute writes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationKey, side, controlGroupId]);
 
   return <span ref={markerRef} style={{ display: "none" }} />;

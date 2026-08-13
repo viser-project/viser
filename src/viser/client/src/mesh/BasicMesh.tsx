@@ -41,7 +41,6 @@ export const BasicMesh = React.forwardRef<
     }
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geometry, message.props.vertices, message.props.faces]);
 
   // Clean up geometry when it changes.

@@ -54,7 +54,6 @@ function DockableTabGroup({
     dock.api.apply((layout) =>
       layoutOps.setAreaTabOrder(layout, areaId, tab_container_ids),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, orderKey, areaId, dock.api]);
 
   if (!visible) return null;

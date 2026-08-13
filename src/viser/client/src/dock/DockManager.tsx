@@ -861,7 +861,6 @@ export function DockManager({
       observer.observe(winEl),
     );
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [floatingWindowIds, reanchorFloats]);
 
   return (

@@ -248,7 +248,6 @@ export const FloatingWindowView = React.memo(function FloatingWindowView({
       heightAnim.current = null;
       el.style.overflow = "";
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapsed, pinnedPx]);
   React.useLayoutEffect(() => {
     const el = paperRef.current;

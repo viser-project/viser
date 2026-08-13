@@ -376,7 +376,6 @@ export function usePlacementCoordinator(
     // `dock.layout` is a dependency ON PURPOSE: it is what turns deferral into
     // a fixpoint (an anchor docking commits a layout, which re-runs the pass).
     // Every step dedups, so the steady-state pass is a cheap no-op scan.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     panels,
     panelPlacement,
