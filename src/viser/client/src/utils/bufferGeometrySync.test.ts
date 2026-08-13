@@ -199,11 +199,14 @@ describe("syncBufferGeometry", () => {
 });
 
 /**
- * Regression test for the BasicMesh in-place geometry path: computeVertexNormals
- * owns the 'normal' attribute and reuses it WITHOUT a size check, while
- * syncBufferGeometry's realloc (dispose) does not detach attributes. So after a
- * vertex-count change the stale, wrong-sized normal must be dropped, or normals
- * end up mismatched with positions (corrupted lighting).
+ * Regression test for the BasicMesh in-place geometry path: through three
+ * r183, computeVertexNormals owned the 'normal' attribute and reused it
+ * WITHOUT a size check, while syncBufferGeometry's realloc (dispose) does not
+ * detach attributes. So after a vertex-count change the stale, wrong-sized
+ * normal had to be dropped, or normals ended up mismatched with positions
+ * (corrupted lighting). three r184 added the size check upstream; we keep the
+ * explicit drop in BasicMesh.tsx anyway since it also releases the old GPU
+ * buffer promptly.
  */
 describe("BasicMesh normal-attribute sync on vertex-count change", () => {
   // Mirrors the exact sequence in BasicMesh.tsx.
@@ -250,7 +253,7 @@ describe("BasicMesh normal-attribute sync on vertex-count change", () => {
     }
   });
 
-  it("(control) reusing a stale normal without the drop mismatches counts", () => {
+  it("(control) three r184+ reallocates a stale normal on count mismatch", () => {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute(
       "position",
@@ -277,8 +280,9 @@ describe("BasicMesh normal-attribute sync on vertex-count change", () => {
       new Uint32Array([0, 1, 2, 3, 4, 5]),
     );
     geom.computeVertexNormals();
-    // Stale normal kept its old length -> mismatch (this is what the fix avoids).
-    expect(geom.getAttribute("normal").count).toBe(3);
+    // Through r183 the stale normal kept its old length (count 3) and
+    // corrupted lighting; r184+ detects the mismatch and reallocates.
+    expect(geom.getAttribute("normal").count).toBe(6);
     expect(geom.getAttribute("position").count).toBe(6);
   });
 });
