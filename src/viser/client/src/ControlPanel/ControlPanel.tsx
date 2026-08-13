@@ -236,7 +236,7 @@ function MobilePanelSection({ panel }: { panel: GuiPanelMessage }) {
           {chevron}
         </Box>
       )}
-      <Collapse in={expanded}>
+      <Collapse expanded={expanded}>
         {multiTab ? (
           ids.map((containerUuid) => (
             <Tabs.Panel value={containerUuid} key={containerUuid}>
@@ -292,7 +292,7 @@ export function ControlPanelContents({
   const showGenerated = useShowGenerated();
   return (
     <>
-      <Collapse in={!showGenerated || showSettings}>
+      <Collapse expanded={!showGenerated || showSettings}>
         <Box p="xs" pt="0.375em">
           <ServerControls />
         </Box>
@@ -300,7 +300,7 @@ export function ControlPanelContents({
       {/*As of Mantine 8.3.3, this `keepMounted` is necessary to prevent some
       intermittent problems with the initial GUI height being set to 0 when
       we're under high CPU load.*/}
-      <Collapse in={showGenerated && !showSettings} keepMounted>
+      <Collapse expanded={showGenerated && !showSettings} keepMounted>
         <MemoizedGeneratedGuiContainer containerUuid={ROOT_CONTAINER_ID} />
       </Collapse>
       {!showSettings && <PanelsFallback />}
@@ -626,7 +626,7 @@ export function ShareButton() {
                   </Button>
                 </Tooltip>
               </Flex>
-              <Collapse in={showQrCode}>
+              <Collapse expanded={showQrCode}>
                 <QRCode
                   value={shareUrl}
                   fgColor={colorScheme === "dark" ? "#ffffff" : "#000000"}

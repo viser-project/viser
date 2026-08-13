@@ -68,7 +68,7 @@ export default function FolderComponent({
           }}
         />
       </Paper>
-      <Collapse in={opened && !isEmpty}>
+      <Collapse expanded={opened && !isEmpty}>
         <Box pt="0.2em">
           <GuiComponentContext.Provider
             value={{
@@ -80,7 +80,7 @@ export default function FolderComponent({
           </GuiComponentContext.Provider>
         </Box>
       </Collapse>
-      <Collapse in={!(opened && !isEmpty)}>
+      <Collapse expanded={!(opened && !isEmpty)}>
         <Box p="xs"></Box>
       </Collapse>
     </Paper>

@@ -112,10 +112,10 @@ export default function FormComponent({
           />
         </Paper>
       </Tooltip>
-      <Collapse in={opened && !isEmpty}>
+      <Collapse expanded={opened && !isEmpty}>
         <Box pt="0.2em">{innerFormContents(false)}</Box>
       </Collapse>
-      <Collapse in={!(opened && !isEmpty)}>
+      <Collapse expanded={!(opened && !isEmpty)}>
         <Box p="xs"></Box>
       </Collapse>
     </Paper>

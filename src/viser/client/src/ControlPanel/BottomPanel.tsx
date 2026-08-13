@@ -90,7 +90,7 @@ BottomPanel.Contents = function BottomPanelContents({
 }) {
   const panelContext = React.useContext(BottomPanelContext)!;
   return (
-    <Collapse in={panelContext.expanded}>
+    <Collapse expanded={panelContext.expanded}>
       <Divider mx="xs" />
       {children}
     </Collapse>

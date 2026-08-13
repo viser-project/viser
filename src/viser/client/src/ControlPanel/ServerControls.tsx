@@ -181,7 +181,7 @@ export default function ServerControls() {
           />
         </Box>
         <Box mt="-0.4em">
-          <Collapse in={showDevSettings}>
+          <Collapse expanded={showDevSettings}>
             <Box mt="0.4em">
               <DevSettingsPanel devSettingsStore={viewer.useDevSettings} />
             </Box>

@@ -554,6 +554,9 @@ function NotificationsPanel({
       limit={10}
       containerWidth="20em"
       withinPortal={false}
+      // Mantine 9 changed the default so hovering one notification pauses
+      // the timers of all of them; keep the v8 per-notification behavior.
+      pauseResetOnHover="notification"
       styles={{
         root: {
           boxShadow: "0.1em 0 1em 0 rgba(0,0,0,0.1) !important",

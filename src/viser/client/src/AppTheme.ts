@@ -15,6 +15,12 @@ import { themeToVars } from "@mantine/vanilla-extract";
 export const theme = createTheme({
   fontFamily: "Inter",
   autoContrast: true,
+  // Preserve the Mantine 8 look: v9 changed defaultRadius sm -> md and the
+  // `medium` font weight 500 -> 600 across components.
+  defaultRadius: "sm",
+  fontWeights: {
+    medium: "500",
+  },
   components: {
     Checkbox: Checkbox.extend({
       defaultProps: {
