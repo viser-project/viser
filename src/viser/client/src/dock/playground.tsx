@@ -7,7 +7,14 @@ import "@mantine/core/styles.css";
 // Match the live app's base typography (loads the Inter font from index.css) so
 // the playground previews fonts/shadows exactly as production does.
 import "../index.css";
-import { ActionIcon, Box, MantineProvider, Text, Tooltip } from "@mantine/core";
+import {
+  ActionIcon,
+  Box,
+  MantineProvider,
+  Text,
+  Tooltip,
+  v8CssVariablesResolver,
+} from "@mantine/core";
 import {
   IconAdjustments,
   IconCloudCheck,
@@ -281,6 +288,9 @@ function Playground() {
   return (
     <MantineProvider
       theme={theme}
+      // Match the main app: keep the Mantine 8 light/subtle variant palette
+      // (see the cssVariablesResolver comment in App.tsx).
+      cssVariablesResolver={v8CssVariablesResolver}
       forceColorScheme={darkMode ? "dark" : "light"}
     >
       <Box style={{ width: "100vw", height: "100vh" }}>

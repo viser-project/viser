@@ -19,6 +19,7 @@ import {
   Divider,
   Image,
   MantineProvider,
+  v8CssVariablesResolver,
   Modal,
   Tooltip,
   createTheme,
@@ -366,6 +367,11 @@ function ViewerContents({
     <>
       <MantineProvider
         theme={mantineTheme}
+        // Mantine 9 changed the *-light CSS variables (light/subtle variant
+        // backgrounds) from translucent tints to opaque solids; in dark mode
+        // that turns e.g. every subtle ActionIcon's hover into a near-black
+        // fill instead of a soft lightening. Keep the v8 palette.
+        cssVariablesResolver={v8CssVariablesResolver}
         defaultColorScheme={darkMode ? "dark" : "light"}
         colorSchemeManager={{
           // Mock external color scheme manager. This prevents multiple Viser
