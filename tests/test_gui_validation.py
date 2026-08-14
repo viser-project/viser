@@ -95,3 +95,37 @@ def test_tab_context_rejects_overlapping_entry() -> None:
                     pass
         with tab:  # Sequential re-entry is fine.
             server.gui.add_button("ok")
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_slider_precision_covers_value_grid() -> None:
+    """Slider display precision must cover the value grid min + k*step (and
+    the clamped max), not just the step: with min=0.5, step=1.0 every legal
+    value ends in .5, and step-derived precision of 0 made the client's
+    number box display 2.5 as "3" and reject typed decimals."""
+    with viser_server() as server:
+
+        def precision_of(handle) -> int:
+            return handle._impl.props.precision
+
+        # Off-grid min: the original regression.
+        s = server.gui.add_slider("a", min=0.5, max=9.5, step=1.0, initial_value=2.5)
+        assert precision_of(s) == 1
+        # Integer grid stays integer (no float-noise regression).
+        s = server.gui.add_slider("b", min=0, max=10, step=1, initial_value=5)
+        assert precision_of(s) == 0
+        # Step finer than min/max.
+        s = server.gui.add_slider("c", min=0, max=1, step=0.01, initial_value=0.5)
+        assert precision_of(s) == 2
+        # Fractional min finer than step.
+        s = server.gui.add_slider("d", min=0.05, max=1.05, step=0.1, initial_value=0.05)
+        assert precision_of(s) == 2
+        # Off-grid max is a legal (clamped) value.
+        s = server.gui.add_slider("e", min=0, max=9.5, step=1, initial_value=0)
+        assert precision_of(s) == 1
+
+        # Multi-slider uses the same rule.
+        m = server.gui.add_multi_slider(
+            "f", min=0.5, max=9.5, step=1.0, initial_value=(1.5, 2.5)
+        )
+        assert precision_of(m) == 1

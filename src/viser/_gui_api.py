@@ -192,6 +192,20 @@ def _compute_precision_digits(x: float) -> int:
     return digits
 
 
+def _compute_slider_precision_digits(min: float, max: float, step: float) -> int:
+    """Display digits for a slider's value grid. A slider's legal values are
+    ``min + k * step`` clamped to ``max``, so their decimal digits are bounded
+    by the most precise of the three -- ``step`` alone is NOT enough: with
+    ``min=0.5, step=1.0`` every legal value ends in .5, and a step-derived
+    precision of 0 made the companion number box display 2.5 as "3" and
+    reject typed decimals."""
+    return builtins.max(
+        _compute_precision_digits(min),
+        _compute_precision_digits(max),
+        _compute_precision_digits(step),
+    )
+
+
 @dataclasses.dataclass
 class _RootGuiContainer:
     _children: dict[str, SupportsRemoveProtocol]
@@ -2527,7 +2541,7 @@ class GuiApi:
                         min=min,
                         max=max,
                         step=step,
-                        precision=_compute_precision_digits(step),
+                        precision=_compute_slider_precision_digits(min, max, step),
                         visible=visible,
                         disabled=disabled,
                         _marks=_build_slider_marks(marks),
@@ -2632,7 +2646,7 @@ class GuiApi:
                         visible=visible,
                         disabled=disabled,
                         fixed_endpoints=fixed_endpoints,
-                        precision=_compute_precision_digits(step),
+                        precision=_compute_slider_precision_digits(min, max, step),
                         _marks=_build_slider_marks(marks),
                     ),
                 ),
