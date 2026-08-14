@@ -47,6 +47,14 @@ export type ViewerMutable = {
   camera: THREE.PerspectiveCamera | null;
   backgroundMaterial: THREE.ShaderMaterial | null;
   cameraControl: CameraControls | null;
+  /** Server-configured max orbit distance. The camera-controls instance's
+   * own `maxDistance` is an EFFECTIVE bound that ratchets up to the current
+   * distance whenever the camera is placed beyond this configured value
+   * (server-set pose, initial camera): camera-controls clamps every user
+   * dolly to [min, max], so a hard bound teleported such cameras to the
+   * boundary on the first scroll tick. See the per-frame reconciliation in
+   * SynchronizedCameraControls. */
+  configuredMaxOrbitDistance: number;
 
   // Scene management.
   nodeRefFromName: {

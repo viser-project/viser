@@ -298,17 +298,34 @@ class CameraHandle:
                 "Camera look_at cannot equal position (zero look distance)."
             )
         z /= z_norm
-        y = tf.SO3.exp(z * np.pi) @ self._state.up_direction
-        y = y - np.dot(z, y) * z
-        y_norm = np.linalg.norm(y)
+
+        def perpendicular_part(up_candidate: np.ndarray) -> tuple[np.ndarray, float]:
+            y_c = tf.SO3.exp(z * np.pi) @ up_candidate
+            y_c = y_c - np.dot(z, y_c) * z
+            return y_c, float(np.linalg.norm(y_c))
+
+        y, y_norm = perpendicular_part(self._state.up_direction)
         if y_norm == 0.0:
-            # No component of up_direction is perpendicular to the view: it is
-            # zero, or parallel to (look_at - position). Reject rather than
-            # store/broadcast a NaN basis.
-            raise ValueError(
-                "Camera up_direction must be nonzero and not parallel to the "
-                "view direction (look_at - position)."
-            )
+            if np.linalg.norm(self._state.up_direction) == 0.0:
+                # A zero up vector carries no information at all; reject
+                # rather than store/broadcast a NaN basis.
+                raise ValueError("Camera up_direction must be nonzero.")
+            # up_direction is parallel to the view direction -- e.g. the
+            # canonical top-down pose (+Z up, looking straight down). The
+            # client's orbit controls clamp the pole instead of failing, so
+            # raising here broke camera setups that worked pre-1.1: degrade
+            # the same way. Prefer the previous orientation's up vector for
+            # continuity (matching the "minimize impact on orbit controls"
+            # policy above); fall back to the world axis least aligned with
+            # the view when that is also degenerate (e.g. a never-updated
+            # zeroed state). The client echoes its own resolved pose back,
+            # so any residual mismatch is transient.
+            prev_up = -tf.SO3(self._state.wxyz).as_matrix()[:, 1]
+            y, y_norm = perpendicular_part(prev_up)
+            if not np.isfinite(y_norm) or y_norm < 1e-8:
+                axis_fallback = np.zeros(3)
+                axis_fallback[np.argmin(np.abs(z))] = 1.0
+                y, y_norm = perpendicular_part(axis_fallback)
         y /= y_norm
         x = np.cross(y, z)
         # Cast to float64 explicitly: newer numpy stubs type np.cross() as

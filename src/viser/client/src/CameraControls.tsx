@@ -187,6 +187,24 @@ export function SynchronizedCameraControls() {
 
   const viewerMutable = viewer.mutable.current;
 
+  // Effective-maxDistance reconciliation: camera-controls clamps every user
+  // dolly to [minDistance, maxDistance], but server-driven placement
+  // (setLookAt/setPosition, the initial camera) does NOT clamp -- so a
+  // camera legitimately parked beyond the configured bound (large-coordinate
+  // scenes under the 1e4 default) was TELEPORTED to the boundary by the
+  // first scroll tick. Ratchet the effective bound to the current distance
+  // while outside the configured one: zooming in works smoothly, zooming
+  // further out stays blocked, and the configured clamp restores as soon as
+  // the camera comes back inside it.
+  useFrame(() => {
+    const controls = viewerMutable.cameraControl;
+    if (controls === null) return;
+    const configured = viewerMutable.configuredMaxOrbitDistance;
+    const effective =
+      controls.distance > configured ? controls.distance : configured;
+    if (controls.maxDistance !== effective) controls.maxDistance = effective;
+  });
+
   // Crosshair visibility state: separate counter for keyboard and flag for pointer interactions.
   const [keyboardCrosshairCounter, setKeyboardCrosshairCounter] = useState(0);
   const [pointerInteractionActive, setPointerInteractionActive] =

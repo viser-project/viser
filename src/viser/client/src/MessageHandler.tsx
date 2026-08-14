@@ -671,9 +671,13 @@ function useMessageHandler() {
       }
       case "SetCameraMaxOrbitDistanceMessage": {
         const cameraControls = viewerMutable.cameraControl!;
+        viewerMutable.configuredMaxOrbitDistance = message.max_orbit_distance;
         cameraControls.maxDistance = message.max_orbit_distance;
         // camera-controls only enforces the bound on the next dolly, so a camera
-        // already parked beyond the new limit would stay there. Pull it in now.
+        // already parked beyond the new limit would stay there. Pull it in now
+        // -- SMOOTHLY: an explicit server-set bound is an intentional pull-in,
+        // unlike the default bound, which the per-frame reconciliation in
+        // SynchronizedCameraControls relaxes instead of teleporting through.
         if (cameraControls.distance > message.max_orbit_distance) {
           cameraControls.dollyTo(message.max_orbit_distance, true);
         }

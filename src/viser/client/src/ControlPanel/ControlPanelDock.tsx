@@ -48,13 +48,25 @@ export interface ControlDockState {
   leftRegionWidthPx: number;
 }
 
+/** Stable empty registry for the disabled dock surface (identity matters:
+ * a fresh {} per render would churn the DockManager's reconciliation). */
+const EMPTY_PANES: PaneRegistry = {};
+
 export function ControlPanelDockSurface({
   children,
   onDockStateChange,
+  enabled = true,
 }: {
   /** Center content (the canvas layers), inset when the panel is docked. */
   children: React.ReactNode;
   onDockStateChange?: (state: ControlDockState) => void;
+  /** When false (mobile view), the DockManager stays mounted as a
+   * passthrough container with no panes -- the element structure around the
+   * canvas must NOT change when the viewport crosses the mobile breakpoint,
+   * or the entire R3F canvas subtree remounts (new WebGL context, camera
+   * reset to initial pose). The mobile bottom-sheet ControlPanel renders its
+   * own chrome outside this surface. */
+  enabled?: boolean;
 }) {
   const viewer = React.useContext(ViewerContext)!;
   const controlWidthString = viewer.useGui(
@@ -140,7 +152,7 @@ export function ControlPanelDockSurface({
       <GuiDockContext.Provider value={guiDockValue}>
         <DockManager
           initialLayout={initialLayout}
-          panes={panes}
+          panes={enabled ? panes : EMPTY_PANES}
           // Resize the 3D canvas's GL backbuffer synchronously as a docked
           // region's width handle is dragged, so the scene tracks the divider
           // instead of trailing R3F's async ResizeObserver by a frame.
@@ -149,11 +161,18 @@ export function ControlPanelDockSurface({
           }
         >
           {children}
-          <ControlPanelDockSync
-            widthPx={widthPx}
-            onDockStateChange={onDockStateChange}
-          />
-          <StandalonePanelSync registerTabGroup={registerTabGroup} />
+          {/* Sync nodes are dropped (not the wrapper) when disabled: they
+          are siblings AFTER `children`, so toggling them cannot reparent
+          the canvas subtree. */}
+          {enabled && (
+            <ControlPanelDockSync
+              widthPx={widthPx}
+              onDockStateChange={onDockStateChange}
+            />
+          )}
+          {enabled && (
+            <StandalonePanelSync registerTabGroup={registerTabGroup} />
+          )}
         </DockManager>
       </GuiDockContext.Provider>
     </div>

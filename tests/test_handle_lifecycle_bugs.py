@@ -974,9 +974,12 @@ def test_numpy_bool_serializes() -> None:
 
 
 def test_camera_update_rejects_degenerate_basis() -> None:
-    """A degenerate camera basis (zero look distance, or up parallel to the
-    view direction) raises instead of storing a NaN quaternion that every
-    later camera read and on_update callback would silently see."""
+    """Garbage camera input (zero look distance, zero up vector, non-finite
+    values) raises instead of storing a NaN quaternion that every later
+    camera read and on_update callback would silently see. An up vector
+    PARALLEL to the view direction, however, is a legitimate pose (the
+    canonical top-down camera with default +Z up) and must degrade to a
+    finite basis like the client's pole clamp, not raise."""
     from viser._viser import CameraHandle, _CameraHandleState
 
     ch = CameraHandle.__new__(CameraHandle)
@@ -1000,6 +1003,9 @@ def test_camera_update_rejects_degenerate_basis() -> None:
         ch._update_wxyz()
     ch._state.look_at = np.array([2.0, 0.0, 0.0])
     ch._state.up_direction = np.array([1.0, 0.0, 0.0])  # parallel to view
+    ch._update_wxyz()  # Degrades (even from the zeroed wxyz state), no raise.
+    assert np.all(np.isfinite(ch._state.wxyz))
+    ch._state.up_direction = np.zeros(3)
     with pytest.raises(ValueError, match="up_direction must be nonzero"):
         ch._update_wxyz()
     ch._state.up_direction = np.array([0.0, 0.0, 1.0])
@@ -1501,3 +1507,39 @@ def test_writes_after_stop_do_not_raise() -> None:
     with server.atomic():  # atomic_end() wake-up path
         f.position = (4.0, 5.0, 6.0)
     server.flush()  # flush() wake-up path
+
+
+def test_camera_topdown_pose_succeeds_and_sends_messages() -> None:
+    """The canonical top-down setup -- position above the target, look_at
+    straight down, default +Z up -- must apply cleanly: pre-1.1 this worked
+    (the client's orbit controls clamp the pole), and rejecting it broke
+    existing bird's-eye camera code, silently when inside exception-isolated
+    on_client_connect callbacks."""
+    from viser._viser import CameraHandle
+
+    sent: list[str] = []
+
+    class _Conn:
+        def queue_message(self, message) -> None:
+            sent.append(type(message).__name__)
+
+    class _Client:
+        _websock_connection = _Conn()
+
+    ch = CameraHandle(_Client())  # type: ignore[arg-type]
+    s = ch._state
+    s.position = np.array([2.0, 2.0, 2.0])
+    s.look_at = np.array([0.0, 0.0, 0.0])
+    s.up_direction = np.array([0.0, 0.0, 1.0])
+    s.wxyz = np.array([1.0, 0.0, 0.0, 0.0])
+    s.update_timestamp = 1.0
+
+    ch.position = (0.0, 0.0, 5.0)
+    ch.look_at = (0.0, 0.0, 0.0)
+
+    assert np.all(np.isfinite(s.wxyz))
+    assert np.allclose(s.position, [0.0, 0.0, 5.0])
+    assert np.allclose(s.look_at, [0.0, 0.0, 0.0])
+    # Both axes reached the wire; nothing was rolled back half-way.
+    assert "SetCameraPositionMessage" in sent
+    assert "SetCameraLookAtMessage" in sent

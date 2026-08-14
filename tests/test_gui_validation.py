@@ -129,3 +129,30 @@ def test_slider_precision_covers_value_grid() -> None:
             "f", min=0.5, max=9.5, step=1.0, initial_value=(1.5, 2.5)
         )
         assert precision_of(m) == 1
+
+
+@patch.object(viser._client_autobuild, "ensure_client_is_built", lambda: None)
+def test_number_and_vector_precision_covers_creation_values() -> None:
+    """Number/vector inputs aren't grid-bound, so display precision must
+    also cover the creation-time value and bounds when an explicit step is
+    coarser than them: add_number(initial_value=0.25, step=0.5) displayed
+    the value as "0.2"."""
+    with viser_server() as server:
+
+        def precision_of(handle) -> int:
+            return handle._impl.props.precision
+
+        n = server.gui.add_number("a", initial_value=0.25, step=0.5)
+        assert precision_of(n) == 2
+        # Auto-computed step already covers value/bounds; stays tight.
+        n = server.gui.add_number("b", initial_value=2)
+        assert precision_of(n) == 0
+        n = server.gui.add_number("c", initial_value=1.0, min=0.05, step=1.0)
+        assert precision_of(n) == 2
+
+        v = server.gui.add_vector2("d", initial_value=(0.25, 1.0), step=0.5)
+        assert precision_of(v) == 2
+        v = server.gui.add_vector3(
+            "e", initial_value=(1.0, 2.0, 3.0), min=(0.125, 0.0, 0.0), step=0.5
+        )
+        assert precision_of(v) == 3

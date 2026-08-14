@@ -209,6 +209,10 @@ function ViewerRoot() {
     camera: null,
     backgroundMaterial: null,
     cameraControl: null,
+    // Must match the server-side default in _viser.py (pinned by
+    // tests/test_initial_camera_defaults.py) and the initial maxDistance
+    // prop in CameraControls.tsx.
+    configuredMaxOrbitDistance: 1e4,
 
     // Scene management.
     nodeRefFromName,
@@ -512,8 +516,18 @@ function AppLayout({
             height: "100%",
           })}
         >
-          {dockFloating ? (
-            <ControlPanelDockSurface onDockStateChange={setControlDock}>
+          {/* The wrapper is keyed on messageSource (constant for the app's
+          lifetime), NOT on dockFloating: flipping the element type at the
+          canvas's tree position (rotating a phone across the mobile
+          breakpoint, or a runtime control_layout change) remounted the
+          entire R3F canvas subtree -- new WebGL context, full GPU-state
+          re-upload, camera snapped back to the initial pose. The surface
+          stays mounted and toggles `enabled` instead. */}
+          {messageSource === "websocket" ? (
+            <ControlPanelDockSurface
+              enabled={dockFloating}
+              onDockStateChange={setControlDock}
+            >
               {canvasContent}
             </ControlPanelDockSurface>
           ) : (

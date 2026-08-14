@@ -485,11 +485,15 @@ chevron included, reappears automatically.
   high-water marks (P6/D52). Clients never sync layouts with each
   other.
 
-### 3.6 Mobile (no dock surface)
+### 3.6 Mobile (dock surface disabled)
 
 Below the mobile breakpoint (Mantine `xs`, ~576px width) the dock
-surface does not mount at all: no regions, rails, floating windows, or
-drag/dock. The control panel renders as the bottom sheet, and
+surface is disabled: no panes, regions, rails, floating windows, or
+drag/dock. (The surface's passthrough container itself stays mounted —
+the canvas subtree must keep its position in the element tree, because
+swapping the wrapper when the viewport crosses the breakpoint remounted
+the entire WebGL canvas and snapped the camera back to its initial
+pose.) The control panel renders as the bottom sheet, and
 standalone panels render inside it as an ACCORDION of bar-like
 sections (D45): ONE identity row per panel, two states (P9: identity
 never renders twice; P13: the bar is the header with the body
@@ -502,7 +506,7 @@ start COLLAPSED (the sheet is wayfinding chrome on a small screen);
 several may be open at once. `visible` is honored (hidden panels render
 no section); sections sort by server-side `order`. The geometry axes
 (position/width/height) do not apply off the dock surface — they replay
-when the viewport widens and the dock remounts — while a fresh collapse
+when the viewport widens and the dock re-enables — while a fresh collapse
 command toggles the panel's sheet section (surface-specific watermark,
 never shared with the dock's).
 
