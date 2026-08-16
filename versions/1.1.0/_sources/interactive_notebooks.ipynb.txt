@@ -1,0 +1,121 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "# Interactive Notebooks\n\nViser can display 3D visualizations inline in Jupyter notebooks and myst-nb\ndocumentation."
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "## Static Scenes\n\nUse {meth}`viser.SceneApi.show` to display the current scene:"
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "tags": [
+     "remove-output"
+    ]
+   },
+   "outputs": [],
+   "source": [
+    "import viser\n",
+    "\n",
+    "server = viser.ViserServer(verbose=False)\n",
+    "server.scene.add_box(\"/box\", color=(255, 0, 0), dimensions=(1, 1, 1))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "server.scene.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "The visualization is interactive with orbit controls and works offline once loaded.\n\nOptional parameters:\n- `height`: Height of the embedded viewer in pixels (default: 400)\n- `dark_mode`: Use dark color scheme (default: False)\n\n## Setting the Initial Camera\n\nUse {attr}`viser.ViserServer.initial_camera` to set the camera pose when the\nvisualization first loads:\n\n```python\nimport viser\n\nserver = viser.ViserServer()\nserver.scene.add_box(\"/box\", color=(255, 0, 0), dimensions=(1, 1, 1))\n\n# Set the initial camera pose.\nserver.initial_camera.position = (3.0, 3.0, 2.0)\nserver.initial_camera.look_at = (0.0, 0.0, 0.0)\n\nserver.scene.show()\n```\n\nAvailable properties: `position`, `look_at`, `up`, `fov`, `near`, `far`. See\n{class}`viser.InitialCameraConfig` for details."
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "## Animated Scenes\n\nFor animations, use {meth}`viser.infra.StateSerializer.insert_sleep` to record\ntiming between frames, then {meth}`viser.infra.StateSerializer.show` to display:"
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "tags": [
+     "remove-output"
+    ]
+   },
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "\n",
+    "import viser\n",
+    "\n",
+    "server = viser.ViserServer(verbose=False)\n",
+    "box = server.scene.add_box(\"/box\", color=(255, 0, 0), dimensions=(1, 1, 1))\n",
+    "\n",
+    "# Get the scene serializer for recording animations.\n",
+    "serializer = server.get_scene_serializer()\n",
+    "\n",
+    "# Animate the box position over 3 seconds at 60 fps.\n",
+    "for i in range(180):\n",
+    "    t = i / 180 * 2 * np.pi\n",
+    "    box.position = (np.sin(t), np.cos(t), 0.5)\n",
+    "    serializer.insert_sleep(1.0 / 60.0)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "serializer.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The visualization includes a playback timeline with play/pause controls and a\n",
+    "scrubber for navigating through the animation."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "## Plain Python Scripts\n\nThe same API works outside of notebooks. When running as a plain Python script,\n{meth}`viser.SceneApi.show` opens the visualization in your default web browser:\n\n```python\nimport viser\n\nserver = viser.ViserServer()\nserver.scene.add_box(\"/box\", color=(255, 0, 0), dimensions=(1, 1, 1))\n\n# Opens in default web browser.\nserver.scene.show()\n```"
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "## Google Colab\n\nIn Google Colab, you can use {meth}`viser.SceneApi.show` for static snapshots as\nshown above. For a live connection with interactivity (including GUI elements),\nuse Colab's `serve_kernel_port_as_iframe`:\n\n```python\nimport viser\nfrom google.colab import output\n\nserver = viser.ViserServer(port=8081)\nserver.scene.add_box(\"/box\", color=(255, 0, 0), dimensions=(1, 1, 1))\n\n# Serve the Viser port as an iframe for live interaction.\noutput.serve_kernel_port_as_iframe(8081)\n```\n\nThis creates a live WebSocket connection to the Viser server, enabling real-time\nupdates and GUI controls."
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": "## Features & Limitations\n\n{meth}`viser.SceneApi.show` and {meth}`viser.infra.StateSerializer.show` support most Viser scene features:\n\n- 3D primitives: boxes, spheres, meshes, point clouds, etc.\n- Gaussian splats with WebAssembly sorting\n- Animations with timeline, play/pause, and scrubbing\n\nLimitations compared to the full Viser client:\n\n- GUI elements: scene-only mode (no interactive GUI panels)\n- WebSocket connection: visualizations are static snapshots, not live connections\n\nFor hosting visualizations on a web server or exporting `.viser` files, see\n{doc}`embedded_visualizations`."
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "version": "3.10.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
