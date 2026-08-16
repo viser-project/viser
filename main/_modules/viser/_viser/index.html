@@ -730,17 +730,34 @@
                 <span class="s2">&quot;Camera look_at cannot equal position (zero look distance).&quot;</span>
             <span class="p">)</span>
         <span class="n">z</span> <span class="o">/=</span> <span class="n">z_norm</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">z</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="n">y</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">*</span> <span class="n">z</span>
-        <span class="n">y_norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">perpendicular_part</span><span class="p">(</span><span class="n">up_candidate</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+            <span class="n">y_c</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">z</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">@</span> <span class="n">up_candidate</span>
+            <span class="n">y_c</span> <span class="o">=</span> <span class="n">y_c</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">y_c</span><span class="p">)</span> <span class="o">*</span> <span class="n">z</span>
+            <span class="k">return</span> <span class="n">y_c</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">y_c</span><span class="p">))</span>
+
+        <span class="n">y</span><span class="p">,</span> <span class="n">y_norm</span> <span class="o">=</span> <span class="n">perpendicular_part</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">y_norm</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
-            <span class="c1"># No component of up_direction is perpendicular to the view: it is</span>
-            <span class="c1"># zero, or parallel to (look_at - position). Reject rather than</span>
-            <span class="c1"># store/broadcast a NaN basis.</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;Camera up_direction must be nonzero and not parallel to the &quot;</span>
-                <span class="s2">&quot;view direction (look_at - position).&quot;</span>
-            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span><span class="p">)</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="c1"># A zero up vector carries no information at all; reject</span>
+                <span class="c1"># rather than store/broadcast a NaN basis.</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Camera up_direction must be nonzero.&quot;</span><span class="p">)</span>
+            <span class="c1"># up_direction is parallel to the view direction -- e.g. the</span>
+            <span class="c1"># canonical top-down pose (+Z up, looking straight down). The</span>
+            <span class="c1"># client&#39;s orbit controls clamp the pole instead of failing, so</span>
+            <span class="c1"># raising here broke camera setups that worked pre-1.1: degrade</span>
+            <span class="c1"># the same way. Prefer the previous orientation&#39;s up vector for</span>
+            <span class="c1"># continuity (matching the &quot;minimize impact on orbit controls&quot;</span>
+            <span class="c1"># policy above); fall back to the world axis least aligned with</span>
+            <span class="c1"># the view when that is also degenerate (e.g. a never-updated</span>
+            <span class="c1"># zeroed state). The client echoes its own resolved pose back,</span>
+            <span class="c1"># so any residual mismatch is transient.</span>
+            <span class="n">prev_up</span> <span class="o">=</span> <span class="o">-</span><span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">wxyz</span><span class="p">)</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">()[:,</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="n">y</span><span class="p">,</span> <span class="n">y_norm</span> <span class="o">=</span> <span class="n">perpendicular_part</span><span class="p">(</span><span class="n">prev_up</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">y_norm</span><span class="p">)</span> <span class="ow">or</span> <span class="n">y_norm</span> <span class="o">&lt;</span> <span class="mf">1e-8</span><span class="p">:</span>
+                <span class="n">axis_fallback</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+                <span class="n">axis_fallback</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">z</span><span class="p">))]</span> <span class="o">=</span> <span class="mf">1.0</span>
+                <span class="n">y</span><span class="p">,</span> <span class="n">y_norm</span> <span class="o">=</span> <span class="n">perpendicular_part</span><span class="p">(</span><span class="n">axis_fallback</span><span class="p">)</span>
         <span class="n">y</span> <span class="o">/=</span> <span class="n">y_norm</span>
         <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span>
         <span class="c1"># Cast to float64 explicitly: newer numpy stubs type np.cross() as</span>
@@ -1919,10 +1936,10 @@
             <span class="c1"># including scene-adjacent Set*Message variants that target a</span>
             <span class="c1"># removed scene node by `name` but aren&#39;t entity-declared. The</span>
             <span class="c1"># per-message taxonomy is Message.targets_entity_state -- the ONE</span>
-            <span class="c1"># definition, shared with the same-name-replacement purge -- with</span>
-            <span class="c1"># set-based id matching inlined here so the sweep stays a single</span>
-            <span class="c1"># pass over the buffer rather than per-name predicate calls.</span>
-            <span class="c1"># Skip the walk entirely when nothing was tombstoned this round.</span>
+            <span class="c1"># definition, shared with the same-name-replacement purge --</span>
+            <span class="c1"># materialized as the buffer&#39;s entity-state index, so the sweep</span>
+            <span class="c1"># touches only the tombstoned entities&#39; buckets rather than</span>
+            <span class="c1"># walking the whole buffer.</span>
             <span class="c1">#</span>
             <span class="c1"># These deletes are NOT floor-gated, unlike the tombstones above:</span>
             <span class="c1"># an update targeting a removed entity is dead weight for EVERY</span>
@@ -1934,29 +1951,16 @@
             <span class="c1"># &quot;update /x&quot;: a ghost node other clients don&#39;t have. push()</span>
             <span class="c1"># already purges pending updates on Remove with no floor gate;</span>
             <span class="c1"># this sweep follows the same reasoning.</span>
-            <span class="k">if</span> <span class="n">removed_ids_by_type</span><span class="p">:</span>
-                <span class="k">for</span> <span class="n">msg_id</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                    <span class="n">phase</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">lifecycle_phase</span>
-                    <span class="k">if</span> <span class="n">phase</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;update_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;update_simple&quot;</span><span class="p">):</span>
-                        <span class="k">assert</span> <span class="p">(</span>
-                            <span class="n">message</span><span class="o">.</span><span class="n">entity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                            <span class="ow">and</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">for</span> <span class="n">entity_type</span><span class="p">,</span> <span class="n">entity_ids</span> <span class="ow">in</span> <span class="n">removed_ids_by_type</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">for</span> <span class="n">entity_id</span> <span class="ow">in</span> <span class="n">entity_ids</span><span class="p">:</span>
+                    <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                        <span class="n">buffer</span><span class="o">.</span><span class="n">ids_from_entity_state_key</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                            <span class="p">(</span><span class="n">entity_type</span><span class="p">,</span> <span class="n">entity_id</span><span class="p">),</span> <span class="p">()</span>
                         <span class="p">)</span>
-                        <span class="n">entity_id</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span><span class="p">)</span>
-                        <span class="k">if</span> <span class="n">entity_id</span> <span class="ow">in</span> <span class="n">removed_ids_by_type</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                            <span class="n">message</span><span class="o">.</span><span class="n">entity_type</span><span class="p">,</span> <span class="p">()</span>
-                        <span class="p">):</span>
-                            <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
-                    <span class="k">elif</span> <span class="n">phase</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                        <span class="n">name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-                        <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">removed_ids_by_type</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                            <span class="s2">&quot;scene&quot;</span><span class="p">,</span> <span class="p">()</span>
-                        <span class="p">):</span>
-                            <span class="n">remove_message_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
+                    <span class="p">)</span>
 
             <span class="k">for</span> <span class="n">msg_id</span> <span class="ow">in</span> <span class="n">remove_message_ids</span><span class="p">:</span>
-                <span class="n">message</span> <span class="o">=</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
-                <span class="n">buffer</span><span class="o">.</span><span class="n">id_from_redundancy_key</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">redundancy_key</span><span class="p">(),</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">buffer</span><span class="o">.</span><span class="n">pop_message_locked</span><span class="p">(</span><span class="n">msg_id</span><span class="p">)</span>
 
 <div class="viewcode-block" id="ViserServer.get_host">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.get_host">[docs]</a>

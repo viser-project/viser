@@ -619,6 +619,27 @@
     <span class="k">return</span> <span class="n">digits</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_compute_precision_digits_covering</span><span class="p">(</span>
+    <span class="o">*</span><span class="n">values</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Display digits covering every provided value (Nones skipped, tuples /</span>
+<span class="sd">    arrays elementwise). Numeric widgets limit displayed AND typed decimals</span>
+<span class="sd">    to their ``precision`` via ``decimalScale``, so precision derived from</span>
+<span class="sd">    ``step`` alone rounded away legitimate values: a slider&#39;s legal values</span>
+<span class="sd">    are ``min + k * step`` clamped to ``max`` (with ``min=0.5, step=1.0``</span>
+<span class="sd">    the box displayed 2.5 as &quot;3&quot; and rejected typed decimals), and a number</span>
+<span class="sd">    input&#39;s creation-time value/bounds may be finer than an explicit step</span>
+<span class="sd">    (``initial_value=0.25, step=0.5`` displayed as &quot;0.2&quot;).&quot;&quot;&quot;</span>
+    <span class="n">digits</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">values</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+                <span class="n">digits</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">digits</span><span class="p">,</span> <span class="n">_compute_precision_digits</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">digits</span>
+
+
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">_RootGuiContainer</span><span class="p">:</span>
     <span class="n">_children</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">SupportsRemoveProtocol</span><span class="p">]</span>
@@ -2643,7 +2664,9 @@
                         <span class="n">hint</span><span class="o">=</span><span class="n">hint</span><span class="p">,</span>
                         <span class="nb">min</span><span class="o">=</span><span class="nb">min</span><span class="p">,</span>
                         <span class="nb">max</span><span class="o">=</span><span class="nb">max</span><span class="p">,</span>
-                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits</span><span class="p">(</span><span class="n">step</span><span class="p">),</span>
+                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits_covering</span><span class="p">(</span>
+                            <span class="n">value</span><span class="p">,</span> <span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">,</span> <span class="n">step</span>
+                        <span class="p">),</span>
                         <span class="n">step</span><span class="o">=</span><span class="n">step</span><span class="p">,</span>
                         <span class="n">disabled</span><span class="o">=</span><span class="n">disabled</span><span class="p">,</span>
                         <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
@@ -2724,7 +2747,9 @@
                         <span class="nb">min</span><span class="o">=</span><span class="nb">min</span><span class="p">,</span>
                         <span class="nb">max</span><span class="o">=</span><span class="nb">max</span><span class="p">,</span>
                         <span class="n">step</span><span class="o">=</span><span class="n">step</span><span class="p">,</span>
-                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits</span><span class="p">(</span><span class="n">step</span><span class="p">),</span>
+                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits_covering</span><span class="p">(</span>
+                            <span class="n">initial_value</span><span class="p">,</span> <span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">,</span> <span class="n">step</span>
+                        <span class="p">),</span>
                         <span class="n">disabled</span><span class="o">=</span><span class="n">disabled</span><span class="p">,</span>
                         <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
                     <span class="p">),</span>
@@ -2803,7 +2828,9 @@
                         <span class="nb">min</span><span class="o">=</span><span class="nb">min</span><span class="p">,</span>
                         <span class="nb">max</span><span class="o">=</span><span class="nb">max</span><span class="p">,</span>
                         <span class="n">step</span><span class="o">=</span><span class="n">step</span><span class="p">,</span>
-                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits</span><span class="p">(</span><span class="n">step</span><span class="p">),</span>
+                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits_covering</span><span class="p">(</span>
+                            <span class="n">initial_value</span><span class="p">,</span> <span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">,</span> <span class="n">step</span>
+                        <span class="p">),</span>
                         <span class="n">disabled</span><span class="o">=</span><span class="n">disabled</span><span class="p">,</span>
                         <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
                     <span class="p">),</span>
@@ -3033,7 +3060,9 @@
                         <span class="nb">min</span><span class="o">=</span><span class="nb">min</span><span class="p">,</span>
                         <span class="nb">max</span><span class="o">=</span><span class="nb">max</span><span class="p">,</span>
                         <span class="n">step</span><span class="o">=</span><span class="n">step</span><span class="p">,</span>
-                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits</span><span class="p">(</span><span class="n">step</span><span class="p">),</span>
+                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits_covering</span><span class="p">(</span>
+                            <span class="n">value</span><span class="p">,</span> <span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">,</span> <span class="n">step</span>
+                        <span class="p">),</span>
                         <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
                         <span class="n">disabled</span><span class="o">=</span><span class="n">disabled</span><span class="p">,</span>
                         <span class="n">_marks</span><span class="o">=</span><span class="n">_build_slider_marks</span><span class="p">(</span><span class="n">marks</span><span class="p">),</span>
@@ -3141,7 +3170,9 @@
                         <span class="n">visible</span><span class="o">=</span><span class="n">visible</span><span class="p">,</span>
                         <span class="n">disabled</span><span class="o">=</span><span class="n">disabled</span><span class="p">,</span>
                         <span class="n">fixed_endpoints</span><span class="o">=</span><span class="n">fixed_endpoints</span><span class="p">,</span>
-                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits</span><span class="p">(</span><span class="n">step</span><span class="p">),</span>
+                        <span class="n">precision</span><span class="o">=</span><span class="n">_compute_precision_digits_covering</span><span class="p">(</span>
+                            <span class="n">initial_value</span><span class="p">,</span> <span class="nb">min</span><span class="p">,</span> <span class="nb">max</span><span class="p">,</span> <span class="n">step</span>
+                        <span class="p">),</span>
                         <span class="n">_marks</span><span class="o">=</span><span class="n">_build_slider_marks</span><span class="p">(</span><span class="n">marks</span><span class="p">),</span>
                     <span class="p">),</span>
                 <span class="p">),</span>

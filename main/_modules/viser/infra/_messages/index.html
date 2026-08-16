@@ -648,27 +648,36 @@
     <span class="c1"># the attribute without static errors.</span>
     <span class="n">include_in_scene_serialization</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span>
 
+<div class="viewcode-block" id="Message.entity_state_key">
+<a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.entity_state_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">entity_state_key</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The (entity_type, entity_id) this message carries PER-ENTITY state</span>
+<span class="sd">        for, or None for messages that carry none: update messages</span>
+<span class="sd">        (``update_dict``/``update_simple``) key to their declared entity;</span>
+<span class="sd">        phase-less messages carrying a ``name`` key to ``(&quot;scene&quot;, name)``</span>
+<span class="sd">        (name-keyed adjacency exists only for SCENE nodes -- interaction</span>
+<span class="sd">        bindings etc.; other entity families key by uuid fields that never</span>
+<span class="sd">        collide with a scene name). The ONE definition of this taxonomy: the</span>
+<span class="sd">        buffer&#39;s entity-state index, the same-name-replacement purge, and the</span>
+<span class="sd">        connect-time garbage collector&#39;s sweep all resolve through it.&quot;&quot;&quot;</span>
+        <span class="n">phase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lifecycle_phase</span>
+        <span class="k">if</span> <span class="n">phase</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;update_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;update_simple&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">entity_type</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_id_field</span><span class="p">))</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">phase</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">(</span><span class="s2">&quot;scene&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
 <div class="viewcode-block" id="Message.targets_entity_state">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.targets_entity_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">targets_entity_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entity_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">entity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;True for messages that carry PER-ENTITY state for the given entity:</span>
-<span class="sd">        update messages declared against it (``update_dict``/``update_simple``</span>
-<span class="sd">        with a matching entity id), plus phase-less name-keyed messages whose</span>
-<span class="sd">        ``name`` matches (e.g. scene interaction-binding messages). The ONE</span>
-<span class="sd">        definition of this taxonomy -- the same-name-replacement purge and the</span>
-<span class="sd">        connect-time garbage collector&#39;s sweep must never disagree on it.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">lifecycle_phase</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;update_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;update_simple&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">entity_type</span> <span class="o">==</span> <span class="n">entity_type</span>
-                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_id_field</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">entity_id</span>
-            <span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">lifecycle_phase</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># Name-keyed adjacency exists only for SCENE nodes (interaction</span>
-            <span class="c1"># bindings etc.); other entity families key by uuid fields that</span>
-            <span class="c1"># never collide with a scene name.</span>
-            <span class="k">return</span> <span class="n">entity_type</span> <span class="o">==</span> <span class="s2">&quot;scene&quot;</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">entity_id</span>
-        <span class="k">return</span> <span class="kc">False</span></div>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;True when this message carries per-entity state for the given</span>
+<span class="sd">        entity; the predicate form of :meth:`entity_state_key`.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_state_key</span><span class="p">()</span> <span class="o">==</span> <span class="p">(</span><span class="n">entity_type</span><span class="p">,</span> <span class="n">entity_id</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Message.as_serializable_dict">

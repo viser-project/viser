@@ -1391,11 +1391,13 @@
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GuiTabHandle</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># See GuiFolderHandle.__enter__: a single restore slot can&#39;t nest</span>
-            <span class="c1"># the same tab inside itself.</span>
+            <span class="c1"># See GuiFolderHandle.__enter__: a single restore slot can&#39;t</span>
+            <span class="c1"># support overlapping `with` blocks on the same handle.</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;This GuiTabHandle is already active as a context; it cannot &quot;</span>
-                <span class="s2">&quot;be re-entered inside itself.&quot;</span>
+                <span class="s2">&quot;This GuiTabHandle is already active as a context -- either &quot;</span>
+                <span class="s2">&quot;nested inside its own `with` block, or entered concurrently &quot;</span>
+                <span class="s2">&quot;from another thread. A handle supports only one active &quot;</span>
+                <span class="s2">&quot;`with` block at a time (sequential re-entry is fine).&quot;</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_parent</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_snapshot_container_context</span><span class="p">()</span>
@@ -1915,13 +1917,17 @@
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># A single restore slot can&#39;t nest the SAME handle inside itself;</span>
-            <span class="c1"># doing so would strand the container pointer inside this folder,</span>
-            <span class="c1"># silently misplacing every later element. (Sequential re-entry --</span>
-            <span class="c1"># `with f: ...` twice -- is fine; __exit__ clears the slot.)</span>
+            <span class="c1"># A single restore slot can&#39;t support overlapping `with` blocks on</span>
+            <span class="c1"># the SAME handle: self-nesting would strand the container pointer</span>
+            <span class="c1"># inside this folder, silently misplacing every later element, and</span>
+            <span class="c1"># a concurrent enter from another thread would corrupt the other</span>
+            <span class="c1"># block&#39;s restore. (Sequential re-entry -- `with f: ...` twice --</span>
+            <span class="c1"># is fine; __exit__ clears the slot.)</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;This GuiFolderHandle is already active as a context; it &quot;</span>
-                <span class="s2">&quot;cannot be re-entered inside itself.&quot;</span>
+                <span class="s2">&quot;This GuiFolderHandle is already active as a context -- either &quot;</span>
+                <span class="s2">&quot;nested inside its own `with` block, or entered concurrently &quot;</span>
+                <span class="s2">&quot;from another thread. A handle supports only one active &quot;</span>
+                <span class="s2">&quot;`with` block at a time (sequential re-entry is fine).&quot;</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_container_id_restore</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_snapshot_container_context</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">gui_api</span><span class="o">.</span><span class="n">_set_container_uuid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>

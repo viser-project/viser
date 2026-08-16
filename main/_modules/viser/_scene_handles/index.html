@@ -750,8 +750,8 @@
                 <span class="c1">#    namespaces -- a late joiner would apply the OLD pose to the</span>
                 <span class="c1">#    NEW node. Purge them (mirrors the remove()/GC sweep); the</span>
                 <span class="c1">#    new node&#39;s own state is queued below.</span>
-                <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">get_message_buffer</span><span class="p">()</span><span class="o">.</span><span class="n">remove_from_buffer</span><span class="p">(</span>
-                    <span class="k">lambda</span> <span class="n">m</span><span class="p">:</span> <span class="n">m</span><span class="o">.</span><span class="n">targets_entity_state</span><span class="p">(</span><span class="s2">&quot;scene&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">),</span>
+                <span class="n">api</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">get_message_buffer</span><span class="p">()</span><span class="o">.</span><span class="n">remove_entity_state_from_buffer</span><span class="p">(</span>
+                    <span class="s2">&quot;scene&quot;</span><span class="p">,</span> <span class="n">name</span>
                 <span class="p">)</span>
                 <span class="c1"># 3. LIVE clients keep interaction bindings across a same-name</span>
                 <span class="c1">#    create (deliberate, for reconnect replays), so the buffer</span>
@@ -1404,6 +1404,42 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">_last_published_click_bindings</span> <span class="o">=</span> <span class="n">bindings</span>
 
 
+<span class="k">class</span><span class="w"> </span><span class="nc">_SupportsThickness</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Line-style props shared by every handle carrying the deprecated</span>
+<span class="sd">    ``line_width`` alias.&quot;&quot;&quot;</span>
+
+    <span class="n">thickness</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">thickness_units</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;screen&quot;</span><span class="p">,</span> <span class="s2">&quot;world&quot;</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_deprecated_line_width</span><span class="p">(</span><span class="n">handle</span><span class="p">:</span> <span class="n">_SupportsThickness</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Shared body of the deprecated ``line_width`` getters.&quot;&quot;&quot;</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+        <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
+        <span class="ne">DeprecationWarning</span><span class="p">,</span>
+        <span class="n">stacklevel</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">handle</span><span class="o">.</span><span class="n">thickness</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_set_deprecated_line_width</span><span class="p">(</span><span class="n">handle</span><span class="p">:</span> <span class="n">_SupportsThickness</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Shared body of the deprecated ``line_width`` setters.&quot;&quot;&quot;</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+        <span class="s2">&quot;The &#39;line_width&#39; property is deprecated; assigning it forces &quot;</span>
+        <span class="s2">&quot;thickness_units=&#39;screen&#39; so the value keeps its historical &quot;</span>
+        <span class="s2">&quot;pixel meaning. Use &#39;thickness&#39; with &#39;thickness_units&#39; instead.&quot;</span><span class="p">,</span>
+        <span class="ne">DeprecationWarning</span><span class="p">,</span>
+        <span class="n">stacklevel</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="c1"># line_width was always screen-space pixels; pin the units so the</span>
+    <span class="c1"># assigned value keeps that meaning even on a handle created with the</span>
+    <span class="c1"># new world-space thickness defaults. Units first: on a live client the</span>
+    <span class="c1"># transient (old thickness, &quot;screen&quot;) state renders as a briefly-thin</span>
+    <span class="c1"># line rather than a world-units-wide ribbon.</span>
+    <span class="n">handle</span><span class="o">.</span><span class="n">thickness_units</span> <span class="o">=</span> <span class="s2">&quot;screen&quot;</span>
+    <span class="n">handle</span><span class="o">.</span><span class="n">thickness</span> <span class="o">=</span> <span class="n">value</span>
+
+
 <div class="viewcode-block" id="CameraFrustumHandle">
 <a class="viewcode-back" href="../../../api/handles/scene_handles/#viser.CameraFrustumHandle">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CameraFrustumHandle</span><span class="p">(</span>
@@ -1421,22 +1457,12 @@
 <span class="sd">            Use &#39;thickness&#39; instead; it is interpreted in the units given</span>
 <span class="sd">            by &#39;thickness_units&#39;.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">thickness</span>
+        <span class="k">return</span> <span class="n">_get_deprecated_line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
     <span class="nd">@line_width</span><span class="o">.</span><span class="n">setter</span>
     <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">thickness</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="n">_set_deprecated_line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
 
     <span class="n">_image</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">_jpeg_quality</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>
@@ -1999,22 +2025,12 @@
 <span class="sd">            Use &#39;thickness&#39; instead; it is interpreted in the units given</span>
 <span class="sd">            by &#39;thickness_units&#39;.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">thickness</span>
+        <span class="k">return</span> <span class="n">_get_deprecated_line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
     <span class="nd">@line_width</span><span class="o">.</span><span class="n">setter</span>
     <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">thickness</span> <span class="o">=</span> <span class="n">value</span></div>
+        <span class="n">_set_deprecated_line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span></div>
 
 
 
@@ -2024,7 +2040,36 @@
     <span class="n">SceneNodeHandle</span><span class="p">,</span>
     <span class="n">_messages</span><span class="o">.</span><span class="n">ArrowProps</span><span class="p">,</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle for arrow objects.&quot;&quot;&quot;</span></div>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle for arrow objects.&quot;&quot;&quot;</span>
+
+    <span class="nd">@property</span>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The &#39;line_width&#39; property is deprecated and has no effect.&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deprecated; arrows no longer have a line-width fallback rendering</span>
+<span class="sd">        path.</span>
+
+<span class="sd">        .. deprecated::</span>
+<span class="sd">            Reads return the legacy default (1.0); writes warn and are</span>
+<span class="sd">            ignored.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated and has no effect: &quot;</span>
+            <span class="s2">&quot;arrows no longer have a line-width fallback rendering path.&quot;</span><span class="p">,</span>
+            <span class="ne">DeprecationWarning</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="mf">1.0</span>
+
+    <span class="nd">@line_width</span><span class="o">.</span><span class="n">setter</span>
+    <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The &#39;line_width&#39; property is deprecated and has no effect.&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">del</span> <span class="n">value</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated and has no effect: &quot;</span>
+            <span class="s2">&quot;arrows no longer have a line-width fallback rendering path.&quot;</span><span class="p">,</span>
+            <span class="ne">DeprecationWarning</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span></div>
 
 
 
@@ -2045,22 +2090,12 @@
 <span class="sd">            Use &#39;thickness&#39; instead; it is interpreted in the units given</span>
 <span class="sd">            by &#39;thickness_units&#39;.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">thickness</span>
+        <span class="k">return</span> <span class="n">_get_deprecated_line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
     <span class="nd">@line_width</span><span class="o">.</span><span class="n">setter</span>
     <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">thickness</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="n">_set_deprecated_line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The &#39;positions&#39; property is deprecated. Use &#39;points&#39; instead.&quot;</span><span class="p">)</span>
@@ -2110,22 +2145,12 @@
 <span class="sd">            Use &#39;thickness&#39; instead; it is interpreted in the units given</span>
 <span class="sd">            by &#39;thickness_units&#39;.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">thickness</span>
+        <span class="k">return</span> <span class="n">_get_deprecated_line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
     <span class="nd">@line_width</span><span class="o">.</span><span class="n">setter</span>
     <span class="nd">@deprecated</span><span class="p">(</span><span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The &#39;line_width&#39; property is deprecated. Use &#39;thickness&#39; instead.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">thickness</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="n">_set_deprecated_line_width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="nd">@deprecated</span><span class="p">(</span>
