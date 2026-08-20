@@ -167,7 +167,7 @@ LabelAnchor = Literal[
 ]
 
 
-# Entity lifecycle markers. See architecture_hardening.md for design rationale.
+# Entity lifecycle markers.
 EntityType: TypeAlias = Literal["gui", "scene", "command", "notification", "modal"]
 """Kinds of removable entities in the protocol."""
 
