@@ -100,7 +100,7 @@ addopts = "--strict-markers"
 
 [tool.pyright]
 extraPaths = []
-exclude = ["./docs/**/*", "./examples/assets/**/*", "./src/viser/client/.nodeenv", "./build"]
+exclude = ["./docs/**/*", "./examples/assets/**/*", "./src/viser/client/.nodeenv", "./build", "**/.*"]
 
 [tool.ruff]
 lint.select = [
