@@ -67,7 +67,6 @@ The web client is implemented using [React](https://react.dev/), with:
 - [Vite](https://vitejs.dev/) / [Rollup](https://rollupjs.org/) for bundling
 - [three.js](https://threejs.org/) via [react-three-fiber](https://github.com/pmndrs/react-three-fiber) and [drei](https://github.com/pmndrs/drei)
 - [Mantine](https://mantine.dev/) for UI components
-- [zustand](https://github.com/pmndrs/zustand) for state management
 - [vanilla-extract](https://vanilla-extract.style/) for stylesheets
 
 Thanks to the authors of these projects for open-sourcing their work!
