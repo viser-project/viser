@@ -475,17 +475,17 @@ python<span class="w"> </span>03_interaction/01_scene_pointer.py<span class="w">
 <span class="linenos"> 16</span><span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos"> 17</span>    <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
 <span class="linenos"> 18</span>    <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">configure_theme</span><span class="p">(</span><span class="n">brand_color</span><span class="o">=</span><span class="p">(</span><span class="mi">130</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">150</span><span class="p">))</span>
-<span class="linenos"> 19</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">set_up_direction</span><span class="p">(</span><span class="s2">&quot;+y&quot;</span><span class="p">)</span>
+<span class="linenos"> 19</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">set_up_direction</span><span class="p">(</span><span class="s2">"+y"</span><span class="p">)</span>
 <span class="linenos"> 20</span>    <span class="n">server</span><span class="o">.</span><span class="n">initial_camera</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">10.0</span><span class="p">)</span>
 <span class="linenos"> 21</span>
 <span class="linenos"> 22</span>    <span class="n">mesh</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
 <span class="linenos"> 23</span>        <span class="n">trimesh</span><span class="o">.</span><span class="n">Trimesh</span><span class="p">,</span>
-<span class="linenos"> 24</span>        <span class="n">trimesh</span><span class="o">.</span><span class="n">load_mesh</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;../assets/dragon.obj&quot;</span><span class="p">)),</span>
+<span class="linenos"> 24</span>        <span class="n">trimesh</span><span class="o">.</span><span class="n">load_mesh</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"../assets/dragon.obj"</span><span class="p">)),</span>
 <span class="linenos"> 25</span>    <span class="p">)</span>
 <span class="linenos"> 26</span>    <span class="n">mesh</span><span class="o">.</span><span class="n">apply_scale</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
 <span class="linenos"> 27</span>
 <span class="linenos"> 28</span>    <span class="n">mesh_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_mesh_trimesh</span><span class="p">(</span>
-<span class="linenos"> 29</span>        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;/mesh&quot;</span><span class="p">,</span>
+<span class="linenos"> 29</span>        <span class="n">name</span><span class="o">=</span><span class="s2">"/mesh"</span><span class="p">,</span>
 <span class="linenos"> 30</span>        <span class="n">mesh</span><span class="o">=</span><span class="n">mesh</span><span class="p">,</span>
 <span class="linenos"> 31</span>        <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
 <span class="linenos"> 32</span>    <span class="p">)</span>
@@ -496,9 +496,9 @@ python<span class="w"> </span>03_interaction/01_scene_pointer.py<span class="w">
 <span class="linenos"> 37</span>    <span class="nd">@server</span><span class="o">.</span><span class="n">on_client_connect</span>
 <span class="linenos"> 38</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">client</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">ClientHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos"> 39</span>
-<span class="linenos"> 40</span>        <span class="c1"># Tests &quot;click&quot; scenepointerevent.</span>
+<span class="linenos"> 40</span>        <span class="c1"># Tests "click" scenepointerevent.</span>
 <span class="linenos"> 41</span>        <span class="n">click_button_handle</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span>
-<span class="linenos"> 42</span>            <span class="s2">&quot;Add sphere&quot;</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">POINTER</span>
+<span class="linenos"> 42</span>            <span class="s2">"Add sphere"</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">POINTER</span>
 <span class="linenos"> 43</span>        <span class="p">)</span>
 <span class="linenos"> 44</span>
 <span class="linenos"> 45</span>        <span class="nd">@click_button_handle</span><span class="o">.</span><span class="n">on_click</span>
@@ -507,7 +507,7 @@ python<span class="w"> </span>03_interaction/01_scene_pointer.py<span class="w">
 <span class="linenos"> 48</span>
 <span class="linenos"> 49</span>            <span class="nd">@client</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">on_click</span><span class="p">()</span>
 <span class="linenos"> 50</span>            <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">SceneClickEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos"> 51</span>                <span class="c1"># Check for intersection with the mesh, using trimesh&#39;s ray-mesh intersection.</span>
+<span class="linenos"> 51</span>                <span class="c1"># Check for intersection with the mesh, using trimesh's ray-mesh intersection.</span>
 <span class="linenos"> 52</span>                <span class="c1"># Note that mesh is in the mesh frame, so we need to transform the ray.</span>
 <span class="linenos"> 53</span>                <span class="n">R_world_mesh</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="p">(</span><span class="n">mesh_handle</span><span class="o">.</span><span class="n">wxyz</span><span class="p">)</span>
 <span class="linenos"> 54</span>                <span class="n">R_mesh_world</span> <span class="o">=</span> <span class="n">R_world_mesh</span><span class="o">.</span><span class="n">inverse</span><span class="p">()</span>
@@ -529,12 +529,12 @@ python<span class="w"> </span>03_interaction/01_scene_pointer.py<span class="w">
 <span class="linenos"> 70</span>                <span class="n">hit_pos_mesh</span><span class="o">.</span><span class="n">vertices</span> <span class="o">+=</span> <span class="n">R_world_mesh</span> <span class="o">@</span> <span class="n">hit_pos</span>
 <span class="linenos"> 71</span>                <span class="n">hit_pos_mesh</span><span class="o">.</span><span class="n">visual</span><span class="o">.</span><span class="n">vertex_colors</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 <span class="linenos"> 72</span>                <span class="n">hit_pos_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_mesh_trimesh</span><span class="p">(</span>
-<span class="linenos"> 73</span>                    <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;/hit_pos_</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">hit_pos_handles</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">mesh</span><span class="o">=</span><span class="n">hit_pos_mesh</span>
+<span class="linenos"> 73</span>                    <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">"/hit_pos_</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">hit_pos_handles</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">mesh</span><span class="o">=</span><span class="n">hit_pos_mesh</span>
 <span class="linenos"> 74</span>                <span class="p">)</span>
 <span class="linenos"> 75</span>                <span class="n">hit_pos_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">hit_pos_handle</span><span class="p">)</span>
 <span class="linenos"> 76</span>
-<span class="linenos"> 77</span>        <span class="c1"># Tests &quot;rect-select&quot; scenepointerevent.</span>
-<span class="linenos"> 78</span>        <span class="n">paint_button_handle</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Paint mesh&quot;</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">PAINT</span><span class="p">)</span>
+<span class="linenos"> 77</span>        <span class="c1"># Tests "rect-select" scenepointerevent.</span>
+<span class="linenos"> 78</span>        <span class="n">paint_button_handle</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">"Paint mesh"</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">PAINT</span><span class="p">)</span>
 <span class="linenos"> 79</span>
 <span class="linenos"> 80</span>        <span class="nd">@paint_button_handle</span><span class="o">.</span><span class="n">on_click</span>
 <span class="linenos"> 81</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
@@ -568,7 +568,7 @@ python<span class="w"> </span>03_interaction/01_scene_pointer.py<span class="w">
 <span class="linenos">109</span>                <span class="n">vertices_proj</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">/=</span> <span class="n">aspect</span>
 <span class="linenos">110</span>
 <span class="linenos">111</span>                <span class="c1"># Move the origin to the upper-left corner, and scale to [0, 1].</span>
-<span class="linenos">112</span>                <span class="c1"># ... make sure to match the OpenCV&#39;s image coordinates!</span>
+<span class="linenos">112</span>                <span class="c1"># ... make sure to match the OpenCV's image coordinates!</span>
 <span class="linenos">113</span>                <span class="n">vertices_proj</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">vertices_proj</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
 <span class="linenos">114</span>
 <span class="linenos">115</span>                <span class="c1"># Select the vertices that lie inside the 2D selected box, once projected.</span>
@@ -582,13 +582,13 @@ python<span class="w"> </span>03_interaction/01_scene_pointer.py<span class="w">
 <span class="linenos">123</span>                    <span class="n">mask</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
 <span class="linenos">124</span>                <span class="p">)</span>
 <span class="linenos">125</span>                <span class="n">mesh_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_mesh_trimesh</span><span class="p">(</span>
-<span class="linenos">126</span>                    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;/mesh&quot;</span><span class="p">,</span>
+<span class="linenos">126</span>                    <span class="n">name</span><span class="o">=</span><span class="s2">"/mesh"</span><span class="p">,</span>
 <span class="linenos">127</span>                    <span class="n">mesh</span><span class="o">=</span><span class="n">mesh</span><span class="p">,</span>
 <span class="linenos">128</span>                    <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
 <span class="linenos">129</span>                <span class="p">)</span>
 <span class="linenos">130</span>
 <span class="linenos">131</span>        <span class="c1"># Button to clear spheres.</span>
-<span class="linenos">132</span>        <span class="n">clear_button_handle</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Clear scene&quot;</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">X</span><span class="p">)</span>
+<span class="linenos">132</span>        <span class="n">clear_button_handle</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">"Clear scene"</span><span class="p">,</span> <span class="n">icon</span><span class="o">=</span><span class="n">viser</span><span class="o">.</span><span class="n">Icon</span><span class="o">.</span><span class="n">X</span><span class="p">)</span>
 <span class="linenos">133</span>
 <span class="linenos">134</span>        <span class="nd">@clear_button_handle</span><span class="o">.</span><span class="n">on_click</span>
 <span class="linenos">135</span>        <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">):</span>
@@ -598,7 +598,7 @@ python<span class="w"> </span>03_interaction/01_scene_pointer.py<span class="w">
 <span class="linenos">139</span>            <span class="n">hit_pos_handles</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
 <span class="linenos">140</span>            <span class="n">mesh</span><span class="o">.</span><span class="n">visual</span><span class="o">.</span><span class="n">vertex_colors</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 <span class="linenos">141</span>            <span class="n">mesh_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_mesh_trimesh</span><span class="p">(</span>
-<span class="linenos">142</span>                <span class="n">name</span><span class="o">=</span><span class="s2">&quot;/mesh&quot;</span><span class="p">,</span>
+<span class="linenos">142</span>                <span class="n">name</span><span class="o">=</span><span class="s2">"/mesh"</span><span class="p">,</span>
 <span class="linenos">143</span>                <span class="n">mesh</span><span class="o">=</span><span class="n">mesh</span><span class="p">,</span>
 <span class="linenos">144</span>                <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
 <span class="linenos">145</span>            <span class="p">)</span>
@@ -607,7 +607,7 @@ python<span class="w"> </span>03_interaction/01_scene_pointer.py<span class="w">
 <span class="linenos">148</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
 <span class="linenos">149</span>
 <span class="linenos">150</span>
-<span class="linenos">151</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">151</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 <span class="linenos">152</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

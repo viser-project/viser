@@ -448,14 +448,14 @@
 <div class="viewcode-block" id="ViserUrdf">
 <a class="viewcode-back" href="../../../../api/auxiliary/extras/#viser.extras.ViserUrdf">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">ViserUrdf</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper for rendering URDFs in Viser. This is a self-contained example</span>
+<span class="w">    </span><span class="sd">"""Helper for rendering URDFs in Viser. This is a self-contained example</span>
 <span class="sd">    that uses only basic Viser features. It can be copied and modified if you</span>
 <span class="sd">    need more fine-grained control.</span>
 
 <span class="sd">    To move or control visibility of the entire robot, you can create a</span>
 <span class="sd">    parent frame that the URDF will be attached to. This is because</span>
-<span class="sd">    ViserUrdf creates the robot&#39;s geometry as children of the specified</span>
-<span class="sd">    `root_node_name`, but doesn&#39;t create the root node itself.</span>
+<span class="sd">    ViserUrdf creates the robot's geometry as children of the specified</span>
+<span class="sd">    `root_node_name`, but doesn't create the root node itself.</span>
 
 <span class="sd">    .. code-block:: python</span>
 
@@ -468,14 +468,14 @@
 <span class="sd">        server = viser.ViserServer()</span>
 
 <span class="sd">        # Create a parent frame for the robot.</span>
-<span class="sd">        # ViserUrdf will attach the robot&#39;s geometry as children of this frame.</span>
-<span class="sd">        robot_base = server.scene.add_frame(&quot;/robot&quot;, show_axes=False)</span>
+<span class="sd">        # ViserUrdf will attach the robot's geometry as children of this frame.</span>
+<span class="sd">        robot_base = server.scene.add_frame("/robot", show_axes=False)</span>
 
 <span class="sd">        # Load a URDF from robot_descriptions package.</span>
 <span class="sd">        urdf = ViserUrdf(</span>
 <span class="sd">            server,</span>
-<span class="sd">            load_robot_description(&quot;panda_description&quot;),</span>
-<span class="sd">            root_node_name=&quot;/robot&quot;</span>
+<span class="sd">            load_robot_description("panda_description"),</span>
+<span class="sd">            root_node_name="/robot"</span>
 <span class="sd">        )</span>
 
 <span class="sd">        # Move the entire robot by updating the base frame.</span>
@@ -496,22 +496,22 @@
 <span class="sd">        urdf_or_path: Either a path to a URDF file or a yourdfpy URDF object.</span>
 <span class="sd">        scale: Scale factor to apply to resize the URDF.</span>
 <span class="sd">        root_node_name: Viser scene tree name for the root of the URDF geometry.</span>
-<span class="sd">        mesh_color_override: Optional color to override the URDF&#39;s visual mesh colors. RGB or RGBA tuple.</span>
-<span class="sd">        collision_mesh_color_override: Optional color to override the URDF&#39;s collision mesh colors. RGB or RGBA tuple.</span>
-<span class="sd">        load_meshes: If true, shows the URDF&#39;s visual meshes. If a yourdfpy</span>
+<span class="sd">        mesh_color_override: Optional color to override the URDF's visual mesh colors. RGB or RGBA tuple.</span>
+<span class="sd">        collision_mesh_color_override: Optional color to override the URDF's collision mesh colors. RGB or RGBA tuple.</span>
+<span class="sd">        load_meshes: If true, shows the URDF's visual meshes. If a yourdfpy</span>
 <span class="sd">            URDF object is used as input, this expects the URDF to have a visual</span>
 <span class="sd">            scene graph configured.</span>
-<span class="sd">        load_collision_meshes: If true, shows the URDF&#39;s collision meshes. If a</span>
+<span class="sd">        load_collision_meshes: If true, shows the URDF's collision meshes. If a</span>
 <span class="sd">            yourdfpy URDF object is used as input, this expects the URDF to have a</span>
 <span class="sd">            collision scene graph configured.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">target</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span> <span class="o">|</span> <span class="n">viser</span><span class="o">.</span><span class="n">ClientHandle</span><span class="p">,</span>
         <span class="n">urdf_or_path</span><span class="p">:</span> <span class="n">yourdfpy</span><span class="o">.</span><span class="n">URDF</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
-        <span class="n">root_node_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span><span class="p">,</span>
+        <span class="n">root_node_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"/"</span><span class="p">,</span>
         <span class="n">mesh_color_override</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
         <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
         <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -521,15 +521,15 @@
         <span class="n">load_meshes</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">load_collision_meshes</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">assert</span> <span class="n">root_node_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">root_node_name</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">root_node_name</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">root_node_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">root_node_name</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">root_node_name</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span>
 
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">import</span><span class="w"> </span><span class="nn">yourdfpy</span>
         <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
-                <span class="s2">&quot;yourdfpy is required for ViserUrdf but is not installed. &quot;</span>
-                <span class="s2">&quot;Install it with `pip install yourdfpy` or `pip install viser[urdf]`.&quot;</span>
+                <span class="s2">"yourdfpy is required for ViserUrdf but is not installed. "</span>
+                <span class="s2">"Install it with `pip install yourdfpy` or `pip install viser[urdf]`."</span>
             <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
 
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">urdf_or_path</span><span class="p">,</span> <span class="n">Path</span><span class="p">):</span>
@@ -569,7 +569,7 @@
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;load_meshes is enabled but the URDF model does not have a visual scene configured. Not displaying.&quot;</span>
+                    <span class="s2">"load_meshes is enabled but the URDF model does not have a visual scene configured. Not displaying."</span>
                 <span class="p">)</span>
         <span class="k">if</span> <span class="n">load_collision_meshes</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">urdf</span><span class="o">.</span><span class="n">collision_scene</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -582,29 +582,29 @@
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;load_collision_meshes is enabled but the URDF model does not have a collision scene configured. Not displaying.&quot;</span>
+                    <span class="s2">"load_collision_meshes is enabled but the URDF model does not have a collision scene configured. Not displaying."</span>
                 <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_joint_map_values</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_urdf</span><span class="o">.</span><span class="n">joint_map</span><span class="o">.</span><span class="n">values</span><span class="p">()]</span> <span class="o">*</span> <span class="n">num_joints_to_repeat</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">show_visual</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns whether the visual meshes are currently visible.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Returns whether the visual meshes are currently visible."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_visual_root_frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_visual_root_frame</span><span class="o">.</span><span class="n">visible</span>
 
     <span class="nd">@show_visual</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">show_visual</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set whether the visual meshes are currently visible.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Set whether the visual meshes are currently visible."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_visual_root_frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_visual_root_frame</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="n">visible</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;Cannot set `.show_visual`, since no visual meshes were loaded.&quot;</span>
+                <span class="s2">"Cannot set `.show_visual`, since no visual meshes were loaded."</span>
             <span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">show_collision</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns whether the collision meshes are currently visible.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Returns whether the collision meshes are currently visible."""</span>
         <span class="k">return</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_collision_root_frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collision_root_frame</span><span class="o">.</span><span class="n">visible</span>
@@ -612,18 +612,18 @@
 
     <span class="nd">@show_collision</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">show_collision</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">visible</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set whether the collision meshes are currently visible.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Set whether the collision meshes are currently visible."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collision_root_frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_collision_root_frame</span><span class="o">.</span><span class="n">visible</span> <span class="o">=</span> <span class="n">visible</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;Cannot set `.show_collision`, since no collision meshes were loaded.&quot;</span>
+                <span class="s2">"Cannot set `.show_collision`, since no collision meshes were loaded."</span>
             <span class="p">)</span>
 
 <div class="viewcode-block" id="ViserUrdf.remove">
 <a class="viewcode-back" href="../../../../api/auxiliary/extras/#viser.extras.ViserUrdf.remove">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove URDF from scene.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Remove URDF from scene."""</span>
         <span class="c1"># Some of this will be redundant, since children are removed when</span>
         <span class="c1"># parents are removed.</span>
         <span class="k">for</span> <span class="n">frame</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_joint_frames</span><span class="p">:</span>
@@ -635,7 +635,7 @@
 <div class="viewcode-block" id="ViserUrdf.update_cfg">
 <a class="viewcode-back" href="../../../../api/auxiliary/extras/#viser.extras.ViserUrdf.update_cfg">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">update_cfg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">configuration</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update the joint angles of the visualized URDF.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Update the joint angles of the visualized URDF."""</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">yourdfpy</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_urdf</span><span class="o">.</span><span class="n">update_cfg</span><span class="p">(</span><span class="n">configuration</span><span class="p">)</span>
@@ -653,7 +653,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_actuated_joint_limits</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns an ordered mapping from actuated joint names to position limits.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Returns an ordered mapping from actuated joint names to position limits."""</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">yourdfpy</span>
 
         <span class="n">out</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -672,7 +672,7 @@
 <div class="viewcode-block" id="ViserUrdf.get_actuated_joint_names">
 <a class="viewcode-back" href="../../../../api/auxiliary/extras/#viser.extras.ViserUrdf.get_actuated_joint_names">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_actuated_joint_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a tuple of actuated joint names, in order.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Returns a tuple of actuated joint names, in order."""</span>
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_urdf</span><span class="o">.</span><span class="n">actuated_joint_names</span><span class="p">)</span></div>
 
 
@@ -685,13 +685,13 @@
         <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
         <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">viser</span><span class="o">.</span><span class="n">FrameHandle</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Helper function to add joint frames and meshes to the ViserUrdf object.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">yourdfpy</span>
 
-        <span class="n">prefix</span> <span class="o">=</span> <span class="s2">&quot;collision&quot;</span> <span class="k">if</span> <span class="n">collision_geometry</span> <span class="k">else</span> <span class="s2">&quot;visual&quot;</span>
-        <span class="n">prefixed_root_node_name</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">root_node_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;//&quot;</span><span class="p">,</span> <span class="s2">&quot;/&quot;</span><span class="p">)</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="s2">"collision"</span> <span class="k">if</span> <span class="n">collision_geometry</span> <span class="k">else</span> <span class="s2">"visual"</span>
+        <span class="n">prefixed_root_node_name</span> <span class="o">=</span> <span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">root_node_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"//"</span><span class="p">,</span> <span class="s2">"/"</span><span class="p">)</span>
         <span class="n">root_frame</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_target</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span>
             <span class="n">prefixed_root_node_name</span><span class="p">,</span> <span class="n">show_axes</span><span class="o">=</span><span class="kc">False</span>
         <span class="p">)</span>
@@ -710,7 +710,7 @@
                 <span class="p">)</span>
             <span class="p">)</span>
 
-        <span class="c1"># Add the URDF&#39;s meshes/geometry to viser.</span>
+        <span class="c1"># Add the URDF's meshes/geometry to viser.</span>
         <span class="k">for</span> <span class="n">link_name</span><span class="p">,</span> <span class="n">mesh</span> <span class="ow">in</span> <span class="n">scene</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">Trimesh</span><span class="p">)</span>
             <span class="n">T_parent_child</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_urdf</span><span class="o">.</span><span class="n">get_transform</span><span class="p">(</span>
@@ -722,7 +722,7 @@
 
             <span class="c1"># Scale + transform the mesh. (these will mutate it!)</span>
             <span class="c1">#</span>
-            <span class="c1"># It&#39;s important that we use apply_transform() instead of unpacking</span>
+            <span class="c1"># It's important that we use apply_transform() instead of unpacking</span>
             <span class="c1"># the rotation/translation terms, since the scene graph transform</span>
             <span class="c1"># can also contain scale and reflection terms.</span>
             <span class="n">mesh</span> <span class="o">=</span> <span class="n">mesh</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
@@ -759,9 +759,9 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_viser_name_from_frame</span><span class="p">(</span>
     <span class="n">scene</span><span class="p">:</span> <span class="n">Scene</span><span class="p">,</span>
     <span class="n">frame_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">root_node_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span><span class="p">,</span>
+    <span class="n">root_node_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"/"</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Given the (unique) name of a frame in our URDF&#39;s kinematic tree, return a</span>
+<span class="w">    </span><span class="sd">"""Given the (unique) name of a frame in our URDF's kinematic tree, return a</span>
 <span class="sd">    scene node name for viser.</span>
 
 <span class="sd">    For a robot manipulator with four frames, that looks like:</span>
@@ -776,18 +776,18 @@
 <span class="sd">        [___________]</span>
 
 
-<span class="sd">    this would map a name like &quot;elbow&quot; to &quot;base_link/shoulder/elbow&quot;.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">assert</span> <span class="n">root_node_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">root_node_name</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">root_node_name</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+<span class="sd">    this would map a name like "elbow" to "base_link/shoulder/elbow".</span>
+<span class="sd">    """</span>
+    <span class="k">assert</span> <span class="n">root_node_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">root_node_name</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">root_node_name</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span>
 
     <span class="n">frames</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">while</span> <span class="n">frame_name</span> <span class="o">!=</span> <span class="n">scene</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">base_frame</span><span class="p">:</span>
         <span class="n">frames</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frame_name</span><span class="p">)</span>
         <span class="n">frame_name</span> <span class="o">=</span> <span class="n">scene</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">transforms</span><span class="o">.</span><span class="n">parents</span><span class="p">[</span><span class="n">frame_name</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">root_node_name</span> <span class="o">!=</span> <span class="s2">&quot;/&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">root_node_name</span> <span class="o">!=</span> <span class="s2">"/"</span><span class="p">:</span>
         <span class="n">frames</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">root_node_name</span><span class="p">)</span>
-    <span class="k">return</span> <span class="s2">&quot;/&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">frames</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">return</span> <span class="s2">"/"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">frames</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
 </pre></div>
         </article>
       </div>

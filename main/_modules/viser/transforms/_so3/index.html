@@ -439,7 +439,7 @@
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">RollPitchYaw</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Struct containing roll, pitch, and yaw Euler angles.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Struct containing roll, pitch, and yaw Euler angles."""</span>
 
     <span class="n">roll</span><span class="p">:</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">]</span>
     <span class="n">pitch</span><span class="p">:</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">]</span>
@@ -456,35 +456,35 @@
     <span class="n">tangent_dim</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
     <span class="n">space_dim</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Special orthogonal group for 3D rotations. Broadcasting rules are the same as</span>
+<span class="w">    </span><span class="sd">"""Special orthogonal group for 3D rotations. Broadcasting rules are the same as</span>
 <span class="sd">    for numpy.</span>
 
 <span class="sd">    Ported to numpy from `jaxlie.SO3`.</span>
 
 <span class="sd">    Internal parameterization is `(qw, qx, qy, qz)`. Tangent parameterization is</span>
 <span class="sd">    `(omega_x, omega_y, omega_z)`.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">wxyz</span><span class="p">:</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">]</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Internal parameters. `(w, x, y, z)` quaternion. Shape should be `(*, 4)`.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Internal parameters. `(w, x, y, z)` quaternion. Shape should be `(*, 4)`."""</span>
 
     <span class="nd">@override</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="n">wxyz</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">(wxyz=</span><span class="si">{</span><span class="n">wxyz</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">(wxyz=</span><span class="si">{</span><span class="n">wxyz</span><span class="si">}</span><span class="s2">)"</span>
 
 <div class="viewcode-block" id="SO3.from_x_radians">
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO3.from_x_radians">[docs]</a>
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_x_radians</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">hints</span><span class="o">.</span><span class="n">Scalar</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SO3</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a x-axis rotation.</span>
+<span class="w">        </span><span class="sd">"""Generates a x-axis rotation.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            angle: X rotation, in radians.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Output.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">zeros</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">theta</span><span class="p">,</span> <span class="n">zeros</span><span class="p">,</span> <span class="n">zeros</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span></div>
 
@@ -493,14 +493,14 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO3.from_y_radians">[docs]</a>
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_y_radians</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">hints</span><span class="o">.</span><span class="n">Scalar</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SO3</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a y-axis rotation.</span>
+<span class="w">        </span><span class="sd">"""Generates a y-axis rotation.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            angle: Y rotation, in radians.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Output.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">zeros</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">zeros</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">zeros</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span></div>
 
@@ -509,14 +509,14 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO3.from_z_radians">[docs]</a>
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_z_radians</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">hints</span><span class="o">.</span><span class="n">Scalar</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SO3</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a z-axis rotation.</span>
+<span class="w">        </span><span class="sd">"""Generates a z-axis rotation.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            angle: Z rotation, in radians.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Output.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">zeros</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">zeros</span><span class="p">,</span> <span class="n">zeros</span><span class="p">,</span> <span class="n">theta</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span></div>
 
@@ -529,7 +529,7 @@
         <span class="n">pitch</span><span class="p">:</span> <span class="n">hints</span><span class="o">.</span><span class="n">Scalar</span><span class="p">,</span>
         <span class="n">yaw</span><span class="p">:</span> <span class="n">hints</span><span class="o">.</span><span class="n">Scalar</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SO3</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a transform from a set of Euler angles. Uses the ZYX mobile robot</span>
+<span class="w">        </span><span class="sd">"""Generates a transform from a set of Euler angles. Uses the ZYX mobile robot</span>
 <span class="sd">        convention.</span>
 
 <span class="sd">        Args:</span>
@@ -539,7 +539,7 @@
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Output.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="p">(</span>
             <span class="n">SO3</span><span class="o">.</span><span class="n">from_z_radians</span><span class="p">(</span><span class="n">yaw</span><span class="p">)</span>
 <div class="viewcode-block" id="SO3.from_quaternion_xyzw">
@@ -551,7 +551,7 @@
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_quaternion_xyzw</span><span class="p">(</span><span class="n">xyzw</span><span class="p">:</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">SO3</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Construct a rotation from an `xyzw` quaternion.</span>
+<span class="w">        </span><span class="sd">"""Construct a rotation from an `xyzw` quaternion.</span>
 
 <span class="sd">        Note that `wxyz` quaternions can be constructed using the default dataclass</span>
 <span class="sd">        constructor.</span>
@@ -561,7 +561,7 @@
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Output.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">assert</span> <span class="n">xyzw</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">:]</span> <span class="o">==</span> <span class="p">(</span><span class="mi">4</span><span class="p">,)</span>
         <span class="k">return</span> <span class="n">SO3</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span><span class="n">xyzw</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">shift</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span></div>
 
@@ -569,18 +569,18 @@
 <div class="viewcode-block" id="SO3.as_quaternion_xyzw">
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO3.as_quaternion_xyzw">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">as_quaternion_xyzw</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Grab parameters as xyzw quaternion.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Grab parameters as xyzw quaternion."""</span>
         <span class="k">return</span> <span class="n">onp</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">shift</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="SO3.as_rpy_radians">
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO3.as_rpy_radians">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">as_rpy_radians</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RollPitchYaw</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Computes roll, pitch, and yaw angles. Uses the ZYX mobile robot convention.</span>
+<span class="w">        </span><span class="sd">"""Computes roll, pitch, and yaw angles. Uses the ZYX mobile robot convention.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            NamedTuple containing Euler angles in radians.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="n">RollPitchYaw</span><span class="p">(</span>
             <span class="n">roll</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compute_roll_radians</span><span class="p">(),</span>
             <span class="n">pitch</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compute_pitch_radians</span><span class="p">(),</span>
@@ -591,11 +591,11 @@
 <div class="viewcode-block" id="SO3.compute_roll_radians">
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO3.compute_roll_radians">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">compute_roll_radians</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute roll angle. Uses the ZYX mobile robot convention.</span>
+<span class="w">        </span><span class="sd">"""Compute roll angle. Uses the ZYX mobile robot convention.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Euler angle in radians.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion</span>
         <span class="n">q0</span><span class="p">,</span> <span class="n">q1</span><span class="p">,</span> <span class="n">q2</span><span class="p">,</span> <span class="n">q3</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">onp</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">q0</span> <span class="o">*</span> <span class="n">q1</span> <span class="o">+</span> <span class="n">q2</span> <span class="o">*</span> <span class="n">q3</span><span class="p">),</span> <span class="mi">1</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">q1</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">q2</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span></div>
@@ -604,11 +604,11 @@
 <div class="viewcode-block" id="SO3.compute_pitch_radians">
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO3.compute_pitch_radians">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">compute_pitch_radians</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute pitch angle. Uses the ZYX mobile robot convention.</span>
+<span class="w">        </span><span class="sd">"""Compute pitch angle. Uses the ZYX mobile robot convention.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Euler angle in radians.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion</span>
         <span class="n">q0</span><span class="p">,</span> <span class="n">q1</span><span class="p">,</span> <span class="n">q2</span><span class="p">,</span> <span class="n">q3</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">onp</span><span class="o">.</span><span class="n">arcsin</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">q0</span> <span class="o">*</span> <span class="n">q2</span> <span class="o">-</span> <span class="n">q3</span> <span class="o">*</span> <span class="n">q1</span><span class="p">))</span></div>
@@ -617,11 +617,11 @@
 <div class="viewcode-block" id="SO3.compute_yaw_radians">
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO3.compute_yaw_radians">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">compute_yaw_radians</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute yaw angle. Uses the ZYX mobile robot convention.</span>
+<span class="w">        </span><span class="sd">"""Compute yaw angle. Uses the ZYX mobile robot convention.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Euler angle in radians.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion</span>
         <span class="n">q0</span><span class="p">,</span> <span class="n">q1</span><span class="p">,</span> <span class="n">q2</span><span class="p">,</span> <span class="n">q3</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">moveaxis</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">onp</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">q0</span> <span class="o">*</span> <span class="n">q3</span> <span class="o">+</span> <span class="n">q1</span> <span class="o">*</span> <span class="n">q2</span><span class="p">),</span> <span class="mi">1</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">q2</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">q3</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span></div>
@@ -651,7 +651,7 @@
         <span class="k">assert</span> <span class="n">matrix</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span> <span class="o">==</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
 
         <span class="c1"># Modified from:</span>
-        <span class="c1"># &gt; &quot;Converting a Rotation Matrix to a Quaternion&quot; from Mike Day</span>
+        <span class="c1"># &gt; "Converting a Rotation Matrix to a Quaternion" from Mike Day</span>
         <span class="c1"># &gt; https://d3cw3dd2w32x2b.cloudfront.net/wp-content/uploads/2015/01/matrix-to-quat.pdf</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">case0</span><span class="p">(</span><span class="n">m</span><span class="p">):</span>
@@ -738,7 +738,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">as_matrix</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">onpt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">onp</span><span class="o">.</span><span class="n">floating</span><span class="p">]:</span>
         <span class="n">norm_sq</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wxyz</span><span class="p">),</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="n">q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wxyz</span> <span class="o">*</span> <span class="n">onp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">/</span> <span class="n">norm_sq</span><span class="p">)</span>  <span class="c1"># (*, 4)</span>
-        <span class="n">q_outer</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...i,...j-&gt;...ij&quot;</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>  <span class="c1"># (*, 4, 4)</span>
+        <span class="n">q_outer</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">"...i,...j-&gt;...ij"</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span>  <span class="c1"># (*, 4, 4)</span>
         <span class="k">return</span> <span class="p">(</span>
             <span class="n">onp</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
                 <span class="p">[</span>
@@ -817,7 +817,7 @@
         <span class="n">use_taylor</span> <span class="o">=</span> <span class="n">theta_squared</span> <span class="o">&lt;</span> <span class="n">get_epsilon</span><span class="p">(</span><span class="n">tangent</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
 
         <span class="c1"># Shim to avoid NaNs in onp.where branches, which cause failures for</span>
-        <span class="c1"># reverse-mode AD in JAX. This isn&#39;t needed for vanilla numpy.</span>
+        <span class="c1"># reverse-mode AD in JAX. This isn't needed for vanilla numpy.</span>
         <span class="n">safe_theta</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span>
             <span class="n">onp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
                 <span class="n">use_taylor</span><span class="p">,</span>
@@ -827,7 +827,7 @@
         <span class="p">)</span>
 
         <span class="c1"># Fun fact: when safe_theta is a `float32` _scalar_, this</span>
-        <span class="c1"># multiplication will promote `safe_half_theta` to `float64`. We&#39;ll</span>
+        <span class="c1"># multiplication will promote `safe_half_theta` to `float64`. We'll</span>
         <span class="c1"># cast at the end to make sure our input/output dtypes match.</span>
         <span class="n">safe_half_theta</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">safe_theta</span>
         <span class="n">real_factor</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
@@ -864,7 +864,7 @@
         <span class="n">use_taylor</span> <span class="o">=</span> <span class="n">norm_sq</span> <span class="o">&lt;</span> <span class="n">get_epsilon</span><span class="p">(</span><span class="n">norm_sq</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
 
         <span class="c1"># Shim to avoid NaNs in onp.where branches, which cause failures for</span>
-        <span class="c1"># reverse-mode AD in JAX. This isn&#39;t needed for vanilla numpy.</span>
+        <span class="c1"># reverse-mode AD in JAX. This isn't needed for vanilla numpy.</span>
         <span class="n">norm_safe</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span>
             <span class="n">onp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
                 <span class="n">use_taylor</span><span class="p">,</span>

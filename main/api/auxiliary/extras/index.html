@@ -547,14 +547,14 @@ ViserUrdf creates the robot’s geometry as children of the specified
 <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
 
 <span class="c1"># Create a parent frame for the robot.</span>
-<span class="c1"># ViserUrdf will attach the robot&#39;s geometry as children of this frame.</span>
-<span class="n">robot_base</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span><span class="s2">&quot;/robot&quot;</span><span class="p">,</span> <span class="n">show_axes</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="c1"># ViserUrdf will attach the robot's geometry as children of this frame.</span>
+<span class="n">robot_base</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_frame</span><span class="p">(</span><span class="s2">"/robot"</span><span class="p">,</span> <span class="n">show_axes</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
 <span class="c1"># Load a URDF from robot_descriptions package.</span>
 <span class="n">urdf</span> <span class="o">=</span> <span class="n">ViserUrdf</span><span class="p">(</span>
     <span class="n">server</span><span class="p">,</span>
-    <span class="n">load_robot_description</span><span class="p">(</span><span class="s2">&quot;panda_description&quot;</span><span class="p">),</span>
-    <span class="n">root_node_name</span><span class="o">=</span><span class="s2">&quot;/robot&quot;</span>
+    <span class="n">load_robot_description</span><span class="p">(</span><span class="s2">"panda_description"</span><span class="p">),</span>
+    <span class="n">root_node_name</span><span class="o">=</span><span class="s2">"/robot"</span>
 <span class="p">)</span>
 
 <span class="c1"># Move the entire robot by updating the base frame.</span>

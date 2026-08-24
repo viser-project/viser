@@ -504,11 +504,11 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos"> 36</span>
 <span class="linenos"> 37</span>
 <span class="linenos"> 38</span><span class="k">def</span><span class="w"> </span><span class="nf">generate_per_instance_colors</span><span class="p">(</span>
-<span class="linenos"> 39</span>    <span class="n">positions</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">color_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;rainbow&quot;</span>
+<span class="linenos"> 39</span>    <span class="n">positions</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">color_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"rainbow"</span>
 <span class="linenos"> 40</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="linenos"> 41</span>    <span class="n">n</span> <span class="o">=</span> <span class="n">positions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 <span class="linenos"> 42</span>
-<span class="linenos"> 43</span>    <span class="k">if</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">&quot;rainbow&quot;</span><span class="p">:</span>
+<span class="linenos"> 43</span>    <span class="k">if</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">"rainbow"</span><span class="p">:</span>
 <span class="linenos"> 44</span>        <span class="c1"># Rainbow colors based on instance index.</span>
 <span class="linenos"> 45</span>        <span class="n">hues</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="linenos"> 46</span>        <span class="n">colors</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
@@ -531,7 +531,7 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos"> 63</span>                <span class="n">colors</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">x</span><span class="p">]</span>
 <span class="linenos"> 64</span>        <span class="k">return</span> <span class="p">(</span><span class="n">colors</span> <span class="o">*</span> <span class="mi">255</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
 <span class="linenos"> 65</span>
-<span class="linenos"> 66</span>    <span class="k">elif</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">&quot;position&quot;</span><span class="p">:</span>
+<span class="linenos"> 66</span>    <span class="k">elif</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">"position"</span><span class="p">:</span>
 <span class="linenos"> 67</span>        <span class="c1"># Colors based on position (cosine of position for smooth gradients).</span>
 <span class="linenos"> 68</span>        <span class="n">colors</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">positions</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="mi">255</span>
 <span class="linenos"> 69</span>        <span class="k">return</span> <span class="n">colors</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
@@ -546,11 +546,11 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos"> 78</span>
 <span class="linenos"> 79</span>
 <span class="linenos"> 80</span><span class="k">def</span><span class="w"> </span><span class="nf">generate_animated_colors</span><span class="p">(</span>
-<span class="linenos"> 81</span>    <span class="n">positions</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">t</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">animation_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;wave&quot;</span>
+<span class="linenos"> 81</span>    <span class="n">positions</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">t</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">animation_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"wave"</span>
 <span class="linenos"> 82</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="linenos"> 83</span>    <span class="n">n</span> <span class="o">=</span> <span class="n">positions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 <span class="linenos"> 84</span>
-<span class="linenos"> 85</span>    <span class="k">if</span> <span class="n">animation_mode</span> <span class="o">==</span> <span class="s2">&quot;wave&quot;</span><span class="p">:</span>
+<span class="linenos"> 85</span>    <span class="k">if</span> <span class="n">animation_mode</span> <span class="o">==</span> <span class="s2">"wave"</span><span class="p">:</span>
 <span class="linenos"> 86</span>        <span class="c1"># Wave pattern based on distance from center.</span>
 <span class="linenos"> 87</span>        <span class="n">distances</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">positions</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">2</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 <span class="linenos"> 88</span>        <span class="n">wave</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">distances</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span>
@@ -560,13 +560,13 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos"> 92</span>        <span class="n">colors</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">distances</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">3</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span>  <span class="c1"># Blue.</span>
 <span class="linenos"> 93</span>        <span class="k">return</span> <span class="p">(</span><span class="n">colors</span> <span class="o">*</span> <span class="mi">255</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
 <span class="linenos"> 94</span>
-<span class="linenos"> 95</span>    <span class="k">elif</span> <span class="n">animation_mode</span> <span class="o">==</span> <span class="s2">&quot;pulse&quot;</span><span class="p">:</span>
+<span class="linenos"> 95</span>    <span class="k">elif</span> <span class="n">animation_mode</span> <span class="o">==</span> <span class="s2">"pulse"</span><span class="p">:</span>
 <span class="linenos"> 96</span>        <span class="c1"># Pulsing color based on position.</span>
 <span class="linenos"> 97</span>        <span class="n">pulse</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span>
 <span class="linenos"> 98</span>        <span class="n">colors</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">positions</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="n">pulse</span>
 <span class="linenos"> 99</span>        <span class="k">return</span> <span class="p">(</span><span class="n">colors</span> <span class="o">*</span> <span class="mi">255</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
 <span class="linenos">100</span>
-<span class="linenos">101</span>    <span class="k">elif</span> <span class="n">animation_mode</span> <span class="o">==</span> <span class="s2">&quot;cycle&quot;</span><span class="p">:</span>
+<span class="linenos">101</span>    <span class="k">elif</span> <span class="n">animation_mode</span> <span class="o">==</span> <span class="s2">"cycle"</span><span class="p">:</span>
 <span class="linenos">102</span>        <span class="c1"># Cycling through hues over time.</span>
 <span class="linenos">103</span>        <span class="n">hue_shift</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span> <span class="o">*</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">%</span> <span class="mf">1.0</span>
 <span class="linenos">104</span>        <span class="n">hues</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">+</span> <span class="n">hue_shift</span><span class="p">)</span> <span class="o">%</span> <span class="mf">1.0</span>
@@ -597,7 +597,7 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">129</span>
 <span class="linenos">130</span><span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
 <span class="linenos">131</span>    <span class="c1"># Load and prepare mesh data.</span>
-<span class="linenos">132</span>    <span class="n">dragon_mesh</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">load_mesh</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;../assets/dragon.obj&quot;</span><span class="p">))</span>
+<span class="linenos">132</span>    <span class="n">dragon_mesh</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">load_mesh</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"../assets/dragon.obj"</span><span class="p">))</span>
 <span class="linenos">133</span>    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dragon_mesh</span><span class="p">,</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">Trimesh</span><span class="p">)</span>
 <span class="linenos">134</span>    <span class="n">dragon_mesh</span><span class="o">.</span><span class="n">apply_scale</span><span class="p">(</span><span class="mf">0.005</span><span class="p">)</span>
 <span class="linenos">135</span>    <span class="n">dragon_mesh</span><span class="o">.</span><span class="n">vertices</span> <span class="o">-=</span> <span class="n">dragon_mesh</span><span class="o">.</span><span class="n">centroid</span>
@@ -609,42 +609,42 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">141</span>
 <span class="linenos">142</span>    <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
 <span class="linenos">143</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">configure_default_lights</span><span class="p">()</span>
-<span class="linenos">144</span>    <span class="n">grid_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_grid</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;/grid&quot;</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
+<span class="linenos">144</span>    <span class="n">grid_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_grid</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"/grid"</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
 <span class="linenos">145</span>
 <span class="linenos">146</span>    <span class="c1"># Add GUI controls.</span>
 <span class="linenos">147</span>    <span class="n">instance_count_slider</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_slider</span><span class="p">(</span>
-<span class="linenos">148</span>        <span class="s2">&quot;# of instances&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="mi">100</span>
+<span class="linenos">148</span>        <span class="s2">"# of instances"</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="mi">100</span>
 <span class="linenos">149</span>    <span class="p">)</span>
 <span class="linenos">150</span>
-<span class="linenos">151</span>    <span class="n">animate_checkbox</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">&quot;Animate&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">151</span>    <span class="n">animate_checkbox</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">"Animate"</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="linenos">152</span>    <span class="n">per_axis_scale_checkbox</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span>
-<span class="linenos">153</span>        <span class="s2">&quot;Per-axis scale during animation&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span>
+<span class="linenos">153</span>        <span class="s2">"Per-axis scale during animation"</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span>
 <span class="linenos">154</span>    <span class="p">)</span>
-<span class="linenos">155</span>    <span class="n">lod_checkbox</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">&quot;Enable LOD&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="linenos">156</span>    <span class="n">cast_shadow_checkbox</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">&quot;Cast shadow&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">155</span>    <span class="n">lod_checkbox</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">"Enable LOD"</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">156</span>    <span class="n">cast_shadow_checkbox</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_checkbox</span><span class="p">(</span><span class="s2">"Cast shadow"</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="linenos">157</span>
 <span class="linenos">158</span>    <span class="c1"># Color controls.</span>
 <span class="linenos">159</span>    <span class="n">color_mode_dropdown</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_dropdown</span><span class="p">(</span>
-<span class="linenos">160</span>        <span class="s2">&quot;Color mode&quot;</span><span class="p">,</span>
-<span class="linenos">161</span>        <span class="n">options</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;Per-instance&quot;</span><span class="p">,</span> <span class="s2">&quot;Shared&quot;</span><span class="p">,</span> <span class="s2">&quot;Animated&quot;</span><span class="p">),</span>
-<span class="linenos">162</span>        <span class="n">initial_value</span><span class="o">=</span><span class="s2">&quot;Per-instance&quot;</span><span class="p">,</span>
+<span class="linenos">160</span>        <span class="s2">"Color mode"</span><span class="p">,</span>
+<span class="linenos">161</span>        <span class="n">options</span><span class="o">=</span><span class="p">(</span><span class="s2">"Per-instance"</span><span class="p">,</span> <span class="s2">"Shared"</span><span class="p">,</span> <span class="s2">"Animated"</span><span class="p">),</span>
+<span class="linenos">162</span>        <span class="n">initial_value</span><span class="o">=</span><span class="s2">"Per-instance"</span><span class="p">,</span>
 <span class="linenos">163</span>    <span class="p">)</span>
 <span class="linenos">164</span>
 <span class="linenos">165</span>    <span class="c1"># Per-instance color controls.</span>
 <span class="linenos">166</span>    <span class="n">per_instance_color_dropdown</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_dropdown</span><span class="p">(</span>
-<span class="linenos">167</span>        <span class="s2">&quot;Per-instance style&quot;</span><span class="p">,</span>
-<span class="linenos">168</span>        <span class="n">options</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;Rainbow&quot;</span><span class="p">,</span> <span class="s2">&quot;Position&quot;</span><span class="p">),</span>
-<span class="linenos">169</span>        <span class="n">initial_value</span><span class="o">=</span><span class="s2">&quot;Rainbow&quot;</span><span class="p">,</span>
+<span class="linenos">167</span>        <span class="s2">"Per-instance style"</span><span class="p">,</span>
+<span class="linenos">168</span>        <span class="n">options</span><span class="o">=</span><span class="p">(</span><span class="s2">"Rainbow"</span><span class="p">,</span> <span class="s2">"Position"</span><span class="p">),</span>
+<span class="linenos">169</span>        <span class="n">initial_value</span><span class="o">=</span><span class="s2">"Rainbow"</span><span class="p">,</span>
 <span class="linenos">170</span>    <span class="p">)</span>
 <span class="linenos">171</span>
 <span class="linenos">172</span>    <span class="c1"># Shared color controls.</span>
-<span class="linenos">173</span>    <span class="n">shared_color_rgb</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_rgb</span><span class="p">(</span><span class="s2">&quot;Shared color&quot;</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
+<span class="linenos">173</span>    <span class="n">shared_color_rgb</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_rgb</span><span class="p">(</span><span class="s2">"Shared color"</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span>
 <span class="linenos">174</span>
 <span class="linenos">175</span>    <span class="c1"># Animated color controls.</span>
 <span class="linenos">176</span>    <span class="n">animated_color_dropdown</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_dropdown</span><span class="p">(</span>
-<span class="linenos">177</span>        <span class="s2">&quot;Animation style&quot;</span><span class="p">,</span>
-<span class="linenos">178</span>        <span class="n">options</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;Wave&quot;</span><span class="p">,</span> <span class="s2">&quot;Pulse&quot;</span><span class="p">,</span> <span class="s2">&quot;Cycle&quot;</span><span class="p">),</span>
-<span class="linenos">179</span>        <span class="n">initial_value</span><span class="o">=</span><span class="s2">&quot;Wave&quot;</span><span class="p">,</span>
+<span class="linenos">177</span>        <span class="s2">"Animation style"</span><span class="p">,</span>
+<span class="linenos">178</span>        <span class="n">options</span><span class="o">=</span><span class="p">(</span><span class="s2">"Wave"</span><span class="p">,</span> <span class="s2">"Pulse"</span><span class="p">,</span> <span class="s2">"Cycle"</span><span class="p">),</span>
+<span class="linenos">179</span>        <span class="n">initial_value</span><span class="o">=</span><span class="s2">"Wave"</span><span class="p">,</span>
 <span class="linenos">180</span>    <span class="p">)</span>
 <span class="linenos">181</span>
 <span class="linenos">182</span>    <span class="c1"># Initialize transforms.</span>
@@ -653,24 +653,24 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">185</span>
 <span class="linenos">186</span>    <span class="c1"># Create batched mesh visualization.</span>
 <span class="linenos">187</span>    <span class="n">axes_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_batched_axes</span><span class="p">(</span>
-<span class="linenos">188</span>        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;/axes&quot;</span><span class="p">,</span>
+<span class="linenos">188</span>        <span class="n">name</span><span class="o">=</span><span class="s2">"/axes"</span><span class="p">,</span>
 <span class="linenos">189</span>        <span class="n">batched_positions</span><span class="o">=</span><span class="n">positions</span><span class="p">,</span>
 <span class="linenos">190</span>        <span class="n">batched_wxyzs</span><span class="o">=</span><span class="n">rotations</span><span class="p">,</span>
 <span class="linenos">191</span>        <span class="n">batched_scales</span><span class="o">=</span><span class="n">scales</span><span class="p">,</span>
 <span class="linenos">192</span>    <span class="p">)</span>
 <span class="linenos">193</span>
 <span class="linenos">194</span>    <span class="c1"># Create initial colors based on default mode.</span>
-<span class="linenos">195</span>    <span class="n">initial_colors</span> <span class="o">=</span> <span class="n">generate_per_instance_colors</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">color_mode</span><span class="o">=</span><span class="s2">&quot;rainbow&quot;</span><span class="p">)</span>
+<span class="linenos">195</span>    <span class="n">initial_colors</span> <span class="o">=</span> <span class="n">generate_per_instance_colors</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">color_mode</span><span class="o">=</span><span class="s2">"rainbow"</span><span class="p">)</span>
 <span class="linenos">196</span>
 <span class="linenos">197</span>    <span class="n">mesh_handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_batched_meshes_simple</span><span class="p">(</span>
-<span class="linenos">198</span>        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;/dragon&quot;</span><span class="p">,</span>
+<span class="linenos">198</span>        <span class="n">name</span><span class="o">=</span><span class="s2">"/dragon"</span><span class="p">,</span>
 <span class="linenos">199</span>        <span class="n">vertices</span><span class="o">=</span><span class="n">dragon_mesh</span><span class="o">.</span><span class="n">vertices</span><span class="p">,</span>
 <span class="linenos">200</span>        <span class="n">faces</span><span class="o">=</span><span class="n">dragon_mesh</span><span class="o">.</span><span class="n">faces</span><span class="p">,</span>
 <span class="linenos">201</span>        <span class="n">batched_positions</span><span class="o">=</span><span class="n">positions</span><span class="p">,</span>
 <span class="linenos">202</span>        <span class="n">batched_wxyzs</span><span class="o">=</span><span class="n">rotations</span><span class="p">,</span>
 <span class="linenos">203</span>        <span class="n">batched_scales</span><span class="o">=</span><span class="n">scales</span><span class="p">,</span>
 <span class="linenos">204</span>        <span class="n">batched_colors</span><span class="o">=</span><span class="n">initial_colors</span><span class="p">,</span>
-<span class="linenos">205</span>        <span class="n">lod</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+<span class="linenos">205</span>        <span class="n">lod</span><span class="o">=</span><span class="s2">"auto"</span><span class="p">,</span>
 <span class="linenos">206</span>    <span class="p">)</span>
 <span class="linenos">207</span>
 <span class="linenos">208</span>    <span class="c1"># Track previous color mode to avoid redundant disabled state updates.</span>
@@ -681,7 +681,7 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">213</span>        <span class="n">n</span> <span class="o">=</span> <span class="n">instance_count_slider</span><span class="o">.</span><span class="n">value</span>
 <span class="linenos">214</span>
 <span class="linenos">215</span>        <span class="c1"># Update props based on GUI controls.</span>
-<span class="linenos">216</span>        <span class="n">mesh_handle</span><span class="o">.</span><span class="n">lod</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span> <span class="k">if</span> <span class="n">lod_checkbox</span><span class="o">.</span><span class="n">value</span> <span class="k">else</span> <span class="s2">&quot;off&quot;</span>
+<span class="linenos">216</span>        <span class="n">mesh_handle</span><span class="o">.</span><span class="n">lod</span> <span class="o">=</span> <span class="s2">"auto"</span> <span class="k">if</span> <span class="n">lod_checkbox</span><span class="o">.</span><span class="n">value</span> <span class="k">else</span> <span class="s2">"off"</span>
 <span class="linenos">217</span>        <span class="n">mesh_handle</span><span class="o">.</span><span class="n">cast_shadow</span> <span class="o">=</span> <span class="n">cast_shadow_checkbox</span><span class="o">.</span><span class="n">value</span>
 <span class="linenos">218</span>
 <span class="linenos">219</span>        <span class="c1"># Recreate transforms if instance count changed.</span>
@@ -701,7 +701,7 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">233</span>                <span class="n">mesh_handle</span><span class="o">.</span><span class="n">batched_wxyzs</span> <span class="o">=</span> <span class="n">axes_handle</span><span class="o">.</span><span class="n">batched_wxyzs</span> <span class="o">=</span> <span class="n">rotations</span>
 <span class="linenos">234</span>                <span class="n">mesh_handle</span><span class="o">.</span><span class="n">batched_scales</span> <span class="o">=</span> <span class="n">axes_handle</span><span class="o">.</span><span class="n">batched_scales</span> <span class="o">=</span> <span class="n">scales</span>
 <span class="linenos">235</span>
-<span class="linenos">236</span>                <span class="c1"># Colors will be overwritten below; we&#39;ll just put them in a valid state.</span>
+<span class="linenos">236</span>                <span class="c1"># Colors will be overwritten below; we'll just put them in a valid state.</span>
 <span class="linenos">237</span>                <span class="n">mesh_handle</span><span class="o">.</span><span class="n">batched_colors</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
 <span class="linenos">238</span>
 <span class="linenos">239</span>        <span class="c1"># Generate colors based on current mode.</span>
@@ -709,21 +709,21 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">241</span>
 <span class="linenos">242</span>        <span class="c1"># Update disabled state for color controls only when mode changes.</span>
 <span class="linenos">243</span>        <span class="k">if</span> <span class="n">color_mode</span> <span class="o">!=</span> <span class="n">prev_color_mode</span><span class="p">:</span>
-<span class="linenos">244</span>            <span class="n">per_instance_color_dropdown</span><span class="o">.</span><span class="n">disabled</span> <span class="o">=</span> <span class="n">color_mode</span> <span class="o">!=</span> <span class="s2">&quot;Per-instance&quot;</span>
-<span class="linenos">245</span>            <span class="n">shared_color_rgb</span><span class="o">.</span><span class="n">disabled</span> <span class="o">=</span> <span class="n">color_mode</span> <span class="o">!=</span> <span class="s2">&quot;Shared&quot;</span>
-<span class="linenos">246</span>            <span class="n">animated_color_dropdown</span><span class="o">.</span><span class="n">disabled</span> <span class="o">=</span> <span class="n">color_mode</span> <span class="o">!=</span> <span class="s2">&quot;Animated&quot;</span>
+<span class="linenos">244</span>            <span class="n">per_instance_color_dropdown</span><span class="o">.</span><span class="n">disabled</span> <span class="o">=</span> <span class="n">color_mode</span> <span class="o">!=</span> <span class="s2">"Per-instance"</span>
+<span class="linenos">245</span>            <span class="n">shared_color_rgb</span><span class="o">.</span><span class="n">disabled</span> <span class="o">=</span> <span class="n">color_mode</span> <span class="o">!=</span> <span class="s2">"Shared"</span>
+<span class="linenos">246</span>            <span class="n">animated_color_dropdown</span><span class="o">.</span><span class="n">disabled</span> <span class="o">=</span> <span class="n">color_mode</span> <span class="o">!=</span> <span class="s2">"Animated"</span>
 <span class="linenos">247</span>            <span class="n">prev_color_mode</span> <span class="o">=</span> <span class="n">color_mode</span>
 <span class="linenos">248</span>
-<span class="linenos">249</span>        <span class="k">if</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">&quot;Per-instance&quot;</span><span class="p">:</span>
+<span class="linenos">249</span>        <span class="k">if</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">"Per-instance"</span><span class="p">:</span>
 <span class="linenos">250</span>            <span class="c1"># Per-instance colors with different styles.</span>
 <span class="linenos">251</span>            <span class="n">per_instance_style</span> <span class="o">=</span> <span class="n">per_instance_color_dropdown</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
 <span class="linenos">252</span>            <span class="n">colors</span> <span class="o">=</span> <span class="n">generate_per_instance_colors</span><span class="p">(</span>
 <span class="linenos">253</span>                <span class="n">positions</span><span class="p">,</span> <span class="n">color_mode</span><span class="o">=</span><span class="n">per_instance_style</span>
 <span class="linenos">254</span>            <span class="p">)</span>
-<span class="linenos">255</span>        <span class="k">elif</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">&quot;Shared&quot;</span><span class="p">:</span>
+<span class="linenos">255</span>        <span class="k">elif</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">"Shared"</span><span class="p">:</span>
 <span class="linenos">256</span>            <span class="c1"># Single shared color for all instances.</span>
 <span class="linenos">257</span>            <span class="n">colors</span> <span class="o">=</span> <span class="n">generate_shared_color</span><span class="p">(</span><span class="n">shared_color_rgb</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
-<span class="linenos">258</span>        <span class="k">elif</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">&quot;Animated&quot;</span><span class="p">:</span>
+<span class="linenos">258</span>        <span class="k">elif</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">"Animated"</span><span class="p">:</span>
 <span class="linenos">259</span>            <span class="c1"># Animated colors with time-based effects.</span>
 <span class="linenos">260</span>            <span class="n">t</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 <span class="linenos">261</span>            <span class="n">animation_style</span> <span class="o">=</span> <span class="n">animated_color_dropdown</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
@@ -732,7 +732,7 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">264</span>            <span class="p">)</span>
 <span class="linenos">265</span>        <span class="k">else</span><span class="p">:</span>
 <span class="linenos">266</span>            <span class="c1"># Default fallback.</span>
-<span class="linenos">267</span>            <span class="n">colors</span> <span class="o">=</span> <span class="n">generate_per_instance_colors</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">color_mode</span><span class="o">=</span><span class="s2">&quot;rainbow&quot;</span><span class="p">)</span>
+<span class="linenos">267</span>            <span class="n">colors</span> <span class="o">=</span> <span class="n">generate_per_instance_colors</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">color_mode</span><span class="o">=</span><span class="s2">"rainbow"</span><span class="p">)</span>
 <span class="linenos">268</span>
 <span class="linenos">269</span>        <span class="c1"># Animate if enabled.</span>
 <span class="linenos">270</span>        <span class="k">if</span> <span class="n">animate_checkbox</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
@@ -760,7 +760,7 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">292</span>                <span class="k">assert</span> <span class="n">scales</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="n">n</span><span class="p">,)</span>
 <span class="linenos">293</span>
 <span class="linenos">294</span>            <span class="c1"># Update colors for animated mode during animation.</span>
-<span class="linenos">295</span>            <span class="k">if</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">&quot;Animated&quot;</span><span class="p">:</span>
+<span class="linenos">295</span>            <span class="k">if</span> <span class="n">color_mode</span> <span class="o">==</span> <span class="s2">"Animated"</span><span class="p">:</span>
 <span class="linenos">296</span>                <span class="n">animation_style</span> <span class="o">=</span> <span class="n">animated_color_dropdown</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
 <span class="linenos">297</span>                <span class="n">colors</span> <span class="o">=</span> <span class="n">generate_animated_colors</span><span class="p">(</span>
 <span class="linenos">298</span>                    <span class="n">positions</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">animation_mode</span><span class="o">=</span><span class="n">animation_style</span>
@@ -778,7 +778,7 @@ For working with trimesh objects, see <a class="reference internal" href="../../
 <span class="linenos">310</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="mf">60.0</span><span class="p">)</span>
 <span class="linenos">311</span>
 <span class="linenos">312</span>
-<span class="linenos">313</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">313</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 <span class="linenos">314</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

@@ -450,7 +450,7 @@ will start to sputter on most machines:</p>
 <span class="c1"># Slow... 👎</span>
 <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5000</span><span class="p">):</span>
     <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span>
-        <span class="sa">f</span><span class="s2">&quot;/box_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"/box_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
         <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">),</span>
         <span class="n">position</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">3</span><span class="p">),</span>
     <span class="p">)</span>
@@ -480,7 +480,7 @@ into single <a class="reference internal" href="../api/core/scene_api/#viser.Sce
 
 <span class="c1"># Much faster! 👍</span>
 <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_batched_meshes_trimesh</span><span class="p">(</span>
-    <span class="s2">&quot;/boxes&quot;</span><span class="p">,</span>
+    <span class="s2">"/boxes"</span><span class="p">,</span>
     <span class="n">mesh</span><span class="o">=</span><span class="n">trimesh</span><span class="o">.</span><span class="n">creation</span><span class="o">.</span><span class="n">box</span><span class="p">(</span><span class="n">extents</span><span class="o">=</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)),</span>
     <span class="n">batched_wxyzs</span><span class="o">=</span><span class="n">batched_wxyzs</span><span class="p">,</span>
     <span class="n">batched_positions</span><span class="o">=</span><span class="n">batched_positions</span><span class="p">,</span>

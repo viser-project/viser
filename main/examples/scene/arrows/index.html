@@ -488,7 +488,7 @@ radius, head radius, and head length.</p>
 <span class="linenos"> 32</span>        <span class="n">colors</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">color_value</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">255</span> <span class="o">-</span> <span class="n">color_value</span><span class="p">]</span>
 <span class="linenos"> 33</span>
 <span class="linenos"> 34</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_arrows</span><span class="p">(</span>
-<span class="linenos"> 35</span>        <span class="s2">&quot;/arrows/spiral&quot;</span><span class="p">,</span>
+<span class="linenos"> 35</span>        <span class="s2">"/arrows/spiral"</span><span class="p">,</span>
 <span class="linenos"> 36</span>        <span class="n">points</span><span class="o">=</span><span class="n">points</span><span class="p">,</span>
 <span class="linenos"> 37</span>        <span class="n">colors</span><span class="o">=</span><span class="n">colors</span><span class="p">,</span>
 <span class="linenos"> 38</span>        <span class="n">shaft_radius</span><span class="o">=</span><span class="mf">0.02</span><span class="p">,</span>
@@ -517,7 +517,7 @@ radius, head radius, and head length.</p>
 <span class="linenos"> 61</span>        <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">,</span>
 <span class="linenos"> 62</span>    <span class="p">)</span>
 <span class="linenos"> 63</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_arrows</span><span class="p">(</span>
-<span class="linenos"> 64</span>        <span class="s2">&quot;/arrows/frame&quot;</span><span class="p">,</span>
+<span class="linenos"> 64</span>        <span class="s2">"/arrows/frame"</span><span class="p">,</span>
 <span class="linenos"> 65</span>        <span class="n">points</span><span class="o">=</span><span class="n">frame_points</span><span class="p">,</span>
 <span class="linenos"> 66</span>        <span class="n">colors</span><span class="o">=</span><span class="n">frame_colors</span><span class="p">,</span>
 <span class="linenos"> 67</span>        <span class="n">shaft_radius</span><span class="o">=</span><span class="mf">0.03</span><span class="p">,</span>
@@ -544,7 +544,7 @@ radius, head radius, and head length.</p>
 <span class="linenos"> 88</span>        <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">,</span>
 <span class="linenos"> 89</span>    <span class="p">)</span>
 <span class="linenos"> 90</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_arrows</span><span class="p">(</span>
-<span class="linenos"> 91</span>        <span class="s2">&quot;/arrows/forces&quot;</span><span class="p">,</span>
+<span class="linenos"> 91</span>        <span class="s2">"/arrows/forces"</span><span class="p">,</span>
 <span class="linenos"> 92</span>        <span class="n">points</span><span class="o">=</span><span class="n">force_points</span><span class="p">,</span>
 <span class="linenos"> 93</span>        <span class="n">colors</span><span class="o">=</span><span class="n">force_colors</span><span class="p">,</span>
 <span class="linenos"> 94</span>        <span class="n">shaft_radius</span><span class="o">=</span><span class="mf">0.04</span><span class="p">,</span>
@@ -563,7 +563,7 @@ radius, head radius, and head length.</p>
 <span class="linenos">107</span>    <span class="n">velocity_points</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">vel_starts</span><span class="p">,</span> <span class="n">vel_ends</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 <span class="linenos">108</span>
 <span class="linenos">109</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_arrows</span><span class="p">(</span>
-<span class="linenos">110</span>        <span class="s2">&quot;/arrows/velocities&quot;</span><span class="p">,</span>
+<span class="linenos">110</span>        <span class="s2">"/arrows/velocities"</span><span class="p">,</span>
 <span class="linenos">111</span>        <span class="n">points</span><span class="o">=</span><span class="n">velocity_points</span><span class="p">,</span>
 <span class="linenos">112</span>        <span class="n">colors</span><span class="o">=</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>  <span class="c1"># Uniform light blue</span>
 <span class="linenos">113</span>        <span class="n">shaft_radius</span><span class="o">=</span><span class="mf">0.015</span><span class="p">,</span>
@@ -575,7 +575,7 @@ radius, head radius, and head length.</p>
 <span class="linenos">119</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
 <span class="linenos">120</span>
 <span class="linenos">121</span>
-<span class="linenos">122</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">122</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 <span class="linenos">123</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

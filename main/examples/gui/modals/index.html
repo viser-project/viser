@@ -457,29 +457,29 @@
 <span class="linenos"> 8</span>
 <span class="linenos"> 9</span>    <span class="nd">@server</span><span class="o">.</span><span class="n">on_client_connect</span>
 <span class="linenos">10</span>    <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">client</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">ClientHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="linenos">11</span>        <span class="k">with</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_modal</span><span class="p">(</span><span class="s2">&quot;Modal example&quot;</span><span class="p">):</span>
+<span class="linenos">11</span>        <span class="k">with</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_modal</span><span class="p">(</span><span class="s2">"Modal example"</span><span class="p">):</span>
 <span class="linenos">12</span>            <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_markdown</span><span class="p">(</span>
-<span class="linenos">13</span>                <span class="s2">&quot;**The input below determines the title of the modal...**&quot;</span>
+<span class="linenos">13</span>                <span class="s2">"**The input below determines the title of the modal...**"</span>
 <span class="linenos">14</span>            <span class="p">)</span>
 <span class="linenos">15</span>
 <span class="linenos">16</span>            <span class="n">gui_title</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_text</span><span class="p">(</span>
-<span class="linenos">17</span>                <span class="s2">&quot;Title&quot;</span><span class="p">,</span>
-<span class="linenos">18</span>                <span class="n">initial_value</span><span class="o">=</span><span class="s2">&quot;My Modal&quot;</span><span class="p">,</span>
+<span class="linenos">17</span>                <span class="s2">"Title"</span><span class="p">,</span>
+<span class="linenos">18</span>                <span class="n">initial_value</span><span class="o">=</span><span class="s2">"My Modal"</span><span class="p">,</span>
 <span class="linenos">19</span>            <span class="p">)</span>
 <span class="linenos">20</span>
-<span class="linenos">21</span>            <span class="n">modal_button</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Show more modals&quot;</span><span class="p">)</span>
+<span class="linenos">21</span>            <span class="n">modal_button</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">"Show more modals"</span><span class="p">)</span>
 <span class="linenos">22</span>
 <span class="linenos">23</span>            <span class="nd">@modal_button</span><span class="o">.</span><span class="n">on_click</span>
 <span class="linenos">24</span>            <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">25</span>                <span class="k">with</span> <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_modal</span><span class="p">(</span><span class="n">gui_title</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> <span class="k">as</span> <span class="n">modal</span><span class="p">:</span>
-<span class="linenos">26</span>                    <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_markdown</span><span class="p">(</span><span class="s2">&quot;This is content inside the modal!&quot;</span><span class="p">)</span>
-<span class="linenos">27</span>                    <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Close&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">on_click</span><span class="p">(</span><span class="k">lambda</span> <span class="n">_</span><span class="p">:</span> <span class="n">modal</span><span class="o">.</span><span class="n">close</span><span class="p">())</span>
+<span class="linenos">26</span>                    <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_markdown</span><span class="p">(</span><span class="s2">"This is content inside the modal!"</span><span class="p">)</span>
+<span class="linenos">27</span>                    <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">"Close"</span><span class="p">)</span><span class="o">.</span><span class="n">on_click</span><span class="p">(</span><span class="k">lambda</span> <span class="n">_</span><span class="p">:</span> <span class="n">modal</span><span class="o">.</span><span class="n">close</span><span class="p">())</span>
 <span class="linenos">28</span>
 <span class="linenos">29</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
 <span class="linenos">30</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.15</span><span class="p">)</span>
 <span class="linenos">31</span>
 <span class="linenos">32</span>
-<span class="linenos">33</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">33</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 <span class="linenos">34</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

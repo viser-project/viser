@@ -460,23 +460,23 @@
 <span class="linenos"> 9</span>    <span class="n">grid_shape</span> <span class="o">=</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
 <span class="linenos">10</span>    <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
 <span class="linenos">11</span>
-<span class="linenos">12</span>    <span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_folder</span><span class="p">(</span><span class="s2">&quot;Last clicked&quot;</span><span class="p">):</span>
+<span class="linenos">12</span>    <span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_folder</span><span class="p">(</span><span class="s2">"Last clicked"</span><span class="p">):</span>
 <span class="linenos">13</span>        <span class="n">x_value</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_number</span><span class="p">(</span>
-<span class="linenos">14</span>            <span class="n">label</span><span class="o">=</span><span class="s2">&quot;x&quot;</span><span class="p">,</span>
+<span class="linenos">14</span>            <span class="n">label</span><span class="o">=</span><span class="s2">"x"</span><span class="p">,</span>
 <span class="linenos">15</span>            <span class="n">initial_value</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
 <span class="linenos">16</span>            <span class="n">disabled</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<span class="linenos">17</span>            <span class="n">hint</span><span class="o">=</span><span class="s2">&quot;x coordinate of the last clicked mesh&quot;</span><span class="p">,</span>
+<span class="linenos">17</span>            <span class="n">hint</span><span class="o">=</span><span class="s2">"x coordinate of the last clicked mesh"</span><span class="p">,</span>
 <span class="linenos">18</span>        <span class="p">)</span>
 <span class="linenos">19</span>        <span class="n">y_value</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_number</span><span class="p">(</span>
-<span class="linenos">20</span>            <span class="n">label</span><span class="o">=</span><span class="s2">&quot;y&quot;</span><span class="p">,</span>
+<span class="linenos">20</span>            <span class="n">label</span><span class="o">=</span><span class="s2">"y"</span><span class="p">,</span>
 <span class="linenos">21</span>            <span class="n">initial_value</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
 <span class="linenos">22</span>            <span class="n">disabled</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<span class="linenos">23</span>            <span class="n">hint</span><span class="o">=</span><span class="s2">&quot;y coordinate of the last clicked mesh&quot;</span><span class="p">,</span>
+<span class="linenos">23</span>            <span class="n">hint</span><span class="o">=</span><span class="s2">"y coordinate of the last clicked mesh"</span><span class="p">,</span>
 <span class="linenos">24</span>        <span class="p">)</span>
 <span class="linenos">25</span>
 <span class="linenos">26</span>    <span class="k">def</span><span class="w"> </span><span class="nf">add_swappable_mesh</span><span class="p">(</span><span class="n">i</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">j</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">27</span>
-<span class="linenos">28</span>        <span class="n">colormap</span> <span class="o">=</span> <span class="n">matplotlib</span><span class="o">.</span><span class="n">colormaps</span><span class="p">[</span><span class="s2">&quot;tab20&quot;</span><span class="p">]</span>
+<span class="linenos">28</span>        <span class="n">colormap</span> <span class="o">=</span> <span class="n">matplotlib</span><span class="o">.</span><span class="n">colormaps</span><span class="p">[</span><span class="s2">"tab20"</span><span class="p">]</span>
 <span class="linenos">29</span>
 <span class="linenos">30</span>        <span class="k">def</span><span class="w"> </span><span class="nf">create_mesh</span><span class="p">(</span><span class="n">counter</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="linenos">31</span>            <span class="k">if</span> <span class="n">counter</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
@@ -487,14 +487,14 @@
 <span class="linenos">36</span>
 <span class="linenos">37</span>            <span class="k">if</span> <span class="n">counter</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
 <span class="linenos">38</span>                <span class="n">handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span>
-<span class="linenos">39</span>                    <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;/sphere_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">j</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+<span class="linenos">39</span>                    <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">"/sphere_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">j</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
 <span class="linenos">40</span>                    <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
 <span class="linenos">41</span>                    <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span>
 <span class="linenos">42</span>                    <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span>
 <span class="linenos">43</span>                <span class="p">)</span>
 <span class="linenos">44</span>            <span class="k">else</span><span class="p">:</span>
 <span class="linenos">45</span>                <span class="n">handle</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_icosphere</span><span class="p">(</span>
-<span class="linenos">46</span>                    <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;/sphere_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">j</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+<span class="linenos">46</span>                    <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">"/sphere_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">j</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
 <span class="linenos">47</span>                    <span class="n">radius</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
 <span class="linenos">48</span>                    <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span>
 <span class="linenos">49</span>                    <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
@@ -519,7 +519,7 @@
 <span class="linenos">68</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
 <span class="linenos">69</span>
 <span class="linenos">70</span>
-<span class="linenos">71</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">71</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 <span class="linenos">72</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

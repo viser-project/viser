@@ -442,7 +442,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_resize_nearest</span><span class="p">(</span><span class="n">array</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">,</span> <span class="n">target_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resize array to target shape using nearest neighbor interpolation.</span>
+<span class="w">    </span><span class="sd">"""Resize array to target shape using nearest neighbor interpolation.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        array: Input array with shape (H, W) or (H, W, C).</span>
@@ -451,7 +451,7 @@
 <span class="sd">    Returns:</span>
 <span class="sd">        Resized array with shape (target_shape[0], target_shape[1]) or</span>
 <span class="sd">        (target_shape[0], target_shape[1], C) if input has channels.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">h_src</span><span class="p">,</span> <span class="n">w_src</span> <span class="o">=</span> <span class="n">array</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
     <span class="n">h_tgt</span><span class="p">,</span> <span class="n">w_tgt</span> <span class="o">=</span> <span class="n">target_shape</span>
 
@@ -466,21 +466,21 @@
 <div class="viewcode-block" id="Record3dLoader">
 <a class="viewcode-back" href="../../../../api/auxiliary/extras/#viser.extras.Record3dLoader">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Record3dLoader</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper for loading frames for Record3D captures.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Helper for loading frames for Record3D captures."""</span>
 
     <span class="c1"># NOTE(hangg): Consider moving this module into</span>
     <span class="c1"># `examples/7_record3d_visualizer.py` since it is usecase-specific.</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">):</span>
-        <span class="n">metadata_path</span> <span class="o">=</span> <span class="n">data_dir</span> <span class="o">/</span> <span class="s2">&quot;metadata&quot;</span>
+        <span class="n">metadata_path</span> <span class="o">=</span> <span class="n">data_dir</span> <span class="o">/</span> <span class="s2">"metadata"</span>
 
         <span class="c1"># Read metadata.</span>
         <span class="n">metadata</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">metadata_path</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
 
-        <span class="n">K</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;K&quot;</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
-        <span class="n">fps</span> <span class="o">=</span> <span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;fps&quot;</span><span class="p">]</span>
+        <span class="n">K</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"K"</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">fps</span> <span class="o">=</span> <span class="n">metadata</span><span class="p">[</span><span class="s2">"fps"</span><span class="p">]</span>
 
-        <span class="n">T_world_cameras</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;poses&quot;</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="n">T_world_cameras</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"poses"</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="c1"># Convert quaternions (xyzw format) to rotation matrices.</span>
         <span class="n">rotation_matrices</span> <span class="o">=</span> <span class="n">SO3</span><span class="o">.</span><span class="n">from_quaternion_xyzw</span><span class="p">(</span><span class="n">T_world_cameras</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">4</span><span class="p">])</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">()</span>
         <span class="n">T_world_cameras</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
@@ -497,12 +497,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">fps</span> <span class="o">=</span> <span class="n">fps</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">T_world_cameras</span> <span class="o">=</span> <span class="n">T_world_cameras</span>
 
-        <span class="n">rgbd_dir</span> <span class="o">=</span> <span class="n">data_dir</span> <span class="o">/</span> <span class="s2">&quot;rgbd&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">rgb_paths</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">rgbd_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">&quot;*.jpg&quot;</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stem</span><span class="p">))</span>
+        <span class="n">rgbd_dir</span> <span class="o">=</span> <span class="n">data_dir</span> <span class="o">/</span> <span class="s2">"rgbd"</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rgb_paths</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">rgbd_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"*.jpg"</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stem</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">depth_paths</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">rgb_path</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;.depth&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">rgb_path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgb_paths</span>
+            <span class="n">rgb_path</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">".depth"</span><span class="p">)</span> <span class="k">for</span> <span class="n">rgb_path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgb_paths</span>
         <span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">conf_paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">rgb_path</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;.conf&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">rgb_path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgb_paths</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conf_paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">rgb_path</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">".conf"</span><span class="p">)</span> <span class="k">for</span> <span class="n">rgb_path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">rgb_paths</span><span class="p">]</span>
 
 <div class="viewcode-block" id="Record3dLoader.num_frames">
 <a class="viewcode-back" href="../../../../api/auxiliary/extras/#viser.extras.Record3dLoader.num_frames">[docs]</a>
@@ -518,7 +518,7 @@
         <span class="o">*</span><span class="p">,</span>
         <span class="n">max_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="n">Record3dFrame</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load multiple frames in parallel.</span>
+<span class="w">        </span><span class="sd">"""Load multiple frames in parallel.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            indices: Sequence of frame indices to load.</span>
@@ -527,7 +527,7 @@
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Generator of Record3dFrame objects, in the same order as indices.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Threads are fine here because pyliblzfse should release the GIL, we</span>
         <span class="c1"># can overlap with IO, etc.</span>
         <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">max_workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
@@ -538,11 +538,11 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/extras/#viser.extras.Record3dLoader.get_frame">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_frame</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Record3dFrame</span><span class="p">:</span>
         <span class="c1"># `pyliblzfse` can be hard to install on some Windows systems and is</span>
-        <span class="c1"># only needed for Record3D, so we don&#39;t do a global import.</span>
+        <span class="c1"># only needed for Record3D, so we don't do a global import.</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">import</span><span class="w"> </span><span class="nn">liblzfse</span>
         <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;liblzfse is missing. Please install with `pip install pyliblzfse`.&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">"liblzfse is missing. Please install with `pip install pyliblzfse`."</span><span class="p">)</span>
             <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
 
         <span class="c1"># Read conf.</span>
@@ -554,7 +554,7 @@
         <span class="k">elif</span> <span class="n">conf</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">256</span> <span class="o">*</span> <span class="mi">192</span><span class="p">:</span>
             <span class="n">conf</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="mi">256</span><span class="p">,</span> <span class="mi">192</span><span class="p">))</span>  <span class="c1"># For a LiDAR 3D Video.</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="kc">False</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Unexpected conf shape </span><span class="si">{</span><span class="n">conf</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">assert</span> <span class="kc">False</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"Unexpected conf shape </span><span class="si">{</span><span class="n">conf</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">"</span>
 
         <span class="c1"># Read depth.</span>
         <span class="n">depth</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">frombuffer</span><span class="p">(</span>
@@ -565,7 +565,7 @@
         <span class="k">elif</span> <span class="n">depth</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">256</span> <span class="o">*</span> <span class="mi">192</span><span class="p">:</span>
             <span class="n">depth</span> <span class="o">=</span> <span class="n">depth</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="mi">256</span><span class="p">,</span> <span class="mi">192</span><span class="p">))</span>  <span class="c1"># For a LiDAR 3D Video.</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="kc">False</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Unexpected depth shape </span><span class="si">{</span><span class="n">depth</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">assert</span> <span class="kc">False</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"Unexpected depth shape </span><span class="si">{</span><span class="n">depth</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">"</span>
 
         <span class="c1"># Read RGB.</span>
         <span class="n">rgb</span> <span class="o">=</span> <span class="n">iio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rgb_paths</span><span class="p">[</span><span class="n">index</span><span class="p">])</span>
@@ -584,7 +584,7 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/extras/#viser.extras.Record3dFrame">[docs]</a>
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Record3dFrame</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A single frame from a Record3D capture.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""A single frame from a Record3D capture."""</span>
 
     <span class="n">K</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">]</span>
     <span class="n">rgb</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">]</span>
@@ -617,8 +617,8 @@
         <span class="n">grid</span> <span class="o">=</span> <span class="n">grid</span> <span class="o">*</span> <span class="n">downsample_factor</span>
 
         <span class="n">homo_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">pad</span><span class="p">(</span><span class="n">grid</span><span class="p">[</span><span class="n">mask</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]]),</span> <span class="n">constant_values</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">local_dirs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;ij,bj-&gt;bi&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">K</span><span class="p">),</span> <span class="n">homo_grid</span><span class="p">)</span>
-        <span class="n">dirs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;ij,bj-&gt;bi&quot;</span><span class="p">,</span> <span class="n">T_world_camera</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">],</span> <span class="n">local_dirs</span><span class="p">)</span>
+        <span class="n">local_dirs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">"ij,bj-&gt;bi"</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">K</span><span class="p">),</span> <span class="n">homo_grid</span><span class="p">)</span>
+        <span class="n">dirs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">"ij,bj-&gt;bi"</span><span class="p">,</span> <span class="n">T_world_camera</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">],</span> <span class="n">local_dirs</span><span class="p">)</span>
         <span class="n">points</span> <span class="o">=</span> <span class="p">(</span><span class="n">T_world_camera</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">dirs</span> <span class="o">*</span> <span class="n">depth</span><span class="p">[</span><span class="n">mask</span><span class="p">,</span> <span class="kc">None</span><span class="p">])</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
         <span class="n">point_colors</span> <span class="o">=</span> <span class="n">rgb</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
 

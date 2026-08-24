@@ -465,24 +465,24 @@
 <div class="viewcode-block" id="InitialCameraConfig">
 <a class="viewcode-back" href="../../../api/handles/camera_handles/#viser.InitialCameraConfig">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">InitialCameraConfig</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for the initial camera pose.</span>
+<span class="w">    </span><span class="sd">"""Configuration for the initial camera pose.</span>
 
 <span class="sd">    Accessed via :attr:`ViserServer.initial_camera`. Values set here determine:</span>
 
 <span class="sd">    1. The starting camera pose for new client connections</span>
-<span class="sd">    2. The pose that &quot;Reset View&quot; returns to in the client</span>
+<span class="sd">    2. The pose that "Reset View" returns to in the client</span>
 
 <span class="sd">    Default behavior (when properties are not explicitly set):</span>
 <span class="sd">        The client uses a built-in default camera position that provides a</span>
-<span class="sd">        reasonable view regardless of the scene&#39;s up direction. This default</span>
+<span class="sd">        reasonable view regardless of the scene's up direction. This default</span>
 <span class="sd">        is specified in three.js coordinates and does not require world</span>
 <span class="sd">        coordinate transformation.</span>
 
 <span class="sd">    When properties are explicitly set, they are interpreted as viser world</span>
-<span class="sd">    coordinates and transformed appropriately based on the scene&#39;s up direction.</span>
+<span class="sd">    coordinates and transformed appropriately based on the scene's up direction.</span>
 
-<span class="sd">    When properties are changed after clients are connected, only the &quot;Reset</span>
-<span class="sd">    View&quot; target is updated. Clients&#39; current camera positions are not moved,</span>
+<span class="sd">    When properties are changed after clients are connected, only the "Reset</span>
+<span class="sd">    View" target is updated. Clients' current camera positions are not moved,</span>
 <span class="sd">    allowing users to continue working undisturbed.</span>
 
 <span class="sd">    Note that URL parameters (e.g., ``?initialCameraPosition=1,2,3``) take</span>
@@ -490,13 +490,13 @@
 
 <span class="sd">    The API is designed to match :class:`CameraHandle`, which is used for</span>
 <span class="sd">    per-client camera control.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">broadcast</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">_messages</span><span class="o">.</span><span class="n">Message</span><span class="p">],</span> <span class="kc">None</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_broadcast</span> <span class="o">=</span> <span class="n">broadcast</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_position</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_look_at</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
-        <span class="c1"># None means &quot;same as the scene up direction&quot;.</span>
+        <span class="c1"># None means "same as the scene up direction".</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_up</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="c1"># 75 degrees in radians; matches three.js PerspectiveCamera default.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_fov</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">75.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">180.0</span>
@@ -505,7 +505,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">position</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Camera position in world coordinates.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Camera position in world coordinates."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_position</span>
 
     <span class="nd">@position</span><span class="o">.</span><span class="n">setter</span>
@@ -519,7 +519,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">look_at</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Point the camera looks at in world coordinates.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Point the camera looks at in world coordinates."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_look_at</span>
 
     <span class="nd">@look_at</span><span class="o">.</span><span class="n">setter</span>
@@ -533,7 +533,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">up</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Camera up direction, or None for scene up direction.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Camera up direction, or None for scene up direction."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_up</span>
 
     <span class="nd">@up</span><span class="o">.</span><span class="n">setter</span>
@@ -545,7 +545,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">fov</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Vertical field of view in radians.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Vertical field of view in radians."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fov</span>
 
     <span class="nd">@fov</span><span class="o">.</span><span class="n">setter</span>
@@ -555,7 +555,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">near</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Near clipping plane distance.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Near clipping plane distance."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_near</span>
 
     <span class="nd">@near</span><span class="o">.</span><span class="n">setter</span>
@@ -565,7 +565,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">far</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Far clipping plane distance.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Far clipping plane distance."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_far</span>
 
     <span class="nd">@far</span><span class="o">.</span><span class="n">setter</span>
@@ -577,7 +577,7 @@
 
 <span class="nd">@dataclasses</span><span class="o">.</span><span class="n">dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">_CameraHandleState</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Information about a client&#39;s camera state.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Information about a client's camera state."""</span>
 
     <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span>
     <span class="n">wxyz</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span>
@@ -598,8 +598,8 @@
 <div class="viewcode-block" id="CameraHandle">
 <a class="viewcode-back" href="../../../api/handles/camera_handles/#viser.CameraHandle">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CameraHandle</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A handle for reading and writing the camera state of a particular</span>
-<span class="sd">    client. Typically accessed via :attr:`ClientHandle.camera`.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""A handle for reading and writing the camera state of a particular</span>
+<span class="sd">    client. Typically accessed via :attr:`ClientHandle.camera`."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">_CameraHandleState</span><span class="p">(</span>
@@ -611,7 +611,7 @@
             <span class="n">image_width</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
             <span class="n">near</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
             <span class="n">far</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span>
-            <span class="c1"># Defaults must match the client&#39;s &lt;CameraControls&gt; props exactly:</span>
+            <span class="c1"># Defaults must match the client's &lt;CameraControls&gt; props exactly:</span>
             <span class="c1"># the setters early-return when the new value equals the value here,</span>
             <span class="c1"># so a mismatch would make assigning the client-side default a silent</span>
             <span class="c1"># no-op. Pinned by tests/test_initial_camera_defaults.py.</span>
@@ -625,13 +625,13 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">client</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ClientHandle</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Client that this camera corresponds to.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Client that this camera corresponds to."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">client</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">wxyz</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Corresponds to the R in `P_world = [R | t] p_camera`. Synchronized</span>
-<span class="sd">        automatically when assigned.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Corresponds to the R in `P_world = [R | t] p_camera`. Synchronized</span>
+<span class="sd">        automatically when assigned."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">wxyz</span>
 
@@ -643,7 +643,7 @@
         <span class="n">R_world_camera</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">wxyz</span><span class="p">))</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">()</span>
         <span class="n">look_distance</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">look_at</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">position</span><span class="p">)</span>
 
-        <span class="c1"># We&#39;re following OpenCV conventions: look_direction is +Z, up_direction is -Y,</span>
+        <span class="c1"># We're following OpenCV conventions: look_direction is +Z, up_direction is -Y,</span>
         <span class="c1"># right_direction is +X.</span>
         <span class="n">look_direction</span> <span class="o">=</span> <span class="n">R_world_camera</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span>
         <span class="n">up_direction</span> <span class="o">=</span> <span class="o">-</span><span class="n">R_world_camera</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
@@ -675,13 +675,13 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">position</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Corresponds to the t in `P_world = [R | t] p_camera`. Synchronized</span>
+<span class="w">        </span><span class="sd">"""Corresponds to the t in `P_world = [R | t] p_camera`. Synchronized</span>
 <span class="sd">        automatically when assigned.</span>
 
 <span class="sd">        To preserve the camera orientation, position updates translate both the camera</span>
 <span class="sd">        and its `look_at` point together. To change position while looking at a fixed</span>
 <span class="sd">        point, set `look_at` after updating `position`.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">position</span>
 
@@ -693,7 +693,7 @@
         <span class="c1"># caught late would leave the client sent a bad position and the</span>
         <span class="c1"># server state half-updated.</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">position_array</span><span class="p">)):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Camera position must be finite, got </span><span class="si">{</span><span class="n">position_array</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Camera position must be finite, got </span><span class="si">{</span><span class="n">position_array</span><span class="si">}</span><span class="s2">."</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">position_array</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">position</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="n">offset</span> <span class="o">=</span> <span class="n">position_array</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">position</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
@@ -707,19 +707,19 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_update_wxyz</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute and update the camera orientation from the internal look_at, position, and up vectors.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Compute and update the camera orientation from the internal look_at, position, and up vectors."""</span>
         <span class="c1"># Reject non-finite inputs up front: a NaN/Inf position, look_at, or</span>
         <span class="c1"># up_direction would otherwise produce a non-zero (NaN) norm that</span>
         <span class="c1"># slips past the degeneracy checks below and stores a NaN quaternion</span>
         <span class="c1"># -- the exact silent corruption these guards exist to prevent (every</span>
         <span class="c1"># later camera read and on_update callback would then see it).</span>
         <span class="k">for</span> <span class="n">_name</span><span class="p">,</span> <span class="n">_vec</span> <span class="ow">in</span> <span class="p">(</span>
-            <span class="p">(</span><span class="s2">&quot;position&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">position</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">&quot;look_at&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">&quot;up_direction&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">"position"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">position</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">"look_at"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">"up_direction"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span><span class="p">),</span>
         <span class="p">):</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">_vec</span><span class="p">)):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Camera </span><span class="si">{</span><span class="n">_name</span><span class="si">}</span><span class="s2"> must be finite, got </span><span class="si">{</span><span class="n">_vec</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Camera </span><span class="si">{</span><span class="n">_name</span><span class="si">}</span><span class="s2"> must be finite, got </span><span class="si">{</span><span class="n">_vec</span><span class="si">}</span><span class="s2">."</span><span class="p">)</span>
         <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">position</span>
         <span class="n">z_norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">z_norm</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
@@ -727,7 +727,7 @@
             <span class="c1"># rather than store a NaN quaternion (which every later camera</span>
             <span class="c1"># read and on_update callback would then see, silently).</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;Camera look_at cannot equal position (zero look distance).&quot;</span>
+                <span class="s2">"Camera look_at cannot equal position (zero look distance)."</span>
             <span class="p">)</span>
         <span class="n">z</span> <span class="o">/=</span> <span class="n">z_norm</span>
 
@@ -741,13 +741,13 @@
             <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span><span class="p">)</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
                 <span class="c1"># A zero up vector carries no information at all; reject</span>
                 <span class="c1"># rather than store/broadcast a NaN basis.</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Camera up_direction must be nonzero.&quot;</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Camera up_direction must be nonzero."</span><span class="p">)</span>
             <span class="c1"># up_direction is parallel to the view direction -- e.g. the</span>
             <span class="c1"># canonical top-down pose (+Z up, looking straight down). The</span>
-            <span class="c1"># client&#39;s orbit controls clamp the pole instead of failing, so</span>
+            <span class="c1"># client's orbit controls clamp the pole instead of failing, so</span>
             <span class="c1"># raising here broke camera setups that worked pre-1.1: degrade</span>
-            <span class="c1"># the same way. Prefer the previous orientation&#39;s up vector for</span>
-            <span class="c1"># continuity (matching the &quot;minimize impact on orbit controls&quot;</span>
+            <span class="c1"># the same way. Prefer the previous orientation's up vector for</span>
+            <span class="c1"># continuity (matching the "minimize impact on orbit controls"</span>
             <span class="c1"># policy above); fall back to the world axis least aligned with</span>
             <span class="c1"># the view when that is also degenerate (e.g. a never-updated</span>
             <span class="c1"># zeroed state). The client echoes its own resolved pose back,</span>
@@ -767,8 +767,8 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">fov</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Vertical field of view of the camera, in radians. Synchronized automatically</span>
-<span class="sd">        when assigned.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Vertical field of view of the camera, in radians. Synchronized automatically</span>
+<span class="sd">        when assigned."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">fov</span>
 
@@ -784,8 +784,8 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">near</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Near clipping plane distance. Synchronized automatically when</span>
-<span class="sd">        assigned.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Near clipping plane distance. Synchronized automatically when</span>
+<span class="sd">        assigned."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">near</span>
 
@@ -801,8 +801,8 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">far</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Far clipping plane distance. Synchronized automatically when</span>
-<span class="sd">        assigned.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Far clipping plane distance. Synchronized automatically when</span>
+<span class="sd">        assigned."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">far</span>
 
@@ -818,26 +818,26 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">min_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;How close the camera may be dollied in to its orbit (look-at) point.</span>
+<span class="w">        </span><span class="sd">"""How close the camera may be dollied in to its orbit (look-at) point.</span>
 <span class="sd">        Distinct from :attr:`near`, which clips rendering rather than camera</span>
-<span class="sd">        travel. Synchronized automatically when assigned.&quot;&quot;&quot;</span>
+<span class="sd">        travel. Synchronized automatically when assigned."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span>
 
     <span class="nd">@min_orbit_distance</span><span class="o">.</span><span class="n">setter</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">min_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">min_orbit_distance</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Validate BEFORE the no-op short-circuit: a bad value must raise even</span>
-        <span class="c1"># when it happens to be &quot;close&quot; to the stored one (e.g. re-assigning</span>
+        <span class="c1"># when it happens to be "close" to the stored one (e.g. re-assigning</span>
         <span class="c1"># the same bad value after a raise).</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">min_orbit_distance</span><span class="p">)</span> <span class="ow">or</span> <span class="n">min_orbit_distance</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;min_orbit_distance (</span><span class="si">{</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">) must be a &quot;</span>
-                <span class="s2">&quot;positive, finite number.&quot;</span>
+                <span class="sa">f</span><span class="s2">"min_orbit_distance (</span><span class="si">{</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">) must be a "</span>
+                <span class="s2">"positive, finite number."</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">min_orbit_distance</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;min_orbit_distance (</span><span class="si">{</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">) must be &lt;= &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;max_orbit_distance (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">).&quot;</span>
+                <span class="sa">f</span><span class="s2">"min_orbit_distance (</span><span class="si">{</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">) must be &lt;= "</span>
+                <span class="sa">f</span><span class="s2">"max_orbit_distance (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">)."</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="p">,</span> <span class="n">min_orbit_distance</span><span class="p">):</span>
             <span class="k">return</span>
@@ -849,15 +849,15 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">max_orbit_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;How far the camera may be dollied out from its orbit (look-at) point.</span>
+<span class="w">        </span><span class="sd">"""How far the camera may be dollied out from its orbit (look-at) point.</span>
 <span class="sd">        Distinct from :attr:`far`, which clips rendering rather than camera</span>
-<span class="sd">        travel. Defaults to 1e4; set to ``float(&quot;inf&quot;)`` for the unbounded</span>
+<span class="sd">        travel. Defaults to 1e4; set to ``float("inf")`` for the unbounded</span>
 <span class="sd">        pre-1.1.0 behavior. Synchronized automatically when assigned.</span>
 
 <span class="sd">        Dolly is multiplicative per wheel event, so a very large maximum means a long</span>
-<span class="sd">        scroll — a trackpad&#39;s inertial tail, for instance — can walk the camera out to</span>
+<span class="sd">        scroll — a trackpad's inertial tail, for instance — can walk the camera out to</span>
 <span class="sd">        a distance where the scene is no longer visible. Set this to keep zoom-out</span>
-<span class="sd">        inside the scene&#39;s scale.&quot;&quot;&quot;</span>
+<span class="sd">        inside the scene's scale."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span>
 
@@ -868,13 +868,13 @@
         <span class="c1"># camera-controls default), the opt-out for large-scale scenes.</span>
         <span class="k">if</span> <span class="n">math</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">max_orbit_distance</span><span class="p">)</span> <span class="ow">or</span> <span class="n">max_orbit_distance</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;max_orbit_distance (</span><span class="si">{</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">) must be a &quot;</span>
-                <span class="s2">&quot;positive number (or float(&#39;inf&#39;) for unbounded).&quot;</span>
+                <span class="sa">f</span><span class="s2">"max_orbit_distance (</span><span class="si">{</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">) must be a "</span>
+                <span class="s2">"positive number (or float('inf') for unbounded)."</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">max_orbit_distance</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;max_orbit_distance (</span><span class="si">{</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">) must be &gt;= &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;min_orbit_distance (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">).&quot;</span>
+                <span class="sa">f</span><span class="s2">"max_orbit_distance (</span><span class="si">{</span><span class="n">max_orbit_distance</span><span class="si">}</span><span class="s2">) must be &gt;= "</span>
+                <span class="sa">f</span><span class="s2">"min_orbit_distance (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">min_orbit_distance</span><span class="si">}</span><span class="s2">)."</span>
             <span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">max_orbit_distance</span><span class="p">,</span> <span class="n">max_orbit_distance</span><span class="p">):</span>
             <span class="k">return</span>
@@ -886,19 +886,19 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">aspect</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Canvas width divided by height. Not assignable.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Canvas width divided by height. Not assignable."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">image_width</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">image_height</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">image_height</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Image height in pixels. Not assignable.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Image height in pixels. Not assignable."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">image_height</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">image_width</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Image width in pixels. Not assignable.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Image width in pixels. Not assignable."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">image_width</span>
 
@@ -909,7 +909,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">look_at</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Look at point for the camera. Synchronized automatically when set.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Look at point for the camera. Synchronized automatically when set."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span>
 
@@ -925,7 +925,7 @@
         <span class="k">try</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_update_wxyz</span><span class="p">()</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="c1"># Roll back so a caught error doesn&#39;t leave a desynced half-built</span>
+            <span class="c1"># Roll back so a caught error doesn't leave a desynced half-built</span>
             <span class="c1"># camera (state mutated, orientation stale, nothing sent).</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">look_at</span> <span class="o">=</span> <span class="n">old_look_at</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">old_timestamp</span>
@@ -936,7 +936,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">up_direction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Up direction for the camera. Synchronized automatically when set.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Up direction for the camera. Synchronized automatically when set."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">!=</span> <span class="mf">0.0</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span>
 
@@ -952,7 +952,7 @@
         <span class="k">try</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_update_wxyz</span><span class="p">()</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="c1"># Roll back so a caught error doesn&#39;t leave a desynced camera.</span>
+            <span class="c1"># Roll back so a caught error doesn't leave a desynced camera.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">up_direction</span> <span class="o">=</span> <span class="n">old_up</span>
             <span class="k">raise</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">update_timestamp</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
@@ -965,14 +965,14 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">on_update</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">CameraHandle</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">CameraHandle</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback to run when a new camera message is received.</span>
+<span class="w">        </span><span class="sd">"""Attach a callback to run when a new camera message is received.</span>
 
 <span class="sd">        The callback can be either a standard function or an async function:</span>
 <span class="sd">        - Standard functions (def) will be executed in a threadpool.</span>
 <span class="sd">        - Async functions (async def) will be executed in the event loop.</span>
 
 <span class="sd">        Using async functions can be useful for reducing race conditions.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">camera_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">callback</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">callback</span></div>
 
@@ -983,10 +983,10 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">height</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">width</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">,</span>
+        <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"png"</span><span class="p">,</span> <span class="s2">"jpeg"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"jpeg"</span><span class="p">,</span>
         <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Request a render from a client, block until it&#39;s done and received, then</span>
+<span class="w">        </span><span class="sd">"""Request a render from a client, block until it's done and received, then</span>
 <span class="sd">        return it as a numpy array. This is an alias for :meth:`ClientHandle.get_render()`.</span>
 
 <span class="sd">        Args:</span>
@@ -1000,7 +1000,7 @@
 <span class="sd">                (default) waits indefinitely; a disconnect still raises promptly</span>
 <span class="sd">                either way. Set this to bound a client that stays connected but</span>
 <span class="sd">                never returns a frame.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get_render</span><span class="p">(</span>
             <span class="n">height</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">transport_format</span><span class="o">=</span><span class="n">transport_format</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span>
         <span class="p">)</span></div>
@@ -1008,19 +1008,19 @@
 
 
 
-<span class="n">NoneOrCoroutine</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;NoneOrCoroutine&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">)</span>
+<span class="n">NoneOrCoroutine</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">"NoneOrCoroutine"</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">Coroutine</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="LocalStorageHandle">
 <a class="viewcode-back" href="../../../api/handles/client_handles/#viser.LocalStorageHandle">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">LocalStorageHandle</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A handle for reading and writing this client&#39;s browser localStorage.</span>
+<span class="w">    </span><span class="sd">"""A handle for reading and writing this client's browser localStorage.</span>
 
 <span class="sd">    Keys are namespaced in the browser under a viser-specific prefix, so</span>
-<span class="sd">    values written here can&#39;t collide with — and :meth:`clear` can&#39;t wipe —</span>
+<span class="sd">    values written here can't collide with — and :meth:`clear` can't wipe —</span>
 <span class="sd">    localStorage state that other applications keep on the same origin.</span>
 <span class="sd">    The prefix is an implementation detail: keys passed to these methods</span>
-<span class="sd">    should be the bare, unprefixed names.&quot;&quot;&quot;</span>
+<span class="sd">    should be the bare, unprefixed names."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client</span> <span class="o">=</span> <span class="n">client</span>
@@ -1028,7 +1028,7 @@
 <div class="viewcode-block" id="LocalStorageHandle.set_item">
 <a class="viewcode-back" href="../../../api/handles/client_handles/#viser.LocalStorageHandle.set_item">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">set_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set a key.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Set a key."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageSetItemMessage</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">)</span>
         <span class="p">)</span></div>
@@ -1037,15 +1037,15 @@
 <div class="viewcode-block" id="LocalStorageHandle.remove_item">
 <a class="viewcode-back" href="../../../api/handles/client_handles/#viser.LocalStorageHandle.remove_item">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">remove_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove a key.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Remove a key."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageRemoveItemMessage</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">)</span>
         <span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Clear all keys that were written through this API. Other</span>
-<span class="sd">        localStorage state on the client&#39;s origin is left untouched.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Clear all keys that were written through this API. Other</span>
+<span class="sd">        localStorage state on the client's origin is left untouched."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageClearMessage</span><span class="p">()</span>
         <span class="p">)</span>
@@ -1053,7 +1053,7 @@
 <div class="viewcode-block" id="LocalStorageHandle.get_item">
 <a class="viewcode-back" href="../../../api/handles/client_handles/#viser.LocalStorageHandle.get_item">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a value, or ``None`` if the key is absent.</span>
+<span class="w">        </span><span class="sd">"""Return a value, or ``None`` if the key is absent.</span>
 
 <span class="sd">        Failure semantics match :meth:`ClientHandle.get_render`.</span>
 
@@ -1069,9 +1069,9 @@
 <span class="sd">            RuntimeError: If the client disconnects before responding, or if</span>
 <span class="sd">                the browser blocks localStorage access.</span>
 <span class="sd">            TimeoutError: If ``timeout`` is set and exceeded.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">request_uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
-        <span class="n">response</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+        <span class="n">response</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"value"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"error"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
         <span class="n">ready_event</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">got_response</span><span class="p">(</span>
@@ -1080,8 +1080,8 @@
             <span class="k">del</span> <span class="n">client_id</span>
             <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">request_uuid</span> <span class="o">!=</span> <span class="n">request_uuid</span><span class="p">:</span>
                 <span class="k">return</span>
-            <span class="n">response</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">value</span>
-            <span class="n">response</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">error</span>
+            <span class="n">response</span><span class="p">[</span><span class="s2">"value"</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">value</span>
+            <span class="n">response</span><span class="p">[</span><span class="s2">"error"</span><span class="p">]</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">error</span>
             <span class="n">ready_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">register_handler</span><span class="p">(</span>
@@ -1105,39 +1105,39 @@
                     <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_viser_server</span><span class="o">.</span><span class="n">_connected_clients</span>
                 <span class="p">):</span>
                     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                        <span class="s2">&quot;localStorage request failed: the client disconnected &quot;</span>
-                        <span class="s2">&quot;before returning a response.&quot;</span>
+                        <span class="s2">"localStorage request failed: the client disconnected "</span>
+                        <span class="s2">"before returning a response."</span>
                     <span class="p">)</span>
                 <span class="k">if</span> <span class="n">deadline</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">deadline</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">TimeoutError</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;localStorage request timed out after </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s: &quot;</span>
-                        <span class="s2">&quot;the client did not return a response.&quot;</span>
+                        <span class="sa">f</span><span class="s2">"localStorage request timed out after </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s: "</span>
+                        <span class="s2">"the client did not return a response."</span>
                     <span class="p">)</span>
         <span class="k">finally</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_client</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">unregister_handler</span><span class="p">(</span>
                 <span class="n">_messages</span><span class="o">.</span><span class="n">LocalStorageGetItemResponseMessage</span><span class="p">,</span> <span class="n">got_response</span>
             <span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">response</span><span class="p">[</span><span class="s2">&quot;error&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to read localStorage: </span><span class="si">{</span><span class="n">response</span><span class="p">[</span><span class="s1">&#39;error&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">response</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span></div>
+        <span class="k">if</span> <span class="n">response</span><span class="p">[</span><span class="s2">"error"</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failed to read localStorage: </span><span class="si">{</span><span class="n">response</span><span class="p">[</span><span class="s1">'error'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span><span class="p">[</span><span class="s2">"value"</span><span class="p">]</span></div>
 </div>
 
 
 
-<span class="c1"># Don&#39;t inherit from RenamedAttributeCompatShim during type checking, because</span>
+<span class="c1"># Don't inherit from RenamedAttributeCompatShim during type checking, because</span>
 <span class="c1"># this will unnecessarily suppress type errors. (from the overriding of</span>
 <span class="c1"># __getattr__).</span>
 <div class="viewcode-block" id="ClientHandle">
 <a class="viewcode-back" href="../../../api/handles/client_handles/#viser.ClientHandle">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">ClientHandle</span><span class="p">(</span><span class="n">DeprecatedAttributeShim</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">TYPE_CHECKING</span> <span class="k">else</span> <span class="nb">object</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A handle is created for each client that connects to a server. Handles can be</span>
+<span class="w">    </span><span class="sd">"""A handle is created for each client that connects to a server. Handles can be</span>
 <span class="sd">    used to communicate with just one client, as well as for reading and writing of</span>
 <span class="sd">    camera state.</span>
 
 <span class="sd">    Similar to :class:`ViserServer`, client handles also expose scene and GUI</span>
 <span class="sd">    interfaces at :attr:`ClientHandle.scene` and :attr:`ClientHandle.gui`. If</span>
-<span class="sd">    these are used, for example via a client&#39;s</span>
+<span class="sd">    these are used, for example via a client's</span>
 <span class="sd">    :meth:`SceneApi.add_point_cloud()` method, created elements are local to</span>
 <span class="sd">    only one specific client.</span>
 
@@ -1153,13 +1153,13 @@
 <span class="sd">    **Scene names shadow, not collide.** Each scene-tree name holds at most</span>
 <span class="sd">    one node per scope: adding a client-scoped node under a name the server</span>
 <span class="sd">    also uses creates an independent per-client variant that *shadows* the</span>
-<span class="sd">    server&#39;s node for this one client (the server&#39;s node, with its latest</span>
+<span class="sd">    server's node for this one client (the server's node, with its latest</span>
 <span class="sd">    state, shows again when the client-scoped variant is removed). State is</span>
 <span class="sd">    fully scope-local -- updates and removals from one scope never touch the</span>
-<span class="sd">    other scope&#39;s variant, and removing a node cascades only through its own</span>
-<span class="sd">    scope&#39;s descendants. A client-scoped node may be named under a</span>
+<span class="sd">    other scope's variant, and removing a node cascades only through its own</span>
+<span class="sd">    scope's descendants. A client-scoped node may be named under a</span>
 <span class="sd">    server-scoped parent (e.g. per-client annotations under a shared frame);</span>
-<span class="sd">    it survives the parent&#39;s removal, anchored at the parent&#39;s last pose,</span>
+<span class="sd">    it survives the parent's removal, anchored at the parent's last pose,</span>
 <span class="sd">    until this handle removes it.</span>
 
 <span class="sd">    **GUI containers nest one way.** A client-scoped GUI element may be</span>
@@ -1169,7 +1169,7 @@
 <span class="sd">    with the folder. The reverse -- a server-scoped element inside a</span>
 <span class="sd">    client-scoped container -- raises, since no other client could see the</span>
 <span class="sd">    container.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">:</span> <span class="n">infra</span><span class="o">.</span><span class="n">WebsockClientConnection</span><span class="p">,</span> <span class="n">server</span><span class="p">:</span> <span class="n">ViserServer</span>
@@ -1180,46 +1180,46 @@
 
         <span class="c1"># Public attributes.</span>
         <span class="c1"># client_id is assigned BEFORE the scene/gui APIs: SceneApi.__init__</span>
-        <span class="c1"># reads it (the owner id stamped on this scope&#39;s scene messages), and</span>
+        <span class="c1"># reads it (the owner id stamped on this scope's scene messages), and</span>
         <span class="c1"># an attribute miss during construction would recurse through</span>
         <span class="c1"># DeprecatedAttributeShim.__getattr__ (whose `self.scene` lookup is</span>
         <span class="c1"># also unset at that point).</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Unique ID for this client.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Unique ID for this client."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="p">:</span> <span class="n">SceneApi</span> <span class="o">=</span> <span class="n">SceneApi</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span> <span class="n">thread_executor</span><span class="o">=</span><span class="n">server</span><span class="o">.</span><span class="n">_thread_executor</span><span class="p">,</span> <span class="n">event_loop</span><span class="o">=</span><span class="n">server</span><span class="o">.</span><span class="n">_event_loop</span>
         <span class="p">)</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for interacting with the 3D scene.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Handle for interacting with the 3D scene."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gui</span><span class="p">:</span> <span class="n">GuiApi</span> <span class="o">=</span> <span class="n">GuiApi</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span> <span class="n">thread_executor</span><span class="o">=</span><span class="n">server</span><span class="o">.</span><span class="n">_thread_executor</span><span class="p">,</span> <span class="n">event_loop</span><span class="o">=</span><span class="n">server</span><span class="o">.</span><span class="n">_event_loop</span>
         <span class="p">)</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for interacting with the GUI.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Handle for interacting with the GUI."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">camera</span><span class="p">:</span> <span class="n">CameraHandle</span> <span class="o">=</span> <span class="n">CameraHandle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for reading from and manipulating the client&#39;s viewport camera.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Handle for reading from and manipulating the client's viewport camera."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">local_storage</span><span class="p">:</span> <span class="n">LocalStorageHandle</span> <span class="o">=</span> <span class="n">LocalStorageHandle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for reading and writing the client&#39;s browser localStorage.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Handle for reading and writing the client's browser localStorage."""</span>
 
 <div class="viewcode-block" id="ClientHandle.flush">
 <a class="viewcode-back" href="../../../api/handles/client_handles/#viser.ClientHandle.flush">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">flush</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Flush the outgoing message buffer. Any buffered messages will immediately be</span>
-<span class="sd">        sent. (by default they are windowed)&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Flush the outgoing message buffer. Any buffered messages will immediately be</span>
+<span class="sd">        sent. (by default they are windowed)"""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_viser_server</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">flush_client</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client_id</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="ClientHandle.atomic">
 <a class="viewcode-back" href="../../../api/handles/client_handles/#viser.ClientHandle.atomic">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">atomic</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ContextManager</span><span class="p">[</span><span class="kc">None</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a context where: all outgoing messages are grouped and applied by</span>
+<span class="w">        </span><span class="sd">"""Returns a context where: all outgoing messages are grouped and applied by</span>
 <span class="sd">        clients atomically.</span>
 
-<span class="sd">        This should be treated as a soft constraint that&#39;s helpful for things</span>
+<span class="sd">        This should be treated as a soft constraint that's helpful for things</span>
 <span class="sd">        like animations, or when we want position and orientation updates to</span>
 <span class="sd">        happen synchronously.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Context manager.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">atomic</span><span class="p">()</span></div>
 
 
@@ -1232,7 +1232,7 @@
         <span class="n">chunk_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>
         <span class="n">save_immediately</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Send a file for a client or clients to download.</span>
+<span class="w">        </span><span class="sd">"""Send a file for a client or clients to download.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            filename: Name of the file to send. Used to infer MIME type.</span>
@@ -1240,11 +1240,11 @@
 <span class="sd">            chunk_size: Number of bytes to send at a time.</span>
 <span class="sd">            save_immediately: Whether to save the file immediately. If `False`,</span>
 <span class="sd">                a link to the file will be shown as a notification. Being able to</span>
-<span class="sd">                right click the link and choose &quot;Save as...&quot; can be useful.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">                right click the link and choose "Save as..." can be useful.</span>
+<span class="sd">        """</span>
         <span class="n">mime_type</span> <span class="o">=</span> <span class="n">mimetypes</span><span class="o">.</span><span class="n">guess_type</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
         <span class="k">if</span> <span class="n">mime_type</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">mime_type</span> <span class="o">=</span> <span class="s2">&quot;application/octet-stream&quot;</span>
+            <span class="n">mime_type</span> <span class="o">=</span> <span class="s2">"application/octet-stream"</span>
 
         <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">content</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="n">chunk_size</span> <span class="p">:</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">chunk_size</span><span class="p">]</span>
@@ -1288,7 +1288,7 @@
 
     <span class="nd">@overload</span>
     <span class="nd">@deprecated</span><span class="p">(</span>
-        <span class="s2">&quot;The `auto_close` argument has been deprecated. Use `auto_close_seconds` instead.&quot;</span>
+        <span class="s2">"The `auto_close` argument has been deprecated. Use `auto_close_seconds` instead."</span>
     <span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">add_notification</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -1316,10 +1316,10 @@
         <span class="n">auto_close</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">Literal</span><span class="p">[</span><span class="kc">False</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">color</span><span class="p">:</span> <span class="n">LiteralColor</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">NotificationHandle</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a notification to the client&#39;s interface.</span>
+<span class="w">        </span><span class="sd">"""Add a notification to the client's interface.</span>
 
 <span class="sd">        This method creates a new notification that will be displayed at the</span>
-<span class="sd">        top left corner of the client&#39;s viewer. Notifications are useful for</span>
+<span class="sd">        top left corner of the client's viewer. Notifications are useful for</span>
 <span class="sd">        providing alerts or status updates to users.</span>
 
 <span class="sd">        .. deprecated:: 1.0.0</span>
@@ -1335,10 +1335,10 @@
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A handle that can be used to interact with the GUI element.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="n">auto_close</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">False</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;The `auto_close` (milliseconds) argument has been deprecated. Use `auto_close_seconds` instead.&quot;</span><span class="p">,</span>
+                <span class="s2">"The `auto_close` (milliseconds) argument has been deprecated. Use `auto_close_seconds` instead."</span><span class="p">,</span>
                 <span class="n">category</span><span class="o">=</span><span class="ne">DeprecationWarning</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
@@ -1370,7 +1370,7 @@
         <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
         <span class="n">fov</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-        <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">,</span>
+        <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"png"</span><span class="p">,</span> <span class="s2">"jpeg"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"jpeg"</span><span class="p">,</span>
         <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span> <span class="o">...</span>
 
@@ -1380,7 +1380,7 @@
         <span class="n">height</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">width</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">,</span>
+        <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"png"</span><span class="p">,</span> <span class="s2">"jpeg"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"jpeg"</span><span class="p">,</span>
         <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span> <span class="o">...</span>
 
@@ -1394,10 +1394,10 @@
         <span class="n">wxyz</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">position</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">fov</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;png&quot;</span><span class="p">,</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;jpeg&quot;</span><span class="p">,</span>
+        <span class="n">transport_format</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"png"</span><span class="p">,</span> <span class="s2">"jpeg"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"jpeg"</span><span class="p">,</span>
         <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Request a render from a client, block until it&#39;s done and received, then</span>
+<span class="w">        </span><span class="sd">"""Request a render from a client, block until it's done and received, then</span>
 <span class="sd">        return it as a numpy array. If wxyz, position, and fov are not provided, the</span>
 <span class="sd">        current camera state will be used.</span>
 
@@ -1424,11 +1424,11 @@
 <span class="sd">            geometry props) made before the call. Content that the browser decodes</span>
 <span class="sd">            or loads asynchronously -- large background/image textures, GLB assets,</span>
 <span class="sd">            environment maps -- is not awaited: a capture issued immediately after</span>
-<span class="sd">            such an update may still show the previous content if the decode hasn&#39;t</span>
+<span class="sd">            such an update may still show the previous content if the decode hasn't</span>
 <span class="sd">            finished (more likely on fast displays, where frames are short relative</span>
 <span class="sd">            to decode time). When that matters, capture after the asset has had a</span>
 <span class="sd">            moment to load.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="c1"># Listen for a render reseponse message, which should contain the rendered</span>
         <span class="c1"># image.</span>
@@ -1440,8 +1440,8 @@
         <span class="n">render_uuid</span> <span class="o">=</span> <span class="n">_make_uuid</span><span class="p">()</span>
 
         <span class="c1"># THREE exits race to unregister the handler: a frame arriving</span>
-        <span class="c1"># (got_render_cb, on the event loop), and the caller&#39;s disconnect /</span>
-        <span class="c1"># timeout branches below. infra&#39;s unregister_handler raises ValueError</span>
+        <span class="c1"># (got_render_cb, on the event loop), and the caller's disconnect /</span>
+        <span class="c1"># timeout branches below. infra's unregister_handler raises ValueError</span>
         <span class="c1"># on a second remove, so exactly one exit may perform it; the losers</span>
         <span class="c1"># defer to the winner instead of double-unregistering.</span>
         <span class="n">unregister_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
@@ -1463,7 +1463,7 @@
         <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">del</span> <span class="n">client_id</span>
             <span class="c1"># Ignore responses for other concurrent get_render() calls on this</span>
-            <span class="c1"># client; only ours matches our request&#39;s uuid.</span>
+            <span class="c1"># client; only ours matches our request's uuid.</span>
             <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">render_uuid</span> <span class="o">!=</span> <span class="n">render_uuid</span><span class="p">:</span>
                 <span class="k">return</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">unregister_once</span><span class="p">():</span>
@@ -1473,9 +1473,9 @@
                 <span class="c1"># removal. The caller is gone -- drop the frame.</span>
                 <span class="k">return</span>
             <span class="k">nonlocal</span> <span class="n">payload</span>
-            <span class="c1"># Store the raw payload only; decoding happens on the caller&#39;s</span>
-            <span class="c1"># thread below. This callback runs on the server&#39;s event loop,</span>
-            <span class="c1"># where a large PNG/JPEG decode (or imageio&#39;s slow first import)</span>
+            <span class="c1"># Store the raw payload only; decoding happens on the caller's</span>
+            <span class="c1"># thread below. This callback runs on the server's event loop,</span>
+            <span class="c1"># where a large PNG/JPEG decode (or imageio's slow first import)</span>
             <span class="c1"># would block message handling for EVERY client.</span>
             <span class="n">payload</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">payload</span>
             <span class="n">render_ready_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
@@ -1492,13 +1492,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_viser_server</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_connection</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">GetRenderRequestMessage</span><span class="p">(</span>
-                <span class="s2">&quot;image/jpeg&quot;</span> <span class="k">if</span> <span class="n">transport_format</span> <span class="o">==</span> <span class="s2">&quot;jpeg&quot;</span> <span class="k">else</span> <span class="s2">&quot;image/png&quot;</span><span class="p">,</span>
+                <span class="s2">"image/jpeg"</span> <span class="k">if</span> <span class="n">transport_format</span> <span class="o">==</span> <span class="s2">"jpeg"</span> <span class="k">else</span> <span class="s2">"image/png"</span><span class="p">,</span>
                 <span class="n">height</span><span class="o">=</span><span class="n">height</span><span class="p">,</span>
                 <span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">,</span>
                 <span class="c1"># Only used for JPEG. Measured: JPEG speed and size move</span>
                 <span class="c1"># together (lower quality = fewer surviving DCT coefficients</span>
                 <span class="c1"># = less entropy-coding work on both ends), and 80 sits near</span>
-                <span class="c1"># the speed plateau while staying fidelity-safe. Chrome&#39;s</span>
+                <span class="c1"># the speed plateau while staying fidelity-safe. Chrome's</span>
                 <span class="c1"># 0.92 toBlob default is strictly slower and larger.</span>
                 <span class="n">quality</span><span class="o">=</span><span class="mi">80</span><span class="p">,</span>
                 <span class="n">position</span><span class="o">=</span><span class="n">cast_vector</span><span class="p">(</span>
@@ -1536,33 +1536,33 @@
                     <span class="n">render_ready_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
                     <span class="k">break</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                    <span class="s2">&quot;Render request failed: the client disconnected before &quot;</span>
-                    <span class="s2">&quot;returning a frame.&quot;</span>
+                    <span class="s2">"Render request failed: the client disconnected before "</span>
+                    <span class="s2">"returning a frame."</span>
                 <span class="p">)</span>
             <span class="k">if</span> <span class="n">deadline</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">deadline</span><span class="p">:</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">unregister_once</span><span class="p">():</span>
-                    <span class="c1"># Same race as above: the frame beat the deadline&#39;s</span>
+                    <span class="c1"># Same race as above: the frame beat the deadline's</span>
                     <span class="c1"># unregister. Return it instead of raising TimeoutError.</span>
                     <span class="n">render_ready_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
                     <span class="k">break</span>
                 <span class="k">raise</span> <span class="ne">TimeoutError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Render request timed out after </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s: the client &quot;</span>
-                    <span class="s2">&quot;did not return a frame.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Render request timed out after </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s: the client "</span>
+                    <span class="s2">"did not return a frame."</span>
                 <span class="p">)</span>
-        <span class="c1"># An empty payload is the client&#39;s failure sentinel (capture threw, or</span>
+        <span class="c1"># An empty payload is the client's failure sentinel (capture threw, or</span>
         <span class="c1"># toBlob() returned null).</span>
         <span class="k">if</span> <span class="n">payload</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;Render request failed: the client could not capture a frame.&quot;</span>
+                <span class="s2">"Render request failed: the client could not capture a frame."</span>
             <span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">iio</span><span class="o">.</span><span class="n">imread</span><span class="p">(</span>
                 <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
-                <span class="n">extension</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">transport_format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">extension</span><span class="o">=</span><span class="sa">f</span><span class="s2">".</span><span class="si">{</span><span class="n">transport_format</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;Render request failed: the client could not capture a frame.&quot;</span>
+                <span class="s2">"Render request failed: the client could not capture a frame."</span>
             <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span></div>
 </div>
 
@@ -1571,7 +1571,7 @@
 <div class="viewcode-block" id="ViserServer">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">ViserServer</span><span class="p">(</span><span class="n">DeprecatedAttributeShim</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">TYPE_CHECKING</span> <span class="k">else</span> <span class="nb">object</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;:class:`ViserServer` is the main class for working with viser. On</span>
+<span class="w">    </span><span class="sd">""":class:`ViserServer` is the main class for working with viser. On</span>
 <span class="sd">    instantiation, it (a) launches a thread with a web server and (b) provides</span>
 <span class="sd">    a high-level API for interactive 3D visualization.</span>
 
@@ -1582,8 +1582,8 @@
 <span class="sd">    elements.</span>
 
 <span class="sd">    **Shared state.** Elements added to the server object, for example via a</span>
-<span class="sd">    server&#39;s :meth:`SceneApi.add_point_cloud` or :meth:`GuiApi.add_button`,</span>
-<span class="sd">    will have state that&#39;s shared and synchronized automatically between all</span>
+<span class="sd">    server's :meth:`SceneApi.add_point_cloud` or :meth:`GuiApi.add_button`,</span>
+<span class="sd">    will have state that's shared and synchronized automatically between all</span>
 <span class="sd">    connected clients. To show elements that are local to a single client, see</span>
 <span class="sd">    :attr:`ClientHandle.scene` and :attr:`ClientHandle.gui`.</span>
 
@@ -1591,25 +1591,25 @@
 <span class="sd">        host: Host to bind server to.</span>
 <span class="sd">        port: Port to bind server to.</span>
 <span class="sd">        label: Label shown at the top of the GUI panel.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="c1"># Hide deprecated arguments from docstring and type checkers.</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">host</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span>
+        <span class="n">host</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"0.0.0.0"</span><span class="p">,</span>
         <span class="n">port</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8080</span><span class="p">,</span>
         <span class="n">label</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="o">**</span><span class="n">_deprecated_kwargs</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="c1"># Check for port override environment variable.</span>
-        <span class="n">port_override</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_VISER_PORT_OVERRIDE&quot;</span><span class="p">)</span>
+        <span class="n">port_override</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_VISER_PORT_OVERRIDE"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">port_override</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">port</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">port_override</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Invalid _VISER_PORT_OVERRIDE value: </span><span class="si">{</span><span class="n">port_override</span><span class="si">}</span><span class="s2">. Using default port </span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Invalid _VISER_PORT_OVERRIDE value: </span><span class="si">{</span><span class="n">port_override</span><span class="si">}</span><span class="s2">. Using default port </span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">."</span>
                 <span class="p">)</span>
 
         <span class="c1"># Create server.</span>
@@ -1617,7 +1617,7 @@
             <span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
             <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span>
             <span class="n">message_class</span><span class="o">=</span><span class="n">_messages</span><span class="o">.</span><span class="n">Message</span><span class="p">,</span>
-            <span class="n">http_server_root</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;client&quot;</span> <span class="o">/</span> <span class="s2">&quot;build&quot;</span><span class="p">,</span>
+            <span class="n">http_server_root</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"client"</span> <span class="o">/</span> <span class="s2">"build"</span><span class="p">,</span>
             <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
             <span class="c1"># End-of-replay marker: lets the client hold reconnect-sensitive</span>
             <span class="c1"># state (dock panes for same-uuid panels) dormant until the replay</span>
@@ -1644,7 +1644,7 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span> <span class="o">=</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
 
-        <span class="c1"># Run &quot;garbage collector&quot; on message buffer when new clients connect.</span>
+        <span class="c1"># Run "garbage collector" on message buffer when new clients connect.</span>
         <span class="nd">@server</span><span class="o">.</span><span class="n">on_client_connect</span>
         <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">_</span><span class="p">:</span> <span class="n">infra</span><span class="o">.</span><span class="n">WebsockClientConnection</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_run_garbage_collector</span><span class="p">()</span>
@@ -1662,7 +1662,7 @@
 
                 <span class="k">assert</span> <span class="n">client_id</span> <span class="o">==</span> <span class="n">client</span><span class="o">.</span><span class="n">client_id</span>
 
-                <span class="c1"># Update the client&#39;s camera.</span>
+                <span class="c1"># Update the client's camera.</span>
                 <span class="n">client</span><span class="o">.</span><span class="n">camera</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">_CameraHandleState</span><span class="p">(</span>
                     <span class="n">client</span><span class="p">,</span>
                     <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">wxyz</span><span class="p">),</span>
@@ -1731,25 +1731,25 @@
             <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">return</span>
 
-            <span class="c1"># Drop this client&#39;s in-flight upload buffers (shared GUI and the</span>
-            <span class="c1"># client&#39;s own): nothing else removes them -- completion is the</span>
+            <span class="c1"># Drop this client's in-flight upload buffers (shared GUI and the</span>
+            <span class="c1"># client's own): nothing else removes them -- completion is the</span>
             <span class="c1"># only other pop -- so a tab closed mid-upload leaked its</span>
             <span class="c1"># accumulated parts forever.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_drop_uploads_from_client</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">))</span>
             <span class="n">handle</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_drop_uploads_from_client</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">infra</span><span class="o">.</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">client_id</span><span class="p">))</span>
 
-            <span class="c1"># Unhook this client&#39;s GUI elements from any SERVER containers</span>
-            <span class="c1"># they were nested in (bookkeeping only; the connection&#39;s buffer</span>
+            <span class="c1"># Unhook this client's GUI elements from any SERVER containers</span>
+            <span class="c1"># they were nested in (bookkeeping only; the connection's buffer</span>
             <span class="c1"># is closed). Otherwise a later server-side container removal</span>
             <span class="c1"># would cascade removes into a dead connection.</span>
             <span class="n">handle</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">_release_cross_scope_nesting</span><span class="p">()</span>
 
             <span class="c1"># Drop any in-flight drag entries for this client; the</span>
-            <span class="c1"># corresponding ``phase=&quot;end&quot;`` will never arrive, so without</span>
+            <span class="c1"># corresponding ``phase="end"`` will never arrive, so without</span>
             <span class="c1"># this the active-drag map leaks an entry per dropped drag and</span>
             <span class="c1"># ``on_drag_end`` is silently skipped. BOTH scopes: owner-scoped</span>
-            <span class="c1"># dispatch routes drags on client-scoped nodes to the client&#39;s</span>
-            <span class="c1"># own SceneApi, so its map needs the same drain as the server&#39;s.</span>
+            <span class="c1"># dispatch routes drags on client-scoped nodes to the client's</span>
+            <span class="c1"># own SceneApi, so its map needs the same drain as the server's.</span>
             <span class="c1"># The popped handle is passed in explicitly so the synthesized</span>
             <span class="c1"># end events can still resolve ``event.client`` without the</span>
             <span class="c1"># client being publicly listed.</span>
@@ -1770,7 +1770,7 @@
         <span class="c1"># (whose `self.scene` lookup recurses without `scene` set --&gt;</span>
         <span class="c1"># RecursionError at interpreter exit).</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span><span class="p">:</span> <span class="n">ViserTunnel</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="c1"># Guards the share-tunnel slot&#39;s check-then-act. The handlers below run</span>
+        <span class="c1"># Guards the share-tunnel slot's check-then-act. The handlers below run</span>
         <span class="c1"># on pool threads (not serialized on the event loop), so two</span>
         <span class="c1"># concurrent requests could both see None and each create a tunnel,</span>
         <span class="c1"># orphaning (leaking) the first.</span>
@@ -1790,12 +1790,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="p">:</span> <span class="n">SceneApi</span> <span class="o">=</span> <span class="n">SceneApi</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span> <span class="n">thread_executor</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="p">,</span> <span class="n">event_loop</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span>
         <span class="p">)</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for interacting with the 3D scene.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Handle for interacting with the 3D scene."""</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">gui</span><span class="p">:</span> <span class="n">GuiApi</span> <span class="o">=</span> <span class="n">GuiApi</span><span class="p">(</span>
             <span class="bp">self</span><span class="p">,</span> <span class="n">thread_executor</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="p">,</span> <span class="n">event_loop</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span>
         <span class="p">)</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle for interacting with the GUI.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Handle for interacting with the GUI."""</span>
 
         <span class="c1"># Dispatch the share-tunnel handlers to the thread pool, NOT inline on</span>
         <span class="c1"># the event loop: request_share_url() blocks (HTTP round-trip to the</span>
@@ -1824,47 +1824,47 @@
         <span class="kn">from</span><span class="w"> </span><span class="nn">rich.table</span><span class="w"> </span><span class="kn">import</span> <span class="n">Table</span>
 
         <span class="n">port</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">_port</span>  <span class="c1"># Port may have changed.</span>
-        <span class="k">if</span> <span class="n">host</span> <span class="o">==</span> <span class="s2">&quot;0.0.0.0&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">host</span> <span class="o">==</span> <span class="s2">"0.0.0.0"</span><span class="p">:</span>
             <span class="c1"># 0.0.0.0 is not a real IP and people are often confused by it;</span>
-            <span class="c1"># we&#39;ll just print localhost. This is questionable from a security</span>
+            <span class="c1"># we'll just print localhost. This is questionable from a security</span>
             <span class="c1"># perspective, but probably fine for our use cases.</span>
-            <span class="n">http_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;http://localhost:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="n">ws_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;ws://localhost:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="n">http_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"http://localhost:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">ws_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"ws://localhost:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">"</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">http_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;http://</span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="n">ws_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;ws://</span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="n">http_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"http://</span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">ws_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"ws://</span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">"</span>
         <span class="n">table</span> <span class="o">=</span> <span class="n">Table</span><span class="p">(</span>
             <span class="n">title</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
             <span class="n">show_header</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="n">box</span><span class="o">=</span><span class="n">box</span><span class="o">.</span><span class="n">MINIMAL</span><span class="p">,</span>
             <span class="n">title_style</span><span class="o">=</span><span class="n">style</span><span class="o">.</span><span class="n">Style</span><span class="p">(</span><span class="n">bold</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="p">)</span>
-        <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">(</span><span class="s2">&quot;HTTP&quot;</span><span class="p">,</span> <span class="n">http_url</span><span class="p">)</span>
-        <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">(</span><span class="s2">&quot;Websocket&quot;</span><span class="p">,</span> <span class="n">ws_url</span><span class="p">)</span>
+        <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">(</span><span class="s2">"HTTP"</span><span class="p">,</span> <span class="n">http_url</span><span class="p">)</span>
+        <span class="n">table</span><span class="o">.</span><span class="n">add_row</span><span class="p">(</span><span class="s2">"Websocket"</span><span class="p">,</span> <span class="n">ws_url</span><span class="p">)</span>
         <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
             <span class="n">Panel</span><span class="p">(</span>
                 <span class="n">table</span><span class="p">,</span>
-                <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;[bold]viser[/bold] [dim](listening *:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">)[/dim]&quot;</span>
-                <span class="k">if</span> <span class="n">host</span> <span class="o">==</span> <span class="s2">&quot;0.0.0.0&quot;</span>
-                <span class="k">else</span> <span class="s2">&quot;[bold]viser[/bold]&quot;</span><span class="p">,</span>
+                <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">"[bold]viser[/bold] [dim](listening *:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">)[/dim]"</span>
+                <span class="k">if</span> <span class="n">host</span> <span class="o">==</span> <span class="s2">"0.0.0.0"</span>
+                <span class="k">else</span> <span class="s2">"[bold]viser[/bold]"</span><span class="p">,</span>
                 <span class="n">expand</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="p">)</span>
 
         <span class="c1"># Create share tunnel if requested.</span>
         <span class="c1"># This is deprecated: we should use get_share_url() instead.</span>
-        <span class="n">share</span> <span class="o">=</span> <span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;share&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="n">share</span> <span class="o">=</span> <span class="n">_deprecated_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"share"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">share</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">request_share_url</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">set_up_direction</span><span class="p">(</span><span class="s2">&quot;+z&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">set_up_direction</span><span class="p">(</span><span class="s2">"+z"</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">set_panel_label</span><span class="p">(</span><span class="n">label</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">initial_camera</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">InitialCameraConfig</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Configuration for initial camera pose.</span>
+<span class="w">        </span><span class="sd">"""Configuration for initial camera pose.</span>
 
 <span class="sd">        Set these values to control the initial camera position for new</span>
 <span class="sd">        clients and serialized/embedded scenes. The API is designed to match</span>
@@ -1874,14 +1874,14 @@
 
 <span class="sd">            server.initial_camera.position = (5.0, 5.0, 3.0)</span>
 <span class="sd">            server.initial_camera.look_at = (0.0, 0.0, 0.0)</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initial_camera</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_run_garbage_collector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Purge from the persistent broadcast buffer:</span>
+<span class="w">        </span><span class="sd">"""Purge from the persistent broadcast buffer:</span>
 
-<span class="sd">        - Every tombstone message (``lifecycle_phase == &quot;remove&quot;``) for an</span>
-<span class="sd">          entity -- new clients shouldn&#39;t replay removals of entities that</span>
+<span class="sd">        - Every tombstone message (``lifecycle_phase == "remove"``) for an</span>
+<span class="sd">          entity -- new clients shouldn't replay removals of entities that</span>
 <span class="sd">          never existed to them.</span>
 <span class="sd">        - Every update message (``lifecycle_phase`` of ``update_dict`` or</span>
 <span class="sd">          ``update_simple``) targeting an entity that was already removed. This</span>
@@ -1895,33 +1895,33 @@
 <span class="sd">        Two passes so purging is order-independent under concurrent writers:</span>
 <span class="sd">        the first pass collects all tombstone entity ids, the second sweeps</span>
 <span class="sd">        updates (and scene-adjacent Set* messages) targeting them.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">buffer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_broadcast_buffer</span>
         <span class="k">with</span> <span class="n">buffer</span><span class="o">.</span><span class="n">buffer_lock</span><span class="p">:</span>
             <span class="c1"># Deletion floor: only messages EVERY active window generator has</span>
             <span class="c1"># already consumed may be purged. Do NOT gate on message_event --</span>
             <span class="c1"># it is not a consumption watermark (any one generator clears</span>
-            <span class="c1"># it), so a BACKPRESSURED client&#39;s cursor can sit arbitrarily far</span>
-            <span class="c1"># behind, and purging a remove-tombstone it hadn&#39;t consumed makes</span>
+            <span class="c1"># it), so a BACKPRESSURED client's cursor can sit arbitrarily far</span>
+            <span class="c1"># behind, and purging a remove-tombstone it hadn't consumed makes</span>
             <span class="c1"># it retain the entity forever (its cursor skips the hole),</span>
             <span class="c1"># permanently diverging it from other clients. With no active</span>
-            <span class="c1"># generators everything is purgeable: a connecting client&#39;s</span>
+            <span class="c1"># generators everything is purgeable: a connecting client's</span>
             <span class="c1"># generator registers only when its producer starts, and a fresh</span>
             <span class="c1"># client must not replay removals of entities it never saw --</span>
-            <span class="c1"># which is this GC&#39;s entire purpose.</span>
+            <span class="c1"># which is this GC's entire purpose.</span>
             <span class="n">purge_floor</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">buffer</span><span class="o">.</span><span class="n">generator_cursors</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 
             <span class="k">def</span><span class="w"> </span><span class="nf">deletable</span><span class="p">(</span><span class="n">msg_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">force</span> <span class="ow">or</span> <span class="n">purge_floor</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">msg_id</span> <span class="o">&lt;=</span> <span class="n">purge_floor</span>
 
-            <span class="c1"># First pass: collect every tombstone&#39;s entity id. The entity id</span>
+            <span class="c1"># First pass: collect every tombstone's entity id. The entity id</span>
             <span class="c1"># set gates the second pass regardless of the floor; the tombstone</span>
             <span class="c1"># MESSAGE itself is only deleted once every active client has</span>
             <span class="c1"># consumed it.</span>
             <span class="n">remove_message_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="n">removed_ids_by_type</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
             <span class="k">for</span> <span class="n">msg_id</span><span class="p">,</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">lifecycle_phase</span> <span class="o">==</span> <span class="s2">&quot;remove&quot;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">lifecycle_phase</span> <span class="o">==</span> <span class="s2">"remove"</span><span class="p">:</span>
                     <span class="k">assert</span> <span class="p">(</span>
                         <span class="n">message</span><span class="o">.</span><span class="n">entity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                         <span class="ow">and</span> <span class="n">message</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -1934,21 +1934,21 @@
 
             <span class="c1"># Second pass: purge updates whose target entity has a tombstone,</span>
             <span class="c1"># including scene-adjacent Set*Message variants that target a</span>
-            <span class="c1"># removed scene node by `name` but aren&#39;t entity-declared. The</span>
+            <span class="c1"># removed scene node by `name` but aren't entity-declared. The</span>
             <span class="c1"># per-message taxonomy is Message.targets_entity_state -- the ONE</span>
             <span class="c1"># definition, shared with the same-name-replacement purge --</span>
-            <span class="c1"># materialized as the buffer&#39;s entity-state index, so the sweep</span>
-            <span class="c1"># touches only the tombstoned entities&#39; buckets rather than</span>
+            <span class="c1"># materialized as the buffer's entity-state index, so the sweep</span>
+            <span class="c1"># touches only the tombstoned entities' buckets rather than</span>
             <span class="c1"># walking the whole buffer.</span>
             <span class="c1">#</span>
             <span class="c1"># These deletes are NOT floor-gated, unlike the tombstones above:</span>
             <span class="c1"># an update targeting a removed entity is dead weight for EVERY</span>
-            <span class="c1"># client. A laggard that hasn&#39;t consumed it still receives the</span>
+            <span class="c1"># client. A laggard that hasn't consumed it still receives the</span>
             <span class="c1"># (floor-retained) tombstone, so its final state is identical --</span>
             <span class="c1"># while floor-gating it let a single backpressured client pin an</span>
-            <span class="c1"># update that sorts AFTER its entity&#39;s remove in the buffer, and</span>
-            <span class="c1"># every late-joiner then replayed &quot;remove /x&quot; (no-op) followed by</span>
-            <span class="c1"># &quot;update /x&quot;: a ghost node other clients don&#39;t have. push()</span>
+            <span class="c1"># update that sorts AFTER its entity's remove in the buffer, and</span>
+            <span class="c1"># every late-joiner then replayed "remove /x" (no-op) followed by</span>
+            <span class="c1"># "update /x": a ghost node other clients don't have. push()</span>
             <span class="c1"># already purges pending updates on Remove with no floor gate;</span>
             <span class="c1"># this sweep follows the same reasoning.</span>
             <span class="k">for</span> <span class="n">entity_type</span><span class="p">,</span> <span class="n">entity_ids</span> <span class="ow">in</span> <span class="n">removed_ids_by_type</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
@@ -1965,34 +1965,34 @@
 <div class="viewcode-block" id="ViserServer.get_host">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.get_host">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_host</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the host address of the Viser server.</span>
+<span class="w">        </span><span class="sd">"""Returns the host address of the Viser server.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Host address as string.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_host</span></div>
 
 
 <div class="viewcode-block" id="ViserServer.get_port">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.get_port">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_port</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the port of the Viser server. This could be different from the</span>
+<span class="w">        </span><span class="sd">"""Returns the port of the Viser server. This could be different from the</span>
 <span class="sd">        originally requested one.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Port as integer.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_port</span></div>
 
 
 <div class="viewcode-block" id="ViserServer.request_share_url">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.request_share_url">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">request_share_url</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Request a share URL for the Viser server, which allows for public access.</span>
+<span class="w">        </span><span class="sd">"""Request a share URL for the Viser server, which allows for public access.</span>
 <span class="sd">        On the first call, will block until a connecting with the share URL server is</span>
 <span class="sd">        established. Afterwards, the URL will be returned directly.</span>
 
-<span class="sd">        This is an experimental feature that relies on an external server; it shouldn&#39;t</span>
+<span class="sd">        This is an experimental feature that relies on an external server; it shouldn't</span>
 <span class="sd">        be relied on for critical applications.</span>
 
 <span class="sd">        Args:</span>
@@ -2000,13 +2000,13 @@
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Share URL as string, or None if connection fails or is closed.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Claim the tunnel slot atomically: only ONE concurrent request</span>
         <span class="c1"># creates a tunnel; the rest wait on it. The blocking waits below are</span>
-        <span class="c1"># OUTSIDE the lock so requests don&#39;t serialize on the connection.</span>
+        <span class="c1"># OUTSIDE the lock so requests don't serialize on the connection.</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span><span class="p">:</span>
             <span class="n">tunnel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span>
-            <span class="k">if</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;failed&quot;</span><span class="p">,</span> <span class="s2">&quot;closed&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"failed"</span><span class="p">,</span> <span class="s2">"closed"</span><span class="p">):</span>
                 <span class="c1"># A tunnel that failed to connect never signals disconnect, so</span>
                 <span class="c1"># nothing else clears the slot: without this, every later</span>
                 <span class="c1"># request would see the dead tunnel and return None forever.</span>
@@ -2019,15 +2019,15 @@
                 <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
                     <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
 
-                    <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Share URL requested!&quot;</span><span class="p">)</span>
+                    <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">"[bold](viser)[/bold] Share URL requested!"</span><span class="p">)</span>
                 <span class="n">tunnel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="o">=</span> <span class="n">ViserTunnel</span><span class="p">(</span>
-                    <span class="s2">&quot;share.viser.studio&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_port</span>
+                    <span class="s2">"share.viser.studio"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_port</span>
                 <span class="p">)</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">we_created</span><span class="p">:</span>
             <span class="c1"># Another request created (or is creating) the tunnel.</span>
             <span class="k">assert</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">while</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;ready&quot;</span><span class="p">,</span> <span class="s2">&quot;connecting&quot;</span><span class="p">):</span>
+            <span class="k">while</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"ready"</span><span class="p">,</span> <span class="s2">"connecting"</span><span class="p">):</span>
                 <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_url</span><span class="p">()</span>
 
@@ -2039,11 +2039,11 @@
         <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
             <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
 
-            <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Disconnected from share URL&quot;</span><span class="p">)</span>
+            <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">"[bold](viser)[/bold] Disconnected from share URL"</span><span class="p">)</span>
             <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span><span class="p">:</span>
                 <span class="c1"># Only clear the slot (and broadcast the loss) if it still</span>
                 <span class="c1"># points at OUR tunnel. A newer request may have replaced it:</span>
-                <span class="c1"># broadcasting None here would clobber the replacement&#39;s URL</span>
+                <span class="c1"># broadcasting None here would clobber the replacement's URL</span>
                 <span class="c1"># for every client -- and, since the message persists in the</span>
                 <span class="c1"># broadcast buffer, for every late joiner too.</span>
                 <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">tunnel</span><span class="p">:</span>
@@ -2058,20 +2058,20 @@
                 <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
 
                 <span class="k">if</span> <span class="n">share_url</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Could not generate share URL&quot;</span><span class="p">)</span>
+                    <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">"[bold](viser)[/bold] Could not generate share URL"</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;[bold](viser)[/bold] Generated share URL (expires in 24 hours, max </span><span class="si">{</span><span class="n">max_clients</span><span class="si">}</span><span class="s2"> clients): </span><span class="si">{</span><span class="n">share_url</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="sa">f</span><span class="s2">"[bold](viser)[/bold] Generated share URL (expires in 24 hours, max </span><span class="si">{</span><span class="n">max_clients</span><span class="si">}</span><span class="s2"> clients): </span><span class="si">{</span><span class="n">share_url</span><span class="si">}</span><span class="s2">"</span>
                     <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span><span class="n">_messages</span><span class="o">.</span><span class="n">ShareUrlUpdated</span><span class="p">(</span><span class="n">share_url</span><span class="p">))</span>
             <span class="n">connect_event</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
 
         <span class="c1"># Wait for connect, but ALSO watch for failure: on_connect only fires</span>
         <span class="c1"># on success, and a failed tunnel (share backend unreachable) sets</span>
-        <span class="c1"># status=&quot;failed&quot; without touching connect_event -- a bare wait()</span>
+        <span class="c1"># status="failed" without touching connect_event -- a bare wait()</span>
         <span class="c1"># blocked the creator forever instead of returning None as documented.</span>
         <span class="k">while</span> <span class="ow">not</span> <span class="n">connect_event</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;failed&quot;</span><span class="p">,</span> <span class="s2">&quot;closed&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"failed"</span><span class="p">,</span> <span class="s2">"closed"</span><span class="p">):</span>
                 <span class="k">return</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="n">tunnel</span><span class="o">.</span><span class="n">get_url</span><span class="p">()</span></div>
 
@@ -2079,7 +2079,7 @@
 <div class="viewcode-block" id="ViserServer.disconnect_share_url">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.disconnect_share_url">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">disconnect_share_url</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Disconnect from the share URL server.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Disconnect from the share URL server."""</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel_lock</span><span class="p">:</span>
             <span class="n">tunnel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span>
         <span class="k">if</span> <span class="n">tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -2088,16 +2088,16 @@
             <span class="kn">import</span><span class="w"> </span><span class="nn">rich</span>
 
             <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
-                <span class="s2">&quot;[bold](viser)[/bold] Tried to disconnect from share URL, but already disconnected&quot;</span>
+                <span class="s2">"[bold](viser)[/bold] Tried to disconnect from share URL, but already disconnected"</span>
             <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="ViserServer.stop">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.stop">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stop the Viser server and associated threads and tunnels.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Stop the Viser server and associated threads and tunnels."""</span>
         <span class="c1"># stop() is also registered via atexit; unregister so a manual stop</span>
-        <span class="c1"># isn&#39;t followed by a redundant second one at interpreter exit.</span>
+        <span class="c1"># isn't followed by a redundant second one at interpreter exit.</span>
         <span class="n">atexit</span><span class="o">.</span><span class="n">unregister</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_share_tunnel</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -2106,16 +2106,16 @@
         <span class="c1"># shutting the pool: that teardown submits disconnect/camera callbacks</span>
         <span class="c1"># to the pool, and websock_server.stop() only join()s the loop thread</span>
         <span class="c1"># for 1s -- so shutting the pool right after would make those late</span>
-        <span class="c1"># submits raise &quot;cannot schedule new futures after shutdown&quot; and drop</span>
-        <span class="c1"># the user&#39;s callbacks silently. Bounded so a hung callback can&#39;t</span>
+        <span class="c1"># submits raise "cannot schedule new futures after shutdown" and drop</span>
+        <span class="c1"># the user's callbacks silently. Bounded so a hung callback can't</span>
         <span class="c1"># block stop() forever (in that pathological case the pool still</span>
         <span class="c1"># shuts and the straggler is dropped, as before this join).</span>
         <span class="n">loop_thread</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">_server_thread</span>
         <span class="k">if</span> <span class="n">loop_thread</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">loop_thread</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
         <span class="c1"># Release the callback/get_render worker pool: stop() otherwise left</span>
-        <span class="c1"># its (up to 32) threads alive until the server object was GC&#39;d out of</span>
-        <span class="c1"># its callback ref-cycles, contradicting &quot;stops associated threads&quot;.</span>
+        <span class="c1"># its (up to 32) threads alive until the server object was GC'd out of</span>
+        <span class="c1"># its callback ref-cycles, contradicting "stops associated threads".</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">shutdown</span><span class="p">(</span><span class="n">wait</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
 
 
@@ -2124,9 +2124,9 @@
         <span class="n">callbacks</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">client</span><span class="p">:</span> <span class="n">ClientHandle</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run connect/disconnect callbacks for one client: async callbacks</span>
+<span class="w">        </span><span class="sd">"""Run connect/disconnect callbacks for one client: async callbacks</span>
 <span class="sd">        awaited in order, sync callbacks on the thread pool, every callback</span>
-<span class="sd">        exception-isolated so one failure cannot starve its siblings.&quot;&quot;&quot;</span>
+<span class="sd">        exception-isolated so one failure cannot starve its siblings."""</span>
         <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="n">callbacks</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
                 <span class="k">try</span><span class="p">:</span>
@@ -2141,12 +2141,12 @@
 <div class="viewcode-block" id="ViserServer.get_clients">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.get_clients">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">ClientHandle</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates and returns a copy of the mapping from connected client IDs to</span>
+<span class="w">        </span><span class="sd">"""Creates and returns a copy of the mapping from connected client IDs to</span>
 <span class="sd">        handles.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Dictionary of clients.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_lock</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_connected_clients</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
@@ -2156,7 +2156,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">on_client_connect</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">cb</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback to run for newly connected clients.</span>
+<span class="w">        </span><span class="sd">"""Attach a callback to run for newly connected clients.</span>
 
 <span class="sd">        This is also where per-client state should be (re)built: client state</span>
 <span class="sd">        is ephemeral (see :class:`ClientHandle`), and a browser that</span>
@@ -2167,7 +2167,7 @@
 <span class="sd">        - Async functions (async def) will be executed in the event loop.</span>
 
 <span class="sd">        Using async functions can be useful for reducing race conditions.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_lock</span><span class="p">:</span>
             <span class="n">clients</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_connected_clients</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_client_connect_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cb</span><span class="p">)</span>
@@ -2200,14 +2200,14 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">on_client_disconnect</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">cb</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientHandle</span><span class="p">],</span> <span class="n">NoneOrCoroutine</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback to run when clients disconnect.</span>
+<span class="w">        </span><span class="sd">"""Attach a callback to run when clients disconnect.</span>
 
 <span class="sd">        The callback can be either a standard function or an async function:</span>
 <span class="sd">        - Standard functions (def) will be executed in a threadpool.</span>
 <span class="sd">        - Async functions (async def) will be executed in the event loop.</span>
 
 <span class="sd">        Using async functions can be useful for reducing race conditions.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client_disconnect_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cb</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">cb</span></div>
 
@@ -2215,24 +2215,24 @@
 <div class="viewcode-block" id="ViserServer.flush">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.flush">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">flush</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Flush the outgoing message buffer. Any buffered messages will immediately be</span>
-<span class="sd">        sent. (by default they are windowed)&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Flush the outgoing message buffer. Any buffered messages will immediately be</span>
+<span class="sd">        sent. (by default they are windowed)"""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="ViserServer.atomic">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.atomic">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">atomic</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ContextManager</span><span class="p">[</span><span class="kc">None</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a context where: all outgoing messages are grouped and applied by</span>
+<span class="w">        </span><span class="sd">"""Returns a context where: all outgoing messages are grouped and applied by</span>
 <span class="sd">        clients atomically.</span>
 
-<span class="sd">        This should be treated as a soft constraint that&#39;s helpful for things</span>
+<span class="sd">        This should be treated as a soft constraint that's helpful for things</span>
 <span class="sd">        like animations, or when we want position and orientation updates to</span>
 <span class="sd">        happen synchronously.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Context manager.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_websock_server</span><span class="o">.</span><span class="n">atomic</span><span class="p">()</span></div>
 
 
@@ -2245,7 +2245,7 @@
         <span class="n">chunk_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>
         <span class="n">save_immediately</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Send a file for a client or clients to download.</span>
+<span class="w">        </span><span class="sd">"""Send a file for a client or clients to download.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            filename: Name of the file to send. Used to infer MIME type.</span>
@@ -2253,8 +2253,8 @@
 <span class="sd">            chunk_size: Number of bytes to send at a time.</span>
 <span class="sd">            save_immediately: Whether to save the file immediately. If `False`,</span>
 <span class="sd">                a link to the file will be shown as a notification. Being able to</span>
-<span class="sd">                right click the link and choose &quot;Save as...&quot; can be useful.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">                right click the link and choose "Save as..." can be useful.</span>
+<span class="sd">        """</span>
         <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_clients</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
             <span class="n">client</span><span class="o">.</span><span class="n">send_file_download</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">chunk_size</span><span class="p">,</span> <span class="n">save_immediately</span><span class="p">)</span></div>
 
@@ -2262,50 +2262,50 @@
 <div class="viewcode-block" id="ViserServer.get_event_loop">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.get_event_loop">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_event_loop</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">AbstractEventLoop</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the asyncio event loop used by the Viser background thread. This</span>
-<span class="sd">        can be useful for safe concurrent operations.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Get the asyncio event loop used by the Viser background thread. This</span>
+<span class="sd">        can be useful for safe concurrent operations."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_loop</span></div>
 
 
 <div class="viewcode-block" id="ViserServer.sleep_forever">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.sleep_forever">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">sleep_forever</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Equivalent to:</span>
+<span class="w">        </span><span class="sd">"""Equivalent to:</span>
 
 <span class="sd">        while True:</span>
 <span class="sd">            time.sleep(3600)</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
             <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">3600</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_start_scene_recording</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;**Old API.**&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""**Old API.**"""</span>
         <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API.&quot;</span><span class="p">,</span>
+            <span class="s2">"_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API."</span><span class="p">,</span>
             <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">serializer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scene_serializer</span><span class="p">()</span>
 
-        <span class="c1"># We&#39;ll add a shim for the old API for now. We can remove this later.</span>
+        <span class="c1"># We'll add a shim for the old API for now. We can remove this later.</span>
         <span class="k">class</span><span class="w"> </span><span class="nc">_SceneRecordCompatibilityShim</span><span class="p">:</span>
             <span class="k">def</span><span class="w"> </span><span class="nf">set_loop_start</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API.&quot;</span><span class="p">,</span>
+                    <span class="s2">"_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API."</span><span class="p">,</span>
                     <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
                 <span class="p">)</span>
 
             <span class="k">def</span><span class="w"> </span><span class="nf">insert_sleep</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">duration</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API.&quot;</span><span class="p">,</span>
+                    <span class="s2">"_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API."</span><span class="p">,</span>
                     <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="n">serializer</span><span class="o">.</span><span class="n">insert_sleep</span><span class="p">(</span><span class="n">duration</span><span class="p">)</span>
 
             <span class="k">def</span><span class="w"> </span><span class="nf">end_and_serialize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API.&quot;</span><span class="p">,</span>
+                    <span class="s2">"_start_scene_recording() has been renamed. See notes in https://github.com/viser-project/viser/pull/357 for the new API."</span><span class="p">,</span>
                     <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="k">return</span> <span class="n">serializer</span><span class="o">.</span><span class="n">serialize</span><span class="p">()</span>
@@ -2315,11 +2315,11 @@
 <div class="viewcode-block" id="ViserServer.get_scene_serializer">
 <a class="viewcode-back" href="../../../api/core/server/#viser.ViserServer.get_scene_serializer">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_scene_serializer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StateSerializer</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get handle for serializing the scene state.</span>
+<span class="w">        </span><span class="sd">"""Get handle for serializing the scene state.</span>
 
 <span class="sd">        This can be used for saving .viser files, which are used for offline</span>
 <span class="sd">        visualization.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Register + snapshot atomically (under _record_lock, which</span>
         <span class="c1"># queue_message also holds for its feed+push): otherwise a message</span>
         <span class="c1"># queued from another thread between the two lands in BOTH the live</span>

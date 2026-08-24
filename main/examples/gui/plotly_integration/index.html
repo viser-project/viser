@@ -464,8 +464,8 @@
 <span class="linenos">15</span>    <span class="n">fig</span> <span class="o">=</span> <span class="n">px</span><span class="o">.</span><span class="n">line</span><span class="p">(</span>
 <span class="linenos">16</span>        <span class="n">x</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">x_data</span><span class="p">),</span>
 <span class="linenos">17</span>        <span class="n">y</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">y_data</span><span class="p">),</span>
-<span class="linenos">18</span>        <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="s2">&quot;x&quot;</span><span class="p">,</span> <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="s2">&quot;sin(x)&quot;</span><span class="p">},</span>
-<span class="linenos">19</span>        <span class="n">title</span><span class="o">=</span><span class="s2">&quot;Sinusoidal Wave&quot;</span><span class="p">,</span>
+<span class="linenos">18</span>        <span class="n">labels</span><span class="o">=</span><span class="p">{</span><span class="s2">"x"</span><span class="p">:</span> <span class="s2">"x"</span><span class="p">,</span> <span class="s2">"y"</span><span class="p">:</span> <span class="s2">"sin(x)"</span><span class="p">},</span>
+<span class="linenos">19</span>        <span class="n">title</span><span class="o">=</span><span class="s2">"Sinusoidal Wave"</span><span class="p">,</span>
 <span class="linenos">20</span>    <span class="p">)</span>
 <span class="linenos">21</span>
 <span class="linenos">22</span>    <span class="c1"># this sets the margins to be tight around the title.</span>
@@ -488,8 +488,8 @@
 <span class="linenos">39</span>    <span class="c1"># Use Path to handle relative paths correctly from any working directory.</span>
 <span class="linenos">40</span>    <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="linenos">41</span>
-<span class="linenos">42</span>    <span class="n">assets_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;assets&quot;</span>
-<span class="linenos">43</span>    <span class="n">fig</span> <span class="o">=</span> <span class="n">px</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">Image</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">assets_dir</span> <span class="o">/</span> <span class="s2">&quot;Cal_logo.png&quot;</span><span class="p">))</span>
+<span class="linenos">42</span>    <span class="n">assets_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"assets"</span>
+<span class="linenos">43</span>    <span class="n">fig</span> <span class="o">=</span> <span class="n">px</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">Image</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">assets_dir</span> <span class="o">/</span> <span class="s2">"Cal_logo.png"</span><span class="p">))</span>
 <span class="linenos">44</span>    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
 <span class="linenos">45</span>        <span class="n">margin</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">t</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">20</span><span class="p">),</span>
 <span class="linenos">46</span>    <span class="p">)</span>
@@ -498,12 +498,12 @@
 <span class="linenos">49</span>    <span class="c1"># Plot type 3: 3D Scatter plot.</span>
 <span class="linenos">50</span>    <span class="n">fig</span> <span class="o">=</span> <span class="n">px</span><span class="o">.</span><span class="n">scatter_3d</span><span class="p">(</span>
 <span class="linenos">51</span>        <span class="n">px</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">iris</span><span class="p">(),</span>
-<span class="linenos">52</span>        <span class="n">x</span><span class="o">=</span><span class="s2">&quot;sepal_length&quot;</span><span class="p">,</span>
-<span class="linenos">53</span>        <span class="n">y</span><span class="o">=</span><span class="s2">&quot;sepal_width&quot;</span><span class="p">,</span>
-<span class="linenos">54</span>        <span class="n">z</span><span class="o">=</span><span class="s2">&quot;petal_width&quot;</span><span class="p">,</span>
-<span class="linenos">55</span>        <span class="n">color</span><span class="o">=</span><span class="s2">&quot;species&quot;</span><span class="p">,</span>
+<span class="linenos">52</span>        <span class="n">x</span><span class="o">=</span><span class="s2">"sepal_length"</span><span class="p">,</span>
+<span class="linenos">53</span>        <span class="n">y</span><span class="o">=</span><span class="s2">"sepal_width"</span><span class="p">,</span>
+<span class="linenos">54</span>        <span class="n">z</span><span class="o">=</span><span class="s2">"petal_width"</span><span class="p">,</span>
+<span class="linenos">55</span>        <span class="n">color</span><span class="o">=</span><span class="s2">"species"</span><span class="p">,</span>
 <span class="linenos">56</span>    <span class="p">)</span>
-<span class="linenos">57</span>    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span><span class="n">legend</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">yanchor</span><span class="o">=</span><span class="s2">&quot;top&quot;</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">0.99</span><span class="p">,</span> <span class="n">xanchor</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="mf">0.01</span><span class="p">))</span>
+<span class="linenos">57</span>    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span><span class="n">legend</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">yanchor</span><span class="o">=</span><span class="s2">"top"</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">0.99</span><span class="p">,</span> <span class="n">xanchor</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="mf">0.01</span><span class="p">))</span>
 <span class="linenos">58</span>    <span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span>
 <span class="linenos">59</span>        <span class="n">margin</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">l</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">t</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">20</span><span class="p">),</span>
 <span class="linenos">60</span>    <span class="p">)</span>
@@ -517,7 +517,7 @@
 <span class="linenos">68</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
 <span class="linenos">69</span>
 <span class="linenos">70</span>
-<span class="linenos">71</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">71</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 <span class="linenos">72</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

@@ -474,15 +474,15 @@
     <span class="n">event_loop</span><span class="p">:</span> <span class="n">AbstractEventLoop</span>
 
 
-<span class="n">ClientId</span> <span class="o">=</span> <span class="n">NewType</span><span class="p">(</span><span class="s2">&quot;ClientId&quot;</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
-<span class="n">TMessage</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;TMessage&quot;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="n">Message</span><span class="p">)</span>
+<span class="n">ClientId</span> <span class="o">=</span> <span class="n">NewType</span><span class="p">(</span><span class="s2">"ClientId"</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+<span class="n">TMessage</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">"TMessage"</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="n">Message</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="StateSerializer">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.StateSerializer">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">StateSerializer</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle for serializing messages. In Viser, this is used to save the</span>
-<span class="sd">    scene state so it can be shared/embedded in static webpages.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Handle for serializing messages. In Viser, this is used to save the</span>
+<span class="sd">    scene state so it can be shared/embedded in static webpages."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">handler</span><span class="p">:</span> <span class="n">WebsockMessageHandler</span><span class="p">,</span> <span class="nb">filter</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Message</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]</span>
@@ -494,7 +494,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_messages</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_insert_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">Message</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Insert a message into the recorded file.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Insert a message into the recorded file."""</span>
 
         <span class="c1"># Exclude messages that are filtered out. In Viser, this is typically</span>
         <span class="c1"># GUI messages.</span>
@@ -507,35 +507,35 @@
 <div class="viewcode-block" id="StateSerializer.insert_sleep">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.StateSerializer.insert_sleep">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">insert_sleep</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">duration</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Insert a sleep into the recorded file. This can be useful for</span>
-<span class="sd">        dynamic 3D data.&quot;&quot;&quot;</span>
-        <span class="k">assert</span> <span class="bp">self</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">,</span> <span class="s2">&quot;serialize() was already called!&quot;</span>
+<span class="w">        </span><span class="sd">"""Insert a sleep into the recorded file. This can be useful for</span>
+<span class="sd">        dynamic 3D data."""</span>
+        <span class="k">assert</span> <span class="bp">self</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">,</span> <span class="s2">"serialize() was already called!"</span>
         <span class="c1"># A negative sleep would rewind the recording clock, making later</span>
         <span class="c1"># messages carry smaller timestamps -- the player assumes ascending</span>
         <span class="c1"># order and would apply them late or never (and durationSeconds could</span>
-        <span class="c1"># fall below a recorded message&#39;s time).</span>
+        <span class="c1"># fall below a recorded message's time).</span>
         <span class="k">if</span> <span class="n">duration</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;insert_sleep duration must be &gt;= 0, got </span><span class="si">{</span><span class="n">duration</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"insert_sleep duration must be &gt;= 0, got </span><span class="si">{</span><span class="n">duration</span><span class="si">}</span><span class="s2">."</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_time</span> <span class="o">+=</span> <span class="n">duration</span></div>
 
 
 <div class="viewcode-block" id="StateSerializer.serialize">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.StateSerializer.serialize">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">serialize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Serialize saved messages. Should only be called once. Our convention</span>
+<span class="w">        </span><span class="sd">"""Serialize saved messages. Should only be called once. Our convention</span>
 <span class="sd">        is to write this binary format to a file with a ``.viser`` extension,</span>
-<span class="sd">        for example via ``pathlib.Path(&quot;file.viser&quot;).write_bytes(...)``.</span>
+<span class="sd">        for example via ``pathlib.Path("file.viser").write_bytes(...)``.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            The recording as bytes.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Unregister FIRST (under the record lock) so a message queued</span>
-        <span class="c1"># concurrently from another thread can&#39;t land in self._messages /</span>
-        <span class="c1"># self._binary_buffers while we&#39;re encoding below -- a late-arriving</span>
+        <span class="c1"># concurrently from another thread can't land in self._messages /</span>
+        <span class="c1"># self._binary_buffers while we're encoding below -- a late-arriving</span>
         <span class="c1"># buffer would be missing from binaryBufferLengths and dangle.</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_lock</span><span class="p">:</span>
             <span class="k">assert</span> <span class="bp">self</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">,</span> <span class="p">(</span>
-                <span class="s2">&quot;serialize() was already called!&quot;</span>
+                <span class="s2">"serialize() was already called!"</span>
             <span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_handler</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
@@ -572,10 +572,10 @@
         <span class="c1"># binary data.</span>
         <span class="n">msgpack_payload</span> <span class="o">=</span> <span class="n">msgspec</span><span class="o">.</span><span class="n">msgpack</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span>
             <span class="p">{</span>
-                <span class="s2">&quot;durationSeconds&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_time</span><span class="p">,</span>
-                <span class="s2">&quot;messages&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_messages</span><span class="p">,</span>
-                <span class="s2">&quot;viserVersion&quot;</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">__version__</span><span class="p">,</span>
-                <span class="s2">&quot;binaryBufferLengths&quot;</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">unique_buffers</span><span class="p">),</span>
+                <span class="s2">"durationSeconds"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_time</span><span class="p">,</span>
+                <span class="s2">"messages"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_messages</span><span class="p">,</span>
+                <span class="s2">"viserVersion"</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">__version__</span><span class="p">,</span>
+                <span class="s2">"binaryBufferLengths"</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">unique_buffers</span><span class="p">),</span>
             <span class="p">}</span>
         <span class="p">)</span>
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span>
@@ -584,7 +584,7 @@
         <span class="c1">#   [8 bytes] msgpack length (little-endian uint64)</span>
         <span class="c1">#   [N bytes] msgpack payload</span>
         <span class="c1">#   [P bytes] padding + aligned binary buffers...</span>
-        <span class="n">msgpack_len_header</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">)</span>
+        <span class="n">msgpack_len_header</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">"little"</span><span class="p">)</span>
         <span class="n">parts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">bytes</span> <span class="o">|</span> <span class="nb">memoryview</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">msgpack_len_header</span><span class="p">,</span> <span class="n">msgpack_payload</span><span class="p">]</span>
         <span class="n">_append_aligned_buffers</span><span class="p">(</span><span class="n">parts</span><span class="p">,</span> <span class="n">unique_buffers</span><span class="p">,</span> <span class="mi">8</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">msgpack_payload</span><span class="p">))</span>
         <span class="n">inner_size</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">memoryview</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">)</span>
@@ -592,24 +592,24 @@
         <span class="c1"># Compress everything together, streaming the parts through the</span>
         <span class="c1"># compressor rather than concatenating them first -- the concatenated</span>
         <span class="c1"># copy would briefly double peak memory for large scenes. Recordings</span>
-        <span class="c1"># aren&#39;t latency-sensitive, but threads=-1 (one per core) still helps:</span>
+        <span class="c1"># aren't latency-sensitive, but threads=-1 (one per core) still helps:</span>
         <span class="c1"># level-12 zstd is slow enough to be the bottleneck for big scenes.</span>
         <span class="n">compressor</span> <span class="o">=</span> <span class="n">zstandard</span><span class="o">.</span><span class="n">ZstdCompressor</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="n">threads</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">compressobj</span><span class="p">(</span>
             <span class="n">size</span><span class="o">=</span><span class="n">inner_size</span>
         <span class="p">)</span>
         <span class="c1"># Explicit statements (not a starred list display): flush() must not</span>
         <span class="c1"># be evaluated until every part has been fed through compress(), and</span>
-        <span class="c1"># Python 3.8 evaluated `[a, *gen, f()]`&#39;s f() before consuming gen.</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="p">[</span><span class="n">inner_size</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">)]</span>
+        <span class="c1"># Python 3.8 evaluated `[a, *gen, f()]`'s f() before consuming gen.</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">[</span><span class="n">inner_size</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">"little"</span><span class="p">)]</span>
         <span class="n">out</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">compressor</span><span class="o">.</span><span class="n">compress</span><span class="p">(</span><span class="n">part</span><span class="p">)</span> <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">)</span>
         <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">compressor</span><span class="o">.</span><span class="n">flush</span><span class="p">())</span>
-        <span class="k">return</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="sa">b</span><span class="s2">""</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="StateSerializer.as_html">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.StateSerializer.as_html">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">as_html</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dark_mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get a standalone HTML string for the serialized scene.</span>
+<span class="w">        </span><span class="sd">"""Get a standalone HTML string for the serialized scene.</span>
 
 <span class="sd">        Returns a self-contained HTML document that can be saved to a file</span>
 <span class="sd">        or embedded in other contexts.</span>
@@ -619,31 +619,31 @@
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A complete HTML document as a string.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">scene_bytes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">serialize</span><span class="p">()</span>
-        <span class="n">scene_b64</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">scene_bytes</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s2">&quot;ascii&quot;</span><span class="p">)</span>
+        <span class="n">scene_b64</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">scene_bytes</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s2">"ascii"</span><span class="p">)</span>
 
         <span class="c1"># Get client HTML and inject scene data as global variables.</span>
         <span class="c1"># The client reads from window.__VISER_EMBED_DATA__ (App.tsx).</span>
         <span class="n">client_html_path</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;client&quot;</span> <span class="o">/</span> <span class="s2">&quot;build&quot;</span> <span class="o">/</span> <span class="s2">&quot;index.html&quot;</span>
+            <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"client"</span> <span class="o">/</span> <span class="s2">"build"</span> <span class="o">/</span> <span class="s2">"index.html"</span>
         <span class="p">)</span>
         <span class="n">client_html</span> <span class="o">=</span> <span class="n">client_html_path</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
-        <span class="n">dark_mode_str</span> <span class="o">=</span> <span class="s2">&quot;true&quot;</span> <span class="k">if</span> <span class="n">dark_mode</span> <span class="k">else</span> <span class="s2">&quot;false&quot;</span>
+        <span class="n">dark_mode_str</span> <span class="o">=</span> <span class="s2">"true"</span> <span class="k">if</span> <span class="n">dark_mode</span> <span class="k">else</span> <span class="s2">"false"</span>
         <span class="n">inject_script</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;&lt;script&gt;&quot;</span>
-            <span class="sa">f</span><span class="s1">&#39;window.__VISER_EMBED_DATA__=&quot;</span><span class="si">{</span><span class="n">scene_b64</span><span class="si">}</span><span class="s1">&quot;;&#39;</span>
-            <span class="sa">f</span><span class="s2">&quot;window.__VISER_EMBED_CONFIG__=</span><span class="se">{{</span><span class="s2">darkMode:</span><span class="si">{</span><span class="n">dark_mode_str</span><span class="si">}</span><span class="se">}}</span><span class="s2">;&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;&lt;/script&gt;&quot;</span>
+            <span class="sa">f</span><span class="s2">"&lt;script&gt;"</span>
+            <span class="sa">f</span><span class="s1">'window.__VISER_EMBED_DATA__="</span><span class="si">{</span><span class="n">scene_b64</span><span class="si">}</span><span class="s1">";'</span>
+            <span class="sa">f</span><span class="s2">"window.__VISER_EMBED_CONFIG__=</span><span class="se">{{</span><span class="s2">darkMode:</span><span class="si">{</span><span class="n">dark_mode_str</span><span class="si">}</span><span class="se">}}</span><span class="s2">;"</span>
+            <span class="sa">f</span><span class="s2">"&lt;/script&gt;"</span>
         <span class="p">)</span>
-        <span class="n">head_end</span> <span class="o">=</span> <span class="n">client_html</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;&lt;/head&gt;&quot;</span><span class="p">)</span>
+        <span class="n">head_end</span> <span class="o">=</span> <span class="n">client_html</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">"&lt;/head&gt;"</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">client_html</span><span class="p">[:</span><span class="n">head_end</span><span class="p">]</span> <span class="o">+</span> <span class="n">inject_script</span> <span class="o">+</span> <span class="n">client_html</span><span class="p">[</span><span class="n">head_end</span><span class="p">:]</span></div>
 
 
 <div class="viewcode-block" id="StateSerializer.show">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.StateSerializer.show">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">show</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">height</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">400</span><span class="p">,</span> <span class="n">dark_mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Display the serialized scene in a Jupyter notebook or web browser.</span>
+<span class="w">        </span><span class="sd">"""Display the serialized scene in a Jupyter notebook or web browser.</span>
 
 <span class="sd">        In Jupyter notebooks/labs, displays an inline IFrame. When running as a</span>
 <span class="sd">        script, opens the visualization in the default web browser.</span>
@@ -653,7 +653,7 @@
 <span class="sd">        Args:</span>
 <span class="sd">            height: Height of the embedded viewer in pixels.</span>
 <span class="sd">            dark_mode: Use dark color scheme.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">html</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">html_module</span>
 
         <span class="n">modified_html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_html</span><span class="p">(</span><span class="n">dark_mode</span><span class="o">=</span><span class="n">dark_mode</span><span class="p">)</span>
@@ -670,14 +670,14 @@
                 <span class="c1"># Escape HTML for srcdoc attribute.</span>
                 <span class="n">escaped_html</span> <span class="o">=</span> <span class="n">html_module</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">modified_html</span><span class="p">,</span> <span class="n">quote</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-                <span class="c1"># Wrap in div to avoid IPython&#39;s &quot;Consider using IFrame&quot; warning.</span>
+                <span class="c1"># Wrap in div to avoid IPython's "Consider using IFrame" warning.</span>
                 <span class="n">display</span><span class="p">(</span>
                     <span class="n">HTML</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s1">&#39;&lt;div style=&quot;border:1px solid #ddd&quot;&gt;&#39;</span>
-                        <span class="sa">f</span><span class="s1">&#39;&lt;iframe srcdoc=&quot;</span><span class="si">{</span><span class="n">escaped_html</span><span class="si">}</span><span class="s1">&quot; &#39;</span>
-                        <span class="sa">f</span><span class="s1">&#39;width=&quot;100%&quot; height=&quot;</span><span class="si">{</span><span class="n">height</span><span class="si">}</span><span class="s1">&quot; &#39;</span>
-                        <span class="sa">f</span><span class="s1">&#39;style=&quot;border:none;display:block&quot;&gt;&lt;/iframe&gt;&#39;</span>
-                        <span class="sa">f</span><span class="s2">&quot;&lt;/div&gt;&quot;</span>
+                        <span class="sa">f</span><span class="s1">'&lt;div style="border:1px solid #ddd"&gt;'</span>
+                        <span class="sa">f</span><span class="s1">'&lt;iframe srcdoc="</span><span class="si">{</span><span class="n">escaped_html</span><span class="si">}</span><span class="s1">" '</span>
+                        <span class="sa">f</span><span class="s1">'width="100%" height="</span><span class="si">{</span><span class="n">height</span><span class="si">}</span><span class="s1">" '</span>
+                        <span class="sa">f</span><span class="s1">'style="border:none;display:block"&gt;&lt;/iframe&gt;'</span>
+                        <span class="sa">f</span><span class="s2">"&lt;/div&gt;"</span>
                     <span class="p">)</span>
                 <span class="p">)</span>
                 <span class="k">return</span>
@@ -688,10 +688,10 @@
         <span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 
         <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span>
-            <span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;.html&quot;</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span>
+            <span class="s2">"w"</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">".html"</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span>
         <span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
             <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">modified_html</span><span class="p">)</span>
-            <span class="n">webbrowser</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;file://&quot;</span> <span class="o">+</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></div>
+            <span class="n">webbrowser</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"file://"</span> <span class="o">+</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></div>
 </div>
 
 
@@ -699,7 +699,7 @@
 <div class="viewcode-block" id="WebsockMessageHandler">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockMessageHandler">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">WebsockMessageHandler</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Mix-in for adding message handling to a class.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Mix-in for adding message handling to a class."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span>
@@ -709,12 +709,12 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_locked_thread_id</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
 
         <span class="c1"># List of active serializers recording messages. _record_lock makes</span>
-        <span class="c1"># &quot;register a serializer + snapshot existing state&quot; atomic against</span>
-        <span class="c1"># queue_message&#39;s &quot;feed serializers + push to buffer&quot;: without it, a</span>
+        <span class="c1"># "register a serializer + snapshot existing state" atomic against</span>
+        <span class="c1"># queue_message's "feed serializers + push to buffer": without it, a</span>
         <span class="c1"># message queued between registration and the snapshot is recorded</span>
         <span class="c1"># TWICE (once live, once from the snapshot). Reentrant so callers can</span>
         <span class="c1"># hold it across get_message_serializer(). Ordering: _record_lock is</span>
-        <span class="c1"># always taken BEFORE the buffer&#39;s buffer_lock, never after.</span>
+        <span class="c1"># always taken BEFORE the buffer's buffer_lock, never after.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_record_handles</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">StateSerializer</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_record_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
 
@@ -723,8 +723,8 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">get_message_serializer</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="nb">filter</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Message</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StateSerializer</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Start recording messages that are sent. Sent messages will be</span>
-<span class="sd">        serialized and can be used for playback.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Start recording messages that are sent. Sent messages will be</span>
+<span class="sd">        serialized and can be used for playback."""</span>
         <span class="n">serializer</span> <span class="o">=</span> <span class="n">StateSerializer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">filter</span><span class="p">)</span>
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_record_lock</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_record_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">serializer</span><span class="p">)</span>
@@ -738,7 +738,7 @@
         <span class="n">message_cls</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">TMessage</span><span class="p">],</span>
         <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">TMessage</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a handler for a particular message type.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Register a handler for a particular message type."""</span>
         <span class="c1"># setdefault: registration is reachable from multiple threads (e.g.</span>
         <span class="c1"># concurrent get_render() calls), and an unsynchronized</span>
         <span class="c1"># check-then-create could discard a list another thread just</span>
@@ -753,9 +753,9 @@
         <span class="n">message_cls</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">TMessage</span><span class="p">],</span>
         <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">ClientId</span><span class="p">,</span> <span class="n">TMessage</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Unregister a handler for a particular message type.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Unregister a handler for a particular message type."""</span>
         <span class="k">assert</span> <span class="n">message_cls</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">,</span> <span class="p">(</span>
-            <span class="s2">&quot;Tried to unregister a handler that hasn&#39;t been registered.&quot;</span>
+            <span class="s2">"Tried to unregister a handler that hasn't been registered."</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">callback</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">message_cls</span><span class="p">)</span>
@@ -766,10 +766,10 @@
     <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_incoming_message</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="n">ClientId</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">Message</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handle incoming messages.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Handle incoming messages."""</span>
         <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">:</span>
             <span class="c1"># Snapshot the list: a handler may unregister itself mid-dispatch</span>
-            <span class="c1"># (e.g. get_render&#39;s response callback), which would otherwise skip</span>
+            <span class="c1"># (e.g. get_render's response callback), which would otherwise skip</span>
             <span class="c1"># the next handler in a live iteration.</span>
             <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_incoming_handlers</span><span class="p">[</span><span class="nb">type</span><span class="p">(</span><span class="n">message</span><span class="p">)]):</span>
                 <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
@@ -786,7 +786,7 @@
 <div class="viewcode-block" id="WebsockMessageHandler.queue_message">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockMessageHandler.queue_message">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">queue_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">Message</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Wrapped method for sending messages.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Wrapped method for sending messages."""</span>
         <span class="c1"># Feed + push under _record_lock so a concurrently-registering</span>
         <span class="c1"># serializer either sees this message in its buffer snapshot OR</span>
         <span class="c1"># records it live -- never both (duplicate) and never neither (loss).</span>
@@ -801,16 +801,16 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockMessageHandler.atomic">[docs]</a>
     <span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">atomic</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a context where: all outgoing messages are grouped and applied by</span>
+<span class="w">        </span><span class="sd">"""Returns a context where: all outgoing messages are grouped and applied by</span>
 <span class="sd">        clients atomically.</span>
 
-<span class="sd">        This should be treated as a soft constraint that&#39;s helpful for things</span>
+<span class="sd">        This should be treated as a soft constraint that's helpful for things</span>
 <span class="sd">        like animations, or when we want position and orientation updates to</span>
 <span class="sd">        happen synchronously.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Context manager.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># If called multiple times in the same thread, we ignore inner calls.</span>
         <span class="c1">#</span>
         <span class="c1"># try/finally so an exception raised inside the `with` body still</span>
@@ -829,8 +829,8 @@
 <div class="viewcode-block" id="WebsockClientConnection">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockClientConnection">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">WebsockClientConnection</span><span class="p">(</span><span class="n">WebsockMessageHandler</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle for sending messages to and listening to messages from a single</span>
-<span class="sd">    connected client.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Handle for sending messages to and listening to messages from a single</span>
+<span class="sd">    connected client."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -845,7 +845,7 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockClientConnection.get_message_buffer">[docs]</a>
     <span class="nd">@override</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_message_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AsyncMessageBuffer</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get client message buffer.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Get client message buffer."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">message_buffer</span></div>
 </div>
 
@@ -854,7 +854,7 @@
 <div class="viewcode-block" id="WebsockServer">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockServer">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">WebsockServer</span><span class="p">(</span><span class="n">WebsockMessageHandler</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Websocket server abstraction. Communicates asynchronously with client</span>
+<span class="w">    </span><span class="sd">"""Websocket server abstraction. Communicates asynchronously with client</span>
 <span class="sd">    applications.</span>
 
 <span class="sd">    By default, all messages are broadcasted to all connected clients.</span>
@@ -870,7 +870,7 @@
 <span class="sd">            required in the future.</span>
 <span class="sd">        http_server_root: Path to root for HTTP server.</span>
 <span class="sd">        verbose: Toggle for print messages.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -881,16 +881,16 @@
         <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">backlog_done_message</span><span class="p">:</span> <span class="n">Message</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;`backlog_done_message`, when given, is sent to each (re)connecting</span>
-<span class="sd">        client exactly once, immediately after the broadcast buffer&#39;s replay</span>
+<span class="w">        </span><span class="sd">"""`backlog_done_message`, when given, is sent to each (re)connecting</span>
+<span class="sd">        client exactly once, immediately after the broadcast buffer's replay</span>
 <span class="sd">        backlog -- an explicit end-of-replay marker (never buffered).</span>
 
-<span class="sd">        Servers serving viser&#39;s stock client build MUST pass viser&#39;s</span>
+<span class="sd">        Servers serving viser's stock client build MUST pass viser's</span>
 <span class="sd">        ``ReplayDoneMessage`` here: the client enters a reconnect/replay phase</span>
 <span class="sd">        on every (re)connect and leaves it only when this marker arrives, so</span>
 <span class="sd">        with the ``None`` default it never exits that phase (degraded panel</span>
 <span class="sd">        behavior). ``ViserServer`` does this automatically; it only needs</span>
-<span class="sd">        attention when building directly on ``viser.infra.WebsockServer``.&quot;&quot;&quot;</span>
+<span class="sd">        attention when building directly on ``viser.infra.WebsockServer``."""</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
         <span class="c1"># Track connected clients.</span>
@@ -919,11 +919,11 @@
 <div class="viewcode-block" id="WebsockServer.disconnect_all_clients">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockServer.disconnect_all_clients">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">disconnect_all_clients</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Forcibly close every live client connection. The server keeps</span>
+<span class="w">        </span><span class="sd">"""Forcibly close every live client connection. The server keeps</span>
 <span class="sd">        running; clients auto-reconnect and replay. This is the supported way</span>
 <span class="sd">        to exercise the reconnect path (e.g. from tests): a network-level drop</span>
-<span class="sd">        cannot be scripted from the browser side -- Playwright&#39;s `set_offline`</span>
-<span class="sd">        does not close already-established localhost websockets.&quot;&quot;&quot;</span>
+<span class="sd">        cannot be scripted from the browser side -- Playwright's `set_offline`</span>
+<span class="sd">        does not close already-established localhost websockets."""</span>
         <span class="n">loop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_background_event_loop</span>
         <span class="k">if</span> <span class="n">loop</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
@@ -934,7 +934,7 @@
 <div class="viewcode-block" id="WebsockServer.start">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockServer.start">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">start</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Start the server.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Start the server."""</span>
 
         <span class="c1"># Start server thread.</span>
         <span class="n">ready_sem</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Semaphore</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
@@ -961,7 +961,7 @@
 <div class="viewcode-block" id="WebsockServer.stop">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockServer.stop">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stop the server.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Stop the server."""</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_background_event_loop</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stop_event</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_server_thread</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -976,14 +976,14 @@
             <span class="c1"># Event loop may already be closed during teardown.</span>
             <span class="k">pass</span>
 
-        <span class="c1"># Clean up the message buffers. This isn&#39;t really necessary, but helps</span>
-        <span class="c1"># avoid &quot;task destroyed&quot; errors.</span>
+        <span class="c1"># Clean up the message buffers. This isn't really necessary, but helps</span>
+        <span class="c1"># avoid "task destroyed" errors.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">set_done</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_client_state_from_id</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
             <span class="n">client</span><span class="o">.</span><span class="n">message_buffer</span><span class="o">.</span><span class="n">set_done</span><span class="p">()</span>
 
         <span class="c1"># Wait for the server thread to finish. The thread is daemonic, so an</span>
-        <span class="c1"># expired timeout never blocks interpreter exit -- but a thread that&#39;s</span>
+        <span class="c1"># expired timeout never blocks interpreter exit -- but a thread that's</span>
         <span class="c1"># still winding down at interpreter shutdown keeps server state and</span>
         <span class="c1"># user callbacks referenced from its frozen frames, which surfaces as</span>
         <span class="c1"># spurious leak reports from binding frameworks like nanobind. 1s is</span>
@@ -999,7 +999,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">on_client_connect</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">cb</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">WebsockClientConnection</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback to run for newly connected clients.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Attach a callback to run for newly connected clients."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client_connect_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cb</span><span class="p">)</span></div>
 
 
@@ -1008,7 +1008,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">on_client_disconnect</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">cb</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">WebsockClientConnection</span><span class="p">],</span> <span class="kc">None</span> <span class="o">|</span> <span class="n">Coroutine</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attach a callback to run when clients disconnect.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Attach a callback to run when clients disconnect."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_client_disconnect_cb</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cb</span><span class="p">)</span></div>
 
 
@@ -1016,23 +1016,23 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockServer.get_message_buffer">[docs]</a>
     <span class="nd">@override</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_message_buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AsyncMessageBuffer</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the broadcast queue. Message will be sent to all clients.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Get the broadcast queue. Message will be sent to all clients."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_broadcast_buffer</span></div>
 
 
 <div class="viewcode-block" id="WebsockServer.flush">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockServer.flush">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">flush</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Flush the outgoing message buffer for broadcasted messages. Any buffered</span>
-<span class="sd">        messages will immediately be sent. (by default they are windowed)&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Flush the outgoing message buffer for broadcasted messages. Any buffered</span>
+<span class="sd">        messages will immediately be sent. (by default they are windowed)"""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="WebsockServer.flush_client">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.WebsockServer.flush_client">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">flush_client</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Flush the outgoing message buffer for a particular client. Any buffered</span>
-<span class="sd">        messages will immediately be sent. (by default they are windowed)&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Flush the outgoing message buffer for a particular client. Any buffered</span>
+<span class="sd">        messages will immediately be sent. (by default they are windowed)"""</span>
         <span class="c1"># No-op if client is disconnected.</span>
         <span class="n">client_state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_client_state_from_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">client_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -1063,7 +1063,7 @@
         <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">ws_handler</span><span class="p">(</span>
             <span class="n">connection</span><span class="p">:</span> <span class="n">websockets</span><span class="o">.</span><span class="n">asyncio</span><span class="o">.</span><span class="n">server</span><span class="o">.</span><span class="n">ServerConnection</span><span class="p">,</span>
         <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">            </span><span class="sd">&quot;&quot;&quot;Handler for websocket connections.&quot;&quot;&quot;</span>
+<span class="w">            </span><span class="sd">"""Handler for websocket connections."""</span>
             <span class="k">async</span> <span class="k">with</span> <span class="n">count_lock</span><span class="p">:</span>
                 <span class="k">nonlocal</span> <span class="n">connection_count</span>
                 <span class="n">client_id</span> <span class="o">=</span> <span class="n">ClientId</span><span class="p">(</span><span class="n">connection_count</span><span class="p">)</span>
@@ -1076,19 +1076,19 @@
             <span class="kn">import</span><span class="w"> </span><span class="nn">viser</span>
 
             <span class="c1"># Extract client version from the selected subprotocol.</span>
-            <span class="n">client_version_str</span> <span class="o">=</span> <span class="s2">&quot;unknown&quot;</span>
+            <span class="n">client_version_str</span> <span class="o">=</span> <span class="s2">"unknown"</span>
             <span class="k">if</span> <span class="n">connection</span><span class="o">.</span><span class="n">subprotocol</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">connection</span><span class="o">.</span><span class="n">subprotocol</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;viser-v&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">connection</span><span class="o">.</span><span class="n">subprotocol</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"viser-v"</span><span class="p">):</span>
                     <span class="n">client_version_str</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">subprotocol</span><span class="p">[</span><span class="mi">7</span><span class="p">:]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
 
             <span class="k">if</span> <span class="n">client_version_str</span> <span class="o">!=</span> <span class="n">viser</span><span class="o">.</span><span class="n">__version__</span><span class="p">:</span>
                 <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;[bold red](viser)[/bold red] Version mismatch - connection rejected. &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;Client: &#39;</span><span class="si">{</span><span class="n">client_version_str</span><span class="si">}</span><span class="s2">&#39;, Server: &#39;</span><span class="si">{</span><span class="n">viser</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+                    <span class="sa">f</span><span class="s2">"[bold red](viser)[/bold red] Version mismatch - connection rejected. "</span>
+                    <span class="sa">f</span><span class="s2">"Client: '</span><span class="si">{</span><span class="n">client_version_str</span><span class="si">}</span><span class="s2">', Server: '</span><span class="si">{</span><span class="n">viser</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">'"</span>
                 <span class="p">)</span>
                 <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">(</span>
                     <span class="mi">1002</span><span class="p">,</span>
-                    <span class="sa">f</span><span class="s2">&quot;Version mismatch. Client: </span><span class="si">{</span><span class="n">client_version_str</span><span class="si">}</span><span class="s2">, Server: </span><span class="si">{</span><span class="n">viser</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">"Version mismatch. Client: </span><span class="si">{</span><span class="n">client_version_str</span><span class="si">}</span><span class="s2">, Server: </span><span class="si">{</span><span class="n">viser</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="k">return</span>  <span class="c1"># Exit handler to prevent further processing.</span>
 
@@ -1117,18 +1117,18 @@
 
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_verbose</span><span class="p">:</span>
                 <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;[bold](viser)[/bold] Connection opened (</span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">,&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">total_connections</span><span class="si">}</span><span class="s2"> total),&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="p">)</span><span class="si">}</span><span class="s2"> persistent&quot;</span>
-                    <span class="s2">&quot; messages&quot;</span>
+                    <span class="sa">f</span><span class="s2">"[bold](viser)[/bold] Connection opened (</span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">,"</span>
+                    <span class="sa">f</span><span class="s2">" </span><span class="si">{</span><span class="n">total_connections</span><span class="si">}</span><span class="s2"> total),"</span>
+                    <span class="sa">f</span><span class="s2">" </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">message_from_id</span><span class="p">)</span><span class="si">}</span><span class="s2"> persistent"</span>
+                    <span class="s2">" messages"</span>
                 <span class="p">)</span>
 
             <span class="c1"># For each client: infinite loop over producers (which send</span>
             <span class="c1"># messages) and consumers (which receive messages). Explicit</span>
             <span class="c1"># tasks, because gather() does NOT cancel siblings when one</span>
-            <span class="c1"># raises: the consumer&#39;s ConnectionClosed left the broadcast</span>
+            <span class="c1"># raises: the consumer's ConnectionClosed left the broadcast</span>
             <span class="c1"># producer parked on message_event.wait() as a zombie -- its</span>
-            <span class="c1"># window generator&#39;s finally (which releases the GC cursor) then</span>
+            <span class="c1"># window generator's finally (which releases the GC cursor) then</span>
             <span class="c1"># ran only when the NEXT broadcast woke it, and on a quiet server</span>
             <span class="c1"># the stale cursor pinned the GC deletion floor indefinitely.</span>
             <span class="n">producer_consumer_tasks</span> <span class="o">=</span> <span class="p">[</span>
@@ -1158,12 +1158,12 @@
             <span class="p">):</span>
                 <span class="c1"># Expected disconnects -- swallow. Any other exit (CancelledError</span>
                 <span class="c1"># on shutdown, an exception from a producer/consumer) still runs</span>
-                <span class="c1"># the teardown below via `finally`, so client state can&#39;t leak</span>
+                <span class="c1"># the teardown below via `finally`, so client state can't leak</span>
                 <span class="c1"># and disconnect callbacks always fire.</span>
                 <span class="k">pass</span>
             <span class="k">finally</span><span class="p">:</span>
                 <span class="c1"># Tear down the surviving siblings NOW (cancellation runs the</span>
-                <span class="c1"># broadcast window generator&#39;s finally, releasing its GC</span>
+                <span class="c1"># broadcast window generator's finally, releasing its GC</span>
                 <span class="c1"># cursor deterministically); await them so no task outlives</span>
                 <span class="c1"># its connection.</span>
                 <span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="n">producer_consumer_tasks</span><span class="p">:</span>
@@ -1173,8 +1173,8 @@
                 <span class="c1"># should exit.</span>
                 <span class="c1">#</span>
                 <span class="c1"># This is partially cosmetic: it allows us to safely finish pending</span>
-                <span class="c1"># queue get() tasks, which suppresses a &quot;Task was destroyed but it is</span>
-                <span class="c1"># pending&quot; error.</span>
+                <span class="c1"># queue get() tasks, which suppresses a "Task was destroyed but it is</span>
+                <span class="c1"># pending" error.</span>
                 <span class="n">client_state</span><span class="o">.</span><span class="n">message_buffer</span><span class="o">.</span><span class="n">set_done</span><span class="p">()</span>
 
                 <span class="c1"># Remove client state up front, before the disconnect callbacks:</span>
@@ -1183,11 +1183,11 @@
                 <span class="c1"># leak the client. `pop(..., None)` keeps this idempotent.</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_client_state_from_id</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_live_connections</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-                <span class="c1"># Drop this connection&#39;s broadcast GC cursor HERE, not only in</span>
-                <span class="c1"># the generator&#39;s own finally: the idle broadcast producer can</span>
+                <span class="c1"># Drop this connection's broadcast GC cursor HERE, not only in</span>
+                <span class="c1"># the generator's own finally: the idle broadcast producer can</span>
                 <span class="c1"># stay parked (same zombie hazard as the explicit-tasks note</span>
                 <span class="c1"># above), so its finally may not have run. pop() is idempotent</span>
-                <span class="c1"># with the generator&#39;s own cleanup, whichever runs first.</span>
+                <span class="c1"># with the generator's own cleanup, whichever runs first.</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_broadcast_buffer</span><span class="o">.</span><span class="n">generator_cursors</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">client_id</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
                 <span class="n">total_connections</span> <span class="o">-=</span> <span class="mi">1</span>
 
@@ -1199,8 +1199,8 @@
                         <span class="n">cb</span><span class="p">(</span><span class="n">client_connection</span><span class="p">)</span>
                 <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_verbose</span><span class="p">:</span>
                     <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;[bold](viser)[/bold] Connection closed (</span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">,&quot;</span>
-                        <span class="sa">f</span><span class="s2">&quot; </span><span class="si">{</span><span class="n">total_connections</span><span class="si">}</span><span class="s2"> total)&quot;</span>
+                        <span class="sa">f</span><span class="s2">"[bold](viser)[/bold] Connection closed (</span><span class="si">{</span><span class="n">client_id</span><span class="si">}</span><span class="s2">,"</span>
+                        <span class="sa">f</span><span class="s2">" </span><span class="si">{</span><span class="n">total_connections</span><span class="si">}</span><span class="s2"> total)"</span>
                     <span class="p">)</span>
 
         <span class="c1"># Host client on the same port as the websocket.</span>
@@ -1224,8 +1224,8 @@
                 <span class="k">class</span><span class="w"> </span><span class="nc">NoHttpErrors</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Filter</span><span class="p">):</span>
                     <span class="k">def</span><span class="w"> </span><span class="nf">filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record</span><span class="p">):</span>
                         <span class="k">return</span> <span class="n">record</span><span class="o">.</span><span class="n">getMessage</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span>
-                            <span class="s2">&quot;opening handshake failed&quot;</span><span class="p">,</span>
-                            <span class="s2">&quot;connection rejected (200 OK)&quot;</span><span class="p">,</span>
+                            <span class="s2">"opening handshake failed"</span><span class="p">,</span>
+                            <span class="s2">"connection rejected (200 OK)"</span><span class="p">,</span>
                         <span class="p">)</span>
 
                 <span class="n">connection</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">addFilter</span><span class="p">(</span><span class="n">NoHttpErrors</span><span class="p">())</span>  <span class="c1"># type: ignore</span>
@@ -1233,19 +1233,19 @@
             <span class="c1"># &lt;/Hack&gt;</span>
 
             <span class="c1"># Ignore websocket packets.</span>
-            <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;Upgrade&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;websocket&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"Upgrade"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"websocket"</span><span class="p">:</span>
                 <span class="k">return</span> <span class="kc">None</span>
 
             <span class="c1"># Strip out search params, get relative path. URL-decode so</span>
             <span class="c1"># percent-encoded traversal sequences (e.g. ``%2e%2e/``)</span>
-            <span class="c1"># can&#39;t slip past the segment check below; normalize</span>
+            <span class="c1"># can't slip past the segment check below; normalize</span>
             <span class="c1"># backslashes to forward slashes so a Windows-style path</span>
             <span class="c1"># like ``foo\..\bar`` is also caught on Linux, where</span>
             <span class="c1"># ``pathlib`` would otherwise treat the whole thing as a</span>
             <span class="c1"># single literal filename.</span>
             <span class="n">path</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">path</span>
-            <span class="n">path</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;?&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="n">path</span> <span class="o">=</span> <span class="n">_url_unquote</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;/&quot;</span><span class="p">)</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">"?"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">_url_unquote</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"</span><span class="se">\\</span><span class="s2">"</span><span class="p">,</span> <span class="s2">"/"</span><span class="p">)</span>
 
             <span class="c1"># Reject path traversal by checking URL segments, not by</span>
             <span class="c1"># comparing resolved paths. Under Bazel/uv runfile trees,</span>
@@ -1259,19 +1259,19 @@
             <span class="c1"># within it. That is fine here: http_server_root is set</span>
             <span class="c1"># by the application, not by user input, so the only</span>
             <span class="c1"># attacker-controlled component is the URL path.</span>
-            <span class="n">segments</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">s</span> <span class="ow">and</span> <span class="n">s</span> <span class="o">!=</span> <span class="s2">&quot;.&quot;</span><span class="p">]</span>
-            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">s</span> <span class="o">==</span> <span class="s2">&quot;..&quot;</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">segments</span><span class="p">):</span>
-                <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">&quot;NOT FOUND&quot;</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
-            <span class="n">relpath</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">segments</span><span class="p">)</span> <span class="k">if</span> <span class="n">segments</span> <span class="k">else</span> <span class="s2">&quot;index.html&quot;</span>
+            <span class="n">segments</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span> <span class="k">if</span> <span class="n">s</span> <span class="ow">and</span> <span class="n">s</span> <span class="o">!=</span> <span class="s2">"."</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">s</span> <span class="o">==</span> <span class="s2">".."</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">segments</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">"NOT FOUND"</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
+            <span class="n">relpath</span> <span class="o">=</span> <span class="s2">"/"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">segments</span><span class="p">)</span> <span class="k">if</span> <span class="n">segments</span> <span class="k">else</span> <span class="s2">"index.html"</span>
             <span class="k">assert</span> <span class="n">http_server_root</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">source_path</span> <span class="o">=</span> <span class="n">http_server_root</span> <span class="o">/</span> <span class="n">relpath</span>
             <span class="c1"># ``is_file()`` (not ``exists()``) so a request resolving to a</span>
             <span class="c1"># directory returns a clean 404 instead of raising</span>
             <span class="c1"># ``IsADirectoryError`` on ``read_bytes()`` below (-&gt; a 500).</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">source_path</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
-                <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">&quot;NOT FOUND&quot;</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
+                <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="s2">"NOT FOUND"</span><span class="p">,</span> <span class="n">Headers</span><span class="p">())</span>
 
-            <span class="n">use_gzip</span> <span class="o">=</span> <span class="s2">&quot;gzip&quot;</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;Accept-Encoding&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="n">use_gzip</span> <span class="o">=</span> <span class="s2">"gzip"</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"Accept-Encoding"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
 
             <span class="c1"># First, try some known MIME types. Using guess_type() can cause</span>
             <span class="c1"># problems for Javascript on some Windows machines.</span>
@@ -1281,24 +1281,24 @@
             <span class="c1">#     https://bugs.python.org/issue43975</span>
             <span class="c1">#     https://github.com/golang/go/issues/32350#issuecomment-525111557</span>
             <span class="c1">#</span>
-            <span class="c1"># We&#39;re assuming UTF-8, this is mostly reasonable but might want to revisit.</span>
+            <span class="c1"># We're assuming UTF-8, this is mostly reasonable but might want to revisit.</span>
             <span class="n">mime_type</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;.css&quot;</span><span class="p">:</span> <span class="s2">&quot;text/css; charset=utf-8&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.gif&quot;</span><span class="p">:</span> <span class="s2">&quot;image/gif&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.htm&quot;</span><span class="p">:</span> <span class="s2">&quot;text/html; charset=utf-8&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.html&quot;</span><span class="p">:</span> <span class="s2">&quot;text/html; charset=utf-8&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.jpg&quot;</span><span class="p">:</span> <span class="s2">&quot;image/jpeg&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.js&quot;</span><span class="p">:</span> <span class="s2">&quot;application/javascript&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.wasm&quot;</span><span class="p">:</span> <span class="s2">&quot;application/wasm&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.pdf&quot;</span><span class="p">:</span> <span class="s2">&quot;application/pdf&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.png&quot;</span><span class="p">:</span> <span class="s2">&quot;image/png&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.svg&quot;</span><span class="p">:</span> <span class="s2">&quot;image/svg+xml&quot;</span><span class="p">,</span>
-                <span class="s2">&quot;.xml&quot;</span><span class="p">:</span> <span class="s2">&quot;text/xml; charset=utf-8&quot;</span><span class="p">,</span>
+                <span class="s2">".css"</span><span class="p">:</span> <span class="s2">"text/css; charset=utf-8"</span><span class="p">,</span>
+                <span class="s2">".gif"</span><span class="p">:</span> <span class="s2">"image/gif"</span><span class="p">,</span>
+                <span class="s2">".htm"</span><span class="p">:</span> <span class="s2">"text/html; charset=utf-8"</span><span class="p">,</span>
+                <span class="s2">".html"</span><span class="p">:</span> <span class="s2">"text/html; charset=utf-8"</span><span class="p">,</span>
+                <span class="s2">".jpg"</span><span class="p">:</span> <span class="s2">"image/jpeg"</span><span class="p">,</span>
+                <span class="s2">".js"</span><span class="p">:</span> <span class="s2">"application/javascript"</span><span class="p">,</span>
+                <span class="s2">".wasm"</span><span class="p">:</span> <span class="s2">"application/wasm"</span><span class="p">,</span>
+                <span class="s2">".pdf"</span><span class="p">:</span> <span class="s2">"application/pdf"</span><span class="p">,</span>
+                <span class="s2">".png"</span><span class="p">:</span> <span class="s2">"image/png"</span><span class="p">,</span>
+                <span class="s2">".svg"</span><span class="p">:</span> <span class="s2">"image/svg+xml"</span><span class="p">,</span>
+                <span class="s2">".xml"</span><span class="p">:</span> <span class="s2">"text/xml; charset=utf-8"</span><span class="p">,</span>
             <span class="p">}</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">suffix</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="kc">None</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">mime_type</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">mime_type</span> <span class="o">=</span> <span class="n">mimetypes</span><span class="o">.</span><span class="n">guess_type</span><span class="p">(</span><span class="n">relpath</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
             <span class="k">if</span> <span class="n">mime_type</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">mime_type</span> <span class="o">=</span> <span class="s2">&quot;application/octet-stream&quot;</span>
+                <span class="n">mime_type</span> <span class="o">=</span> <span class="s2">"application/octet-stream"</span>
 
             <span class="k">if</span> <span class="n">source_path</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">file_cache</span><span class="p">:</span>
                 <span class="n">file_cache</span><span class="p">[</span><span class="n">source_path</span><span class="p">]</span> <span class="o">=</span> <span class="n">source_path</span><span class="o">.</span><span class="n">read_bytes</span><span class="p">()</span>
@@ -1312,15 +1312,15 @@
                 <span class="n">response_payload</span> <span class="o">=</span> <span class="n">file_cache</span><span class="p">[</span><span class="n">source_path</span><span class="p">]</span>
 
             <span class="n">response_headers</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;Content-Type&quot;</span><span class="p">:</span> <span class="n">mime_type</span><span class="p">,</span>
-                <span class="s2">&quot;Content-Length&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">response_payload</span><span class="p">)),</span>
-                <span class="s2">&quot;Content-Encoding&quot;</span><span class="p">:</span> <span class="s2">&quot;gzip&quot;</span> <span class="k">if</span> <span class="n">use_gzip</span> <span class="k">else</span> <span class="s2">&quot;identity&quot;</span><span class="p">,</span>
+                <span class="s2">"Content-Type"</span><span class="p">:</span> <span class="n">mime_type</span><span class="p">,</span>
+                <span class="s2">"Content-Length"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">response_payload</span><span class="p">)),</span>
+                <span class="s2">"Content-Encoding"</span><span class="p">:</span> <span class="s2">"gzip"</span> <span class="k">if</span> <span class="n">use_gzip</span> <span class="k">else</span> <span class="s2">"identity"</span><span class="p">,</span>
             <span class="p">}</span>
 
             <span class="c1"># Try to read + send over file.</span>
             <span class="k">return</span> <span class="n">Response</span><span class="p">(</span>
                 <span class="n">http</span><span class="o">.</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">OK</span><span class="p">,</span>
-                <span class="s2">&quot;OK&quot;</span><span class="p">,</span>
+                <span class="s2">"OK"</span><span class="p">,</span>
                 <span class="n">websockets</span><span class="o">.</span><span class="n">datastructures</span><span class="o">.</span><span class="n">Headers</span><span class="p">(</span><span class="o">**</span><span class="n">response_headers</span><span class="p">),</span>
                 <span class="n">response_payload</span><span class="p">,</span>
             <span class="p">)</span>
@@ -1348,7 +1348,7 @@
                             <span class="p">(</span>
                                 <span class="n">Subprotocol</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
                                 <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">subprotocols</span>
-                                <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;viser-v&quot;</span><span class="p">)</span>
+                                <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"viser-v"</span><span class="p">)</span>
                             <span class="p">),</span>
                             <span class="kc">None</span><span class="p">,</span>
                         <span class="p">),</span>
@@ -1373,7 +1373,7 @@
                     <span class="k">continue</span>
 
         <span class="n">event_loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">start_server</span><span class="p">())</span>
-        <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">&quot;[bold](viser)[/bold] Server stopped&quot;</span><span class="p">)</span>
+        <span class="n">rich</span><span class="o">.</span><span class="n">print</span><span class="p">(</span><span class="s2">"[bold](viser)[/bold] Server stopped"</span><span class="p">)</span>
 
         <span class="c1"># Clean up the event loop to prevent reference leaks.</span>
         <span class="n">event_loop</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
@@ -1382,13 +1382,13 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_remap_binary_placeholder_indices</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">index_remap</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rewrite the ``__binary_index`` of every binary placeholder (see</span>
+<span class="w">    </span><span class="sd">"""Rewrite the ``__binary_index`` of every binary placeholder (see</span>
 <span class="sd">    ``Message.as_serializable_dict``) through ``index_remap``. Placeholder</span>
 <span class="sd">    dicts are mutated in place; containers are only traversed, never</span>
-<span class="sd">    replaced.&quot;&quot;&quot;</span>
+<span class="sd">    replaced."""</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">is_binary_placeholder</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
-            <span class="n">obj</span><span class="p">[</span><span class="s2">&quot;__binary_index&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">index_remap</span><span class="p">[</span><span class="n">obj</span><span class="p">[</span><span class="s2">&quot;__binary_index&quot;</span><span class="p">]]</span>
+            <span class="n">obj</span><span class="p">[</span><span class="s2">"__binary_index"</span><span class="p">]</span> <span class="o">=</span> <span class="n">index_remap</span><span class="p">[</span><span class="n">obj</span><span class="p">[</span><span class="s2">"__binary_index"</span><span class="p">]]</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obj</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
                 <span class="n">_remap_binary_placeholder_indices</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">index_remap</span><span class="p">)</span>
@@ -1398,7 +1398,7 @@
 
 
 <span class="c1"># Pre-allocated padding bytes for 8-byte alignment.</span>
-<span class="n">_ALIGNMENT_PADDING</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;</span><span class="se">\x00</span><span class="s2">&quot;</span> <span class="o">*</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">))</span>
+<span class="n">_ALIGNMENT_PADDING</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="sa">b</span><span class="s2">"</span><span class="se">\x00</span><span class="s2">"</span> <span class="o">*</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">))</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_append_aligned_buffers</span><span class="p">(</span>
@@ -1406,7 +1406,7 @@
     <span class="n">binary_buffers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">memoryview</span><span class="p">],</span>
     <span class="n">current_offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Append binary buffers to `parts` with 8-byte alignment padding.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Append binary buffers to `parts` with 8-byte alignment padding."""</span>
     <span class="k">for</span> <span class="n">buf</span> <span class="ow">in</span> <span class="n">binary_buffers</span><span class="p">:</span>
         <span class="n">padding</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span> <span class="o">-</span> <span class="p">(</span><span class="n">current_offset</span> <span class="o">%</span> <span class="mi">8</span><span class="p">))</span> <span class="o">%</span> <span class="mi">8</span>
         <span class="k">if</span> <span class="n">padding</span><span class="p">:</span>
@@ -1422,15 +1422,15 @@
     <span class="n">client_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">backlog_done_message</span><span class="p">:</span> <span class="n">Message</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Infinite loop to broadcast windows of messages from a buffer.</span>
+<span class="w">    </span><span class="sd">"""Infinite loop to broadcast windows of messages from a buffer.</span>
 
 <span class="sd">    Wire format (hybrid zstd-compressed msgpack + raw binary buffers):</span>
 <span class="sd">    - Binary arrays (numpy) are extracted from messages and replaced with</span>
-<span class="sd">      tagged placeholder dicts so msgpack.encode() doesn&#39;t walk large arrays.</span>
+<span class="sd">      tagged placeholder dicts so msgpack.encode() doesn't walk large arrays.</span>
 <span class="sd">    - Raw binary data is appended uncompressed after the zstd-compressed</span>
 <span class="sd">      msgpack, with 8-byte alignment padding.</span>
 <span class="sd">    - On the JS side, typed array views (Float32Array, etc.) are created</span>
-<span class="sd">      directly into the WebSocket&#39;s ArrayBuffer -- zero-copy for binary data.</span>
+<span class="sd">      directly into the WebSocket's ArrayBuffer -- zero-copy for binary data.</span>
 
 <span class="sd">    Binary data is left uncompressed because float/int arrays (point clouds,</span>
 <span class="sd">    meshes) compress poorly, and at 30-60fps the zstd compress+decompress</span>
@@ -1442,7 +1442,7 @@
 <span class="sd">      [N bytes] zstd-compressed msgpack payload</span>
 <span class="sd">      [P bytes] padding to 8-byte alignment</span>
 <span class="sd">      [M bytes] concatenated binary buffers (each 8-byte aligned)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">window_generator</span> <span class="o">=</span> <span class="n">buffer</span><span class="o">.</span><span class="n">window_generator</span><span class="p">(</span>
         <span class="n">client_id</span><span class="p">,</span> <span class="n">backlog_done_message</span><span class="o">=</span><span class="n">backlog_done_message</span>
     <span class="p">)</span>
@@ -1460,20 +1460,20 @@
             <span class="p">)</span>
             <span class="n">inner</span> <span class="o">=</span> <span class="n">msgspec</span><span class="o">.</span><span class="n">msgpack</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span>
                 <span class="p">{</span>
-                    <span class="s2">&quot;messages&quot;</span><span class="p">:</span> <span class="n">serialized_messages</span><span class="p">,</span>
-                    <span class="s2">&quot;timestampSec&quot;</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">(),</span>
-                    <span class="s2">&quot;binaryBufferLengths&quot;</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">binary_buffers</span><span class="p">),</span>
+                    <span class="s2">"messages"</span><span class="p">:</span> <span class="n">serialized_messages</span><span class="p">,</span>
+                    <span class="s2">"timestampSec"</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">(),</span>
+                    <span class="s2">"binaryBufferLengths"</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">nbytes</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">binary_buffers</span><span class="p">),</span>
                 <span class="p">}</span>
             <span class="p">)</span>
             <span class="n">compressed</span> <span class="o">=</span> <span class="n">zstd</span><span class="o">.</span><span class="n">compress</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span>
 
             <span class="n">parts</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">bytes</span> <span class="o">|</span> <span class="nb">memoryview</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
-                <span class="nb">len</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">),</span>
-                <span class="nb">len</span><span class="p">(</span><span class="n">compressed</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">&quot;little&quot;</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">"little"</span><span class="p">),</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">compressed</span><span class="p">)</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="s2">"little"</span><span class="p">),</span>
                 <span class="n">compressed</span><span class="p">,</span>
             <span class="p">]</span>
             <span class="n">_append_aligned_buffers</span><span class="p">(</span><span class="n">parts</span><span class="p">,</span> <span class="n">binary_buffers</span><span class="p">,</span> <span class="mi">16</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">compressed</span><span class="p">))</span>
-            <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">))</span>
+            <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="sa">b</span><span class="s2">""</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">))</span>
     <span class="k">finally</span><span class="p">:</span>
         <span class="c1"># Close the generator DETERMINISTICALLY. A cancellation delivered at</span>
         <span class="c1"># `websocket.send` leaves the generator suspended at its yield --</span>
@@ -1489,7 +1489,7 @@
     <span class="n">handle_message</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Message</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
     <span class="n">message_class</span><span class="p">:</span> <span class="nb">type</span><span class="p">[</span><span class="n">Message</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Infinite loop waiting for and then handling incoming messages.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Infinite loop waiting for and then handling incoming messages."""</span>
     <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
         <span class="n">raw</span> <span class="o">=</span> <span class="k">await</span> <span class="n">websocket</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span>
@@ -1498,11 +1498,11 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">error_print_wrapper</span><span class="p">(</span><span class="n">inner</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="kc">None</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap a Callable to print error messages when they happen.</span>
+<span class="w">    </span><span class="sd">"""Wrap a Callable to print error messages when they happen.</span>
 
 <span class="sd">    This can be helpful for jobs submitted to ThreadPoolExecutor instances, which, by</span>
 <span class="sd">    default, will suppress error messages until returned futures are awaited.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">wrapped</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>

@@ -429,14 +429,14 @@
 <span class="c1"># See https://tabler-icons.io/</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">NewType</span>
 
-<span class="n">IconName</span> <span class="o">=</span> <span class="n">NewType</span><span class="p">(</span><span class="s2">&quot;IconName&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span>
-<span class="sd">&quot;&quot;&quot;Name of an icon. Should be generated via `viser.Icon.*`.&quot;&quot;&quot;</span>
+<span class="n">IconName</span> <span class="o">=</span> <span class="n">NewType</span><span class="p">(</span><span class="s2">"IconName"</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span>
+<span class="sd">"""Name of an icon. Should be generated via `viser.Icon.*`."""</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">_IconStringConverter</span><span class="p">(</span><span class="nb">type</span><span class="p">):</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">__name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IconName</span><span class="p">:</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">__name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">IconName</span><span class="p">(</span><span class="n">__name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">__name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"_"</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">IconName</span><span class="p">(</span><span class="n">__name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="s2">"-"</span><span class="p">))</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">()</span>
 
@@ -444,9 +444,9 @@
 <div class="viewcode-block" id="Icon">
 <a class="viewcode-back" href="../../../api/advanced/icons/#viser.Icon">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Icon</span><span class="p">(</span><span class="n">metaclass</span><span class="o">=</span><span class="n">_IconStringConverter</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;&#39;Enum&#39; class for referencing Tabler icons.</span>
+<span class="w">    </span><span class="sd">"""'Enum' class for referencing Tabler icons.</span>
 
-<span class="sd">    We don&#39;t subclass enum.Enum for performance reasons -- importing an enum with</span>
+<span class="sd">    We don't subclass enum.Enum for performance reasons -- importing an enum with</span>
 <span class="sd">    thousands of names can result in import times in the hundreds of milliseconds.</span>
 
 <span class="sd">    Attributes:</span>
@@ -4735,7 +4735,7 @@
 <span class="sd">        ZOOM_RESET (IconName): The :code:`zoom-reset` icon.</span>
 <span class="sd">        ZZZ (IconName): The :code:`zzz` icon.</span>
 <span class="sd">        ZZZ_OFF (IconName): The :code:`zzz-off` icon.</span>
-<span class="sd">    &quot;&quot;&quot;</span></div>
+<span class="sd">    """</span></div>
 
 </pre></div>
         </article>

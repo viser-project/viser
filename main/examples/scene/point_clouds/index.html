@@ -477,7 +477,7 @@
 <span class="linenos">28</span>
 <span class="linenos">29</span>    <span class="c1"># Add the point cloud to the scene.</span>
 <span class="linenos">30</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_point_cloud</span><span class="p">(</span>
-<span class="linenos">31</span>        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;/spiral_cloud&quot;</span><span class="p">,</span>
+<span class="linenos">31</span>        <span class="n">name</span><span class="o">=</span><span class="s2">"/spiral_cloud"</span><span class="p">,</span>
 <span class="linenos">32</span>        <span class="n">points</span><span class="o">=</span><span class="n">spiral_positions</span><span class="p">,</span>
 <span class="linenos">33</span>        <span class="n">colors</span><span class="o">=</span><span class="n">colors</span><span class="p">,</span>
 <span class="linenos">34</span>        <span class="n">point_size</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
@@ -489,22 +489,22 @@
 <span class="linenos">40</span>    <span class="n">noise_colors</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="p">(</span><span class="n">num_noise_points</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
 <span class="linenos">41</span>
 <span class="linenos">42</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_point_cloud</span><span class="p">(</span>
-<span class="linenos">43</span>        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;/noise_cloud&quot;</span><span class="p">,</span>
+<span class="linenos">43</span>        <span class="n">name</span><span class="o">=</span><span class="s2">"/noise_cloud"</span><span class="p">,</span>
 <span class="linenos">44</span>        <span class="n">points</span><span class="o">=</span><span class="n">noise_positions</span><span class="p">,</span>
 <span class="linenos">45</span>        <span class="n">colors</span><span class="o">=</span><span class="n">noise_colors</span><span class="p">,</span>
 <span class="linenos">46</span>        <span class="n">point_size</span><span class="o">=</span><span class="mf">0.03</span><span class="p">,</span>
 <span class="linenos">47</span>    <span class="p">)</span>
 <span class="linenos">48</span>
-<span class="linenos">49</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Point cloud visualization loaded!&quot;</span><span class="p">)</span>
-<span class="linenos">50</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;- Spiral point cloud with height-based colors&quot;</span><span class="p">)</span>
-<span class="linenos">51</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;- Random noise point cloud with random colors&quot;</span><span class="p">)</span>
-<span class="linenos">52</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Visit: http://localhost:8080&quot;</span><span class="p">)</span>
+<span class="linenos">49</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">"Point cloud visualization loaded!"</span><span class="p">)</span>
+<span class="linenos">50</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">"- Spiral point cloud with height-based colors"</span><span class="p">)</span>
+<span class="linenos">51</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">"- Random noise point cloud with random colors"</span><span class="p">)</span>
+<span class="linenos">52</span>    <span class="nb">print</span><span class="p">(</span><span class="s2">"Visit: http://localhost:8080"</span><span class="p">)</span>
 <span class="linenos">53</span>
 <span class="linenos">54</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
 <span class="linenos">55</span>        <span class="k">pass</span>
 <span class="linenos">56</span>
 <span class="linenos">57</span>
-<span class="linenos">58</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">58</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 <span class="linenos">59</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>

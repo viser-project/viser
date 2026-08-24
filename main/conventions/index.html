@@ -541,9 +541,9 @@ accumulating invisibly; removing the client-scoped node reveals the shared
 node again with its latest state. This makes per-client overrides of shared
 elements a one-liner:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Everyone sees this...</span>
-<span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">&quot;/box&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+<span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">"/box"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
 <span class="c1"># ...except this client, who now sees their own version instead:</span>
-<span class="n">client</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">&quot;/box&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+<span class="n">client</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">"/box"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
 </pre></div>
 </div>
 <p>Removal is <strong>scope-local</strong>: removing a node (or a whole subtree) through
@@ -555,8 +555,8 @@ panel, per-client nodes are marked with a <code class="docutils literal notransl
 element may be added inside a <code class="docutils literal notranslate"><span class="pre">server.gui</span></code> container context (its
 audience is a subset of the container’s), rendering inside the shared
 folder for that client only:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_folder</span><span class="p">(</span><span class="s2">&quot;Shared folder&quot;</span><span class="p">):</span>
-    <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Only I see this&quot;</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_folder</span><span class="p">(</span><span class="s2">"Shared folder"</span><span class="p">):</span>
+    <span class="n">client</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">"Only I see this"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>The reverse – a <code class="docutils literal notranslate"><span class="pre">server.gui</span></code> element inside a <code class="docutils literal notranslate"><span class="pre">client.gui</span></code> container

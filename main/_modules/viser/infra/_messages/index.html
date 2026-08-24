@@ -425,8 +425,8 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for viser.infra._messages</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Message type definitions. For synchronization with the TypeScript definitions, see</span>
-<span class="sd">`_typescript_interface_gen.py.`&quot;&quot;&quot;</span>
+<span></span><span class="sd">"""Message type definitions. For synchronization with the TypeScript definitions, see</span>
+<span class="sd">`_typescript_interface_gen.py.`"""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
@@ -488,7 +488,7 @@
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="o">...</span><span class="p">:</span>
             <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],)</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
         <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
-            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[viser] </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2"> does not match annotation </span><span class="si">{</span><span class="n">annotation</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[viser] </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2"> does not match annotation </span><span class="si">{</span><span class="n">annotation</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">value</span>
 
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
@@ -506,19 +506,19 @@
     <span class="n">annotation</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
     <span class="n">binary_buffers</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">memoryview</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Prepare any special types for serialization.</span>
+<span class="w">    </span><span class="sd">"""Prepare any special types for serialization.</span>
 
 <span class="sd">    If ``binary_buffers`` is provided, numpy arrays are extracted into it and</span>
-<span class="sd">    replaced with tagged placeholder dicts (``{&quot;__binary_index&quot;: i, &quot;dtype&quot;: &quot;&lt;f4&quot;}``).</span>
+<span class="sd">    replaced with tagged placeholder dicts (``{"__binary_index": i, "dtype": "&lt;f4"}``).</span>
 <span class="sd">    This pairs with the hybrid wire format where binary data is appended raw</span>
 <span class="sd">    after the msgpack payload, enabling zero-copy typed array views on the client.</span>
 
 <span class="sd">    If ``binary_buffers`` is None, numpy arrays are inlined as memoryviews</span>
-<span class="sd">    in the serialized dict itself.&quot;&quot;&quot;</span>
+<span class="sd">    in the serialized dict itself."""</span>
     <span class="k">if</span> <span class="n">annotation</span> <span class="ow">is</span> <span class="n">Any</span><span class="p">:</span>
         <span class="n">annotation</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
 
-    <span class="c1"># Coerce some scalar types: if we&#39;ve annotated as float / int but we get an</span>
+    <span class="c1"># Coerce some scalar types: if we've annotated as float / int but we get an</span>
     <span class="c1"># np.float32 / np.int64, for example, we should cast automatically.</span>
     <span class="k">if</span> <span class="n">annotation</span> <span class="ow">is</span> <span class="nb">float</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">):</span>
         <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
@@ -526,11 +526,11 @@
         <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
     <span class="c1"># np.bool_ (from mask.any(), arr &gt; 0, np.all(...), etc.) is neither</span>
     <span class="c1"># np.floating nor np.integer, and msgpack cannot encode it -- unconverted</span>
-    <span class="c1"># it raised inside the broadcast producer, tearing down every client&#39;s</span>
+    <span class="c1"># it raised inside the broadcast producer, tearing down every client's</span>
     <span class="c1"># connection (and, being a persistent update, re-crashing on reconnect).</span>
     <span class="k">if</span> <span class="n">annotation</span> <span class="ow">is</span> <span class="nb">bool</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">bool_</span><span class="p">):</span>
         <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-    <span class="c1"># Any OTHER numpy scalar msgpack can&#39;t encode -- most importantly np.str_</span>
+    <span class="c1"># Any OTHER numpy scalar msgpack can't encode -- most importantly np.str_</span>
     <span class="c1"># and np.bytes_ from a numpy string array (names[i], labels), which are</span>
     <span class="c1"># far more common than bool. .item() returns the python-native</span>
     <span class="c1"># equivalent. Closes the same crash class as the branches above; without</span>
@@ -551,7 +551,7 @@
             <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="o">...</span><span class="p">:</span>
                 <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],)</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
             <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
-                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[viser] </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2"> does not match annotation </span><span class="si">{</span><span class="n">annotation</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[viser] </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2"> does not match annotation </span><span class="si">{</span><span class="n">annotation</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
                 <span class="k">return</span> <span class="n">value</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">args</span> <span class="o">=</span> <span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
@@ -573,7 +573,7 @@
             <span class="c1"># Extract into separate buffer with tagged placeholder.</span>
             <span class="n">idx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">binary_buffers</span><span class="p">)</span>
             <span class="n">binary_buffers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-            <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;__binary_index&quot;</span><span class="p">:</span> <span class="n">idx</span><span class="p">,</span> <span class="s2">&quot;dtype&quot;</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">str</span><span class="p">}</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">"__binary_index"</span><span class="p">:</span> <span class="n">idx</span><span class="p">,</span> <span class="s2">"dtype"</span><span class="p">:</span> <span class="n">value</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">str</span><span class="p">}</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="c1"># Inline as memoryview in the serialized dict.</span>
             <span class="k">return</span> <span class="n">data</span>
@@ -591,13 +591,13 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">is_binary_placeholder</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Detect the tagged placeholder dicts created above for extracted binary</span>
-<span class="sd">    buffers. Must stay in sync with the client&#39;s detection in</span>
-<span class="sd">    ``BinaryMessageDecode.ts``, which tests for the same two keys.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="s2">&quot;__binary_index&quot;</span> <span class="ow">in</span> <span class="n">value</span> <span class="ow">and</span> <span class="s2">&quot;dtype&quot;</span> <span class="ow">in</span> <span class="n">value</span>
+<span class="w">    </span><span class="sd">"""Detect the tagged placeholder dicts created above for extracted binary</span>
+<span class="sd">    buffers. Must stay in sync with the client's detection in</span>
+<span class="sd">    ``BinaryMessageDecode.ts``, which tests for the same two keys."""</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="s2">"__binary_index"</span> <span class="ow">in</span> <span class="n">value</span> <span class="ow">and</span> <span class="s2">"dtype"</span> <span class="ow">in</span> <span class="n">value</span>
 
 
-<span class="n">T</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="s2">&quot;Message&quot;</span><span class="p">)</span>
+<span class="n">T</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">"T"</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="s2">"Message"</span><span class="p">)</span>
 
 
 <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
@@ -607,31 +607,31 @@
 
 <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">wire_field_names</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Names of the fields a message type puts on the wire: declared,</span>
+<span class="w">    </span><span class="sd">"""Names of the fields a message type puts on the wire: declared,</span>
 <span class="sd">    type-hinted dataclass fields, in declaration order. THE single</span>
 <span class="sd">    definition of the wire field set -- the serializer and the TypeScript</span>
 <span class="sd">    interface generator must never disagree on it. Declared fields (not</span>
-<span class="sd">    ``vars()``) so that non-init defaulted fields (e.g. the scene messages&#39;</span>
-<span class="sd">    owner/virtual stamps) are included even before first assignment.&quot;&quot;&quot;</span>
+<span class="sd">    ``vars()``) so that non-init defaulted fields (e.g. the scene messages'</span>
+<span class="sd">    owner/virtual stamps) are included even before first assignment."""</span>
     <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
     <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">hints</span><span class="p">)</span>
 
 
 <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_non_init_field_names</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dataclass fields excluded from ``__init__`` (assigned post-construction</span>
-<span class="sd">    on deserialization). Empty for most message types.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Dataclass fields excluded from ``__init__`` (assigned post-construction</span>
+<span class="sd">    on deserialization). Empty for most message types."""</span>
     <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">fields</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">init</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="Message">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Message</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Base message type for server/client communication.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Base message type for server/client communication."""</span>
 
     <span class="n">excluded_self_client</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ClientId</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Don&#39;t send this message to a particular client. Useful when a client wants to</span>
-<span class="sd">    send synchronization information to other clients.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Don't send this message to a particular client. Useful when a client wants to</span>
+<span class="sd">    send synchronization information to other clients."""</span>
 
     <span class="c1"># Entity lifecycle markers. Generic at this layer; application-specific</span>
     <span class="c1"># literals (e.g. EntityType in viser._messages) narrow these in subclasses</span>
@@ -651,32 +651,32 @@
 <div class="viewcode-block" id="Message.entity_state_key">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.entity_state_key">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">entity_state_key</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;The (entity_type, entity_id) this message carries PER-ENTITY state</span>
+<span class="w">        </span><span class="sd">"""The (entity_type, entity_id) this message carries PER-ENTITY state</span>
 <span class="sd">        for, or None for messages that carry none: update messages</span>
 <span class="sd">        (``update_dict``/``update_simple``) key to their declared entity;</span>
-<span class="sd">        phase-less messages carrying a ``name`` key to ``(&quot;scene&quot;, name)``</span>
+<span class="sd">        phase-less messages carrying a ``name`` key to ``("scene", name)``</span>
 <span class="sd">        (name-keyed adjacency exists only for SCENE nodes -- interaction</span>
 <span class="sd">        bindings etc.; other entity families key by uuid fields that never</span>
 <span class="sd">        collide with a scene name). The ONE definition of this taxonomy: the</span>
-<span class="sd">        buffer&#39;s entity-state index, the same-name-replacement purge, and the</span>
-<span class="sd">        connect-time garbage collector&#39;s sweep all resolve through it.&quot;&quot;&quot;</span>
+<span class="sd">        buffer's entity-state index, the same-name-replacement purge, and the</span>
+<span class="sd">        connect-time garbage collector's sweep all resolve through it."""</span>
         <span class="n">phase</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lifecycle_phase</span>
-        <span class="k">if</span> <span class="n">phase</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;update_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;update_simple&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">phase</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"update_dict"</span><span class="p">,</span> <span class="s2">"update_simple"</span><span class="p">):</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_id_field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">entity_type</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_id_field</span><span class="p">))</span>
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">phase</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span> <span class="p">(</span><span class="s2">&quot;scene&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+                <span class="k">return</span> <span class="p">(</span><span class="s2">"scene"</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="Message.targets_entity_state">
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.targets_entity_state">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">targets_entity_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entity_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">entity_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;True when this message carries per-entity state for the given</span>
-<span class="sd">        entity; the predicate form of :meth:`entity_state_key`.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""True when this message carries per-entity state for the given</span>
+<span class="sd">        entity; the predicate form of :meth:`entity_state_key`."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">entity_state_key</span><span class="p">()</span> <span class="o">==</span> <span class="p">(</span><span class="n">entity_type</span><span class="p">,</span> <span class="n">entity_id</span><span class="p">)</span></div>
 
 
@@ -685,11 +685,11 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">as_serializable_dict</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">binary_buffers</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">memoryview</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert a Python Message object into a serializable dict.</span>
+<span class="w">        </span><span class="sd">"""Convert a Python Message object into a serializable dict.</span>
 
 <span class="sd">        If ``binary_buffers`` is provided, numpy arrays are extracted into it</span>
 <span class="sd">        and replaced with tagged placeholder dicts for the hybrid wire format.</span>
-<span class="sd">        Otherwise, arrays are inlined as memoryviews in the returned dict.&quot;&quot;&quot;</span>
+<span class="sd">        Otherwise, arrays are inlined as memoryviews in the returned dict."""</span>
         <span class="n">message_type</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
         <span class="n">out</span> <span class="o">=</span> <span class="p">{</span>
@@ -698,13 +698,13 @@
             <span class="p">)</span>
             <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">wire_field_names</span><span class="p">(</span><span class="n">message_type</span><span class="p">)</span>
         <span class="p">}</span>
-        <span class="n">out</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">message_type</span><span class="o">.</span><span class="vm">__name__</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"type"</span><span class="p">]</span> <span class="o">=</span> <span class="n">message_type</span><span class="o">.</span><span class="vm">__name__</span>
         <span class="k">return</span> <span class="n">out</span></div>
 
 
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_from_serializable_dict</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">mapping</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert a dict message back into a Python Message object.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Convert a dict message back into a Python Message object."""</span>
 
         <span class="n">hints</span> <span class="o">=</span> <span class="n">get_type_hints_cached</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
 
@@ -717,18 +717,18 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.deserialize">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">deserialize</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Message</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert bytes into a Python Message object.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Convert bytes into a Python Message object."""</span>
         <span class="n">mapping</span> <span class="o">=</span> <span class="n">msgspec</span><span class="o">.</span><span class="n">msgpack</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
 
         <span class="c1"># List-to-tuple conversion is handled per-field in</span>
         <span class="c1"># _prepare_for_deserialization (called from _from_serializable_dict),</span>
         <span class="c1"># which uses type annotations to convert only where needed. This avoids</span>
         <span class="c1"># a blanket recursive traversal of the entire message tree.</span>
-        <span class="n">message_type</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_subclass_from_type_string</span><span class="p">()[</span><span class="n">cast</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">mapping</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">))]</span>
+        <span class="n">message_type</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_subclass_from_type_string</span><span class="p">()[</span><span class="n">cast</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">mapping</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"type"</span><span class="p">))]</span>
         <span class="n">message_kwargs</span> <span class="o">=</span> <span class="n">message_type</span><span class="o">.</span><span class="n">_from_serializable_dict</span><span class="p">(</span><span class="n">mapping</span><span class="p">)</span>
-        <span class="c1"># Non-init fields (e.g. the scene messages&#39; owner/virtual stamps,</span>
-        <span class="c1"># declared init=False so defaulted fields can follow subclasses&#39;</span>
-        <span class="c1"># positional ones on Python 3.8) can&#39;t be passed to __init__; strip</span>
+        <span class="c1"># Non-init fields (e.g. the scene messages' owner/virtual stamps,</span>
+        <span class="c1"># declared init=False so defaulted fields can follow subclasses'</span>
+        <span class="c1"># positional ones on Python 3.8) can't be passed to __init__; strip</span>
         <span class="c1"># them out and assign after construction so the serialize -&gt;</span>
         <span class="c1"># deserialize round trip stays lossless. The per-class name tuple is</span>
         <span class="c1"># cached: most message types have none, and this runs per inbound</span>
@@ -754,12 +754,12 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.get_subclasses">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_subclasses</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">T</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">T</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Recursively get message subclasses.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Recursively get message subclasses."""</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">_get_subclasses</span><span class="p">(</span><span class="n">typ</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">T</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">T</span><span class="p">]]:</span>
             <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">for</span> <span class="n">sub</span> <span class="ow">in</span> <span class="n">typ</span><span class="o">.</span><span class="n">__subclasses__</span><span class="p">():</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">sub</span><span class="o">.</span><span class="vm">__name__</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">sub</span><span class="o">.</span><span class="vm">__name__</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"_"</span><span class="p">):</span>
                     <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sub</span><span class="p">)</span>
                 <span class="n">out</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">_get_subclasses</span><span class="p">(</span><span class="n">sub</span><span class="p">))</span>
             <span class="k">return</span> <span class="n">out</span>
@@ -771,12 +771,12 @@
 <a class="viewcode-back" href="../../../../api/auxiliary/infrastructure/#viser.infra.Message.redundancy_key">[docs]</a>
     <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">redundancy_key</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a unique key for this message, used for detecting redundant</span>
+<span class="w">        </span><span class="sd">"""Returns a unique key for this message, used for detecting redundant</span>
 <span class="sd">        messages.</span>
 
-<span class="sd">        For example: if we send 1000 &quot;set value&quot; messages for the same GUI element, we</span>
+<span class="sd">        For example: if we send 1000 "set value" messages for the same GUI element, we</span>
 <span class="sd">        should only keep the latest message.</span>
-<span class="sd">        &quot;&quot;&quot;</span></div>
+<span class="sd">        """</span></div>
 </div>
 
 </pre></div>

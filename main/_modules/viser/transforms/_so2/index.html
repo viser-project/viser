@@ -448,29 +448,29 @@
     <span class="n">tangent_dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
     <span class="n">space_dim</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Special orthogonal group for 2D rotations. Broadcasting rules are the</span>
+<span class="w">    </span><span class="sd">"""Special orthogonal group for 2D rotations. Broadcasting rules are the</span>
 <span class="sd">    same as for numpy.</span>
 
 <span class="sd">    Ported to numpy from `jaxlie.SO2`.</span>
 
 <span class="sd">    Internal parameterization is `(cos, sin)`. Tangent parameterization is `(omega,)`.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="c1"># SO2-specific.</span>
 
     <span class="n">unit_complex</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">]</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Internal parameters. `(cos, sin)`. Shape should be `(*, 2)`.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Internal parameters. `(cos, sin)`. Shape should be `(*, 2)`."""</span>
 
     <span class="nd">@override</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="n">unit_complex</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">unit_complex</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">(unit_complex=</span><span class="si">{</span><span class="n">unit_complex</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">(unit_complex=</span><span class="si">{</span><span class="n">unit_complex</span><span class="si">}</span><span class="s2">)"</span>
 
 <div class="viewcode-block" id="SO2.from_radians">
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO2.from_radians">[docs]</a>
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_radians</span><span class="p">(</span><span class="n">theta</span><span class="p">:</span> <span class="n">hints</span><span class="o">.</span><span class="n">Scalar</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SO2</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Construct a rotation object from a scalar angle.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Construct a rotation object from a scalar angle."""</span>
         <span class="n">cos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
         <span class="n">sin</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">SO2</span><span class="p">(</span><span class="n">unit_complex</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">cos</span><span class="p">,</span> <span class="n">sin</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span></div>
@@ -479,7 +479,7 @@
 <div class="viewcode-block" id="SO2.as_radians">
 <a class="viewcode-back" href="../../../../api/auxiliary/transforms/#viser.transforms.SO2.as_radians">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">as_radians</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Compute a scalar angle from a rotation object.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Compute a scalar angle from a rotation object."""</span>
         <span class="n">radians</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="p">()[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
         <span class="k">return</span> <span class="n">radians</span></div>
 
@@ -545,7 +545,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">floating</span><span class="p">]:</span>
         <span class="k">assert</span> <span class="n">target</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">:]</span> <span class="o">==</span> <span class="p">(</span><span class="mi">2</span><span class="p">,)</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">broadcast_leading_axes</span><span class="p">((</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">))</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">&quot;...ij,...j-&gt;...i&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">(),</span> <span class="n">target</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s2">"...ij,...j-&gt;...i"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">(),</span> <span class="n">target</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="SO2.multiply">
@@ -554,7 +554,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">multiply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="n">SO2</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SO2</span><span class="p">:</span>  <span class="c1"># type: ignore</span>
         <span class="k">return</span> <span class="n">SO2</span><span class="p">(</span>
             <span class="n">unit_complex</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
-                <span class="s2">&quot;...ij,...j-&gt;...i&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">(),</span> <span class="n">other</span><span class="o">.</span><span class="n">unit_complex</span>
+                <span class="s2">"...ij,...j-&gt;...i"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">as_matrix</span><span class="p">(),</span> <span class="n">other</span><span class="o">.</span><span class="n">unit_complex</span>
             <span class="p">)</span>
         <span class="p">)</span></div>
 

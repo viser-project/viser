@@ -458,11 +458,11 @@ save the scene state:</p>
 <span class="c1"># For example:</span>
 <span class="c1"># server.scene.add_mesh(...)</span>
 <span class="c1"># server.scene.add_point_cloud(...)</span>
-<span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">&quot;/box&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">"/box"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
 
 <span class="c1"># Serialize and save the scene state</span>
 <span class="n">data</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">get_scene_serializer</span><span class="p">()</span><span class="o">.</span><span class="n">serialize</span><span class="p">()</span>  <span class="c1"># Returns bytes</span>
-<span class="n">Path</span><span class="p">(</span><span class="s2">&quot;recording.viser&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write_bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+<span class="n">Path</span><span class="p">(</span><span class="s2">"recording.viser"</span><span class="p">)</span><span class="o">.</span><span class="n">write_bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>As a suggestion, you can also add a button for exporting the scene state.
@@ -475,14 +475,14 @@ Clicking the button in your web browser will trigger a download of the
 <span class="c1"># For example:</span>
 <span class="c1"># server.scene.add_mesh(...)</span>
 <span class="c1"># server.scene.add_point_cloud(...)</span>
-<span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">&quot;/box&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">"/box"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
 
-<span class="n">save_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">&quot;Save Scene&quot;</span><span class="p">)</span>
+<span class="n">save_button</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">gui</span><span class="o">.</span><span class="n">add_button</span><span class="p">(</span><span class="s2">"Save Scene"</span><span class="p">)</span>
 
 <span class="nd">@save_button</span><span class="o">.</span><span class="n">on_click</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">viser</span><span class="o">.</span><span class="n">GuiEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="k">assert</span> <span class="n">event</span><span class="o">.</span><span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="n">event</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">send_file_download</span><span class="p">(</span><span class="s2">&quot;recording.viser&quot;</span><span class="p">,</span> <span class="n">server</span><span class="o">.</span><span class="n">get_scene_serializer</span><span class="p">()</span><span class="o">.</span><span class="n">serialize</span><span class="p">())</span>
+    <span class="n">event</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">send_file_download</span><span class="p">(</span><span class="s2">"recording.viser"</span><span class="p">,</span> <span class="n">server</span><span class="o">.</span><span class="n">get_scene_serializer</span><span class="p">()</span><span class="o">.</span><span class="n">serialize</span><span class="p">())</span>
 
 <span class="n">server</span><span class="o">.</span><span class="n">sleep_forever</span><span class="p">()</span>
 </pre></div>
@@ -502,7 +502,7 @@ calling <code class="xref py py-meth docutils literal notranslate"><span class="
 <span class="c1"># For example:</span>
 <span class="c1"># server.scene.add_mesh(...)</span>
 <span class="c1"># server.scene.add_point_cloud(...)</span>
-<span class="n">box</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">&quot;/box&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">box</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">"/box"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
 
 <span class="c1"># Create serializer.</span>
 <span class="n">serializer</span> <span class="o">=</span> <span class="n">server</span><span class="o">.</span><span class="n">get_scene_serializer</span><span class="p">()</span>
@@ -517,7 +517,7 @@ calling <code class="xref py py-meth docutils literal notranslate"><span class="
 
 <span class="c1"># Save the complete animation.</span>
 <span class="n">data</span> <span class="o">=</span> <span class="n">serializer</span><span class="o">.</span><span class="n">serialize</span><span class="p">()</span>  <span class="c1"># Returns bytes</span>
-<span class="n">Path</span><span class="p">(</span><span class="s2">&quot;recording.viser&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write_bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+<span class="n">Path</span><span class="p">(</span><span class="s2">"recording.viser"</span><span class="p">)</span><span class="o">.</span><span class="n">write_bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="admonition note">
@@ -588,7 +588,7 @@ python<span class="w"> </span>-m<span class="w"> </span>http.server<span class="
 <li><p>Create a <code class="docutils literal notranslate"><span class="pre">gh-pages</span></code> branch or enable GitHub Pages on your main branch</p></li>
 <li><p>Push your directory structure to the repository:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>add<span class="w"> </span>recordings/<span class="w"> </span>viser-client/
-git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Add Viser visualization&quot;</span>
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"Add Viser visualization"</span>
 git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>main<span class="w">  </span><span class="c1"># or gh-pages</span>
 </pre></div>
 </div>
@@ -630,7 +630,7 @@ before serializing or calling <a class="reference internal" href="../api/core/sc
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">viser</span>
 
 <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
-<span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">&quot;/box&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_box</span><span class="p">(</span><span class="s2">"/box"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
 
 <span class="c1"># Set the initial camera pose.</span>
 <span class="n">server</span><span class="o">.</span><span class="n">initial_camera</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="p">(</span><span class="mf">2.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">4.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>

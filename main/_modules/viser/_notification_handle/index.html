@@ -457,7 +457,7 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">NotificationHandle</span><span class="p">(</span>
     <span class="n">NotificationProps</span><span class="p">,</span> <span class="n">AssignablePropsBase</span><span class="p">[</span><span class="n">_NotificationHandleState</span><span class="p">]</span>
 <span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Handle for a notification in our visualizer.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Handle for a notification in our visualizer."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">impl</span><span class="p">:</span> <span class="n">_NotificationHandleState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span> <span class="o">=</span> <span class="n">impl</span>
@@ -465,14 +465,14 @@
     <span class="nd">@override</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_queue_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Send the full props each time; the redundancy key collapses</span>
-        <span class="c1"># successive updates to &quot;latest wins&quot;.</span>
+        <span class="c1"># successive updates to "latest wins".</span>
         <span class="k">del</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">NotificationUpdateMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">props</span><span class="p">)</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_show</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Emit the initial NotificationShowMessage.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Emit the initial NotificationShowMessage."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">NotificationShowMessage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">props</span><span class="p">)</span>
         <span class="p">)</span>
@@ -482,7 +482,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_impl</span><span class="o">.</span><span class="n">removed</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;Attempted to remove an already removed NotificationHandle.&quot;</span><span class="p">,</span>
+                <span class="s2">"Attempted to remove an already removed NotificationHandle."</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">return</span>

@@ -470,30 +470,30 @@ python<span class="w"> </span>01_scene/02_meshes.py<span class="w">  </span><spa
 <span class="linenos"> 9</span>
 <span class="linenos">10</span>
 <span class="linenos">11</span><span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-<span class="linenos">12</span>    <span class="n">mesh</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">load_mesh</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">&quot;../assets/dragon.obj&quot;</span><span class="p">))</span>
+<span class="linenos">12</span>    <span class="n">mesh</span> <span class="o">=</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">load_mesh</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"../assets/dragon.obj"</span><span class="p">))</span>
 <span class="linenos">13</span>    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="n">trimesh</span><span class="o">.</span><span class="n">Trimesh</span><span class="p">)</span>
 <span class="linenos">14</span>    <span class="n">mesh</span><span class="o">.</span><span class="n">apply_scale</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
 <span class="linenos">15</span>
 <span class="linenos">16</span>    <span class="n">vertices</span> <span class="o">=</span> <span class="n">mesh</span><span class="o">.</span><span class="n">vertices</span>
 <span class="linenos">17</span>    <span class="n">faces</span> <span class="o">=</span> <span class="n">mesh</span><span class="o">.</span><span class="n">faces</span>
-<span class="linenos">18</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loaded mesh with </span><span class="si">{</span><span class="n">vertices</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> vertices, </span><span class="si">{</span><span class="n">faces</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> faces&quot;</span><span class="p">)</span>
+<span class="linenos">18</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Loaded mesh with </span><span class="si">{</span><span class="n">vertices</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> vertices, </span><span class="si">{</span><span class="n">faces</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> faces"</span><span class="p">)</span>
 <span class="linenos">19</span>
 <span class="linenos">20</span>    <span class="n">server</span> <span class="o">=</span> <span class="n">viser</span><span class="o">.</span><span class="n">ViserServer</span><span class="p">()</span>
 <span class="linenos">21</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_mesh_simple</span><span class="p">(</span>
-<span class="linenos">22</span>        <span class="s2">&quot;/simple&quot;</span><span class="p">,</span>
+<span class="linenos">22</span>        <span class="s2">"/simple"</span><span class="p">,</span>
 <span class="linenos">23</span>        <span class="n">vertices</span><span class="o">=</span><span class="n">vertices</span><span class="p">,</span>
 <span class="linenos">24</span>        <span class="n">faces</span><span class="o">=</span><span class="n">faces</span><span class="p">,</span>
 <span class="linenos">25</span>        <span class="n">wxyz</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">from_x_radians</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span>
 <span class="linenos">26</span>        <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
 <span class="linenos">27</span>    <span class="p">)</span>
 <span class="linenos">28</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_mesh_trimesh</span><span class="p">(</span>
-<span class="linenos">29</span>        <span class="s2">&quot;/trimesh&quot;</span><span class="p">,</span>
+<span class="linenos">29</span>        <span class="s2">"/trimesh"</span><span class="p">,</span>
 <span class="linenos">30</span>        <span class="n">mesh</span><span class="o">=</span><span class="n">mesh</span><span class="p">,</span>
 <span class="linenos">31</span>        <span class="n">wxyz</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">SO3</span><span class="o">.</span><span class="n">from_x_radians</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">wxyz</span><span class="p">,</span>
 <span class="linenos">32</span>        <span class="n">position</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
 <span class="linenos">33</span>    <span class="p">)</span>
 <span class="linenos">34</span>    <span class="n">server</span><span class="o">.</span><span class="n">scene</span><span class="o">.</span><span class="n">add_grid</span><span class="p">(</span>
-<span class="linenos">35</span>        <span class="s2">&quot;/grid&quot;</span><span class="p">,</span>
+<span class="linenos">35</span>        <span class="s2">"/grid"</span><span class="p">,</span>
 <span class="linenos">36</span>        <span class="n">width</span><span class="o">=</span><span class="mf">20.0</span><span class="p">,</span>
 <span class="linenos">37</span>        <span class="n">height</span><span class="o">=</span><span class="mf">20.0</span><span class="p">,</span>
 <span class="linenos">38</span>        <span class="n">position</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">]),</span>
@@ -503,7 +503,7 @@ python<span class="w"> </span>01_scene/02_meshes.py<span class="w">  </span><spa
 <span class="linenos">42</span>        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
 <span class="linenos">43</span>
 <span class="linenos">44</span>
-<span class="linenos">45</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">45</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 <span class="linenos">46</span>    <span class="n">main</span><span class="p">()</span>
 </pre></div>
 </div>
