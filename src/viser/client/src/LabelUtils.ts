@@ -13,6 +13,16 @@ export const LABEL_TEXT_COLOR = 0x000000; // Black
 export const LABEL_SDF_GLYPH_SIZE = 32;
 
 /**
+ * Draw order for label text. Strictly above Gaussian splats (10000, see
+ * GaussianSplats.tsx): labels are annotations, so their glyphs always
+ * composite over splats. With an equal renderOrder the tie falls to the
+ * projected-z comparison, which is meaningless for batched text (one mesh at
+ * the group origin) and historically landed in the labels' favor only by
+ * accident of the depth sort's direction.
+ */
+export const LABEL_TEXT_RENDER_ORDER = 10_001;
+
+/**
  * Shared configuration for label backgrounds.
  */
 export const LABEL_BACKGROUND_COLOR = 0xffffff; // White
@@ -43,7 +53,7 @@ export function setupBatchedTextMaterial(
     mat.needsUpdate = true;
   });
 
-  batchedText.renderOrder = 10_000;
+  batchedText.renderOrder = LABEL_TEXT_RENDER_ORDER;
   return true;
 }
 

@@ -7,6 +7,7 @@ import { Text as TroikaText, BatchedText } from "troika-three-text";
 import { BatchedLabelManagerContext } from "./BatchedLabelManagerContext";
 import { ViewerContext } from "./ViewerContext";
 import {
+  LABEL_TEXT_RENDER_ORDER,
   setupBatchedTextMaterial,
   calculateBillboardRotation,
   calculateBaseFontSize,
@@ -109,7 +110,7 @@ export const BatchedLabelManager: React.FC<{
       let targetBatch = batchedTextsRef.current.get(depthTest);
       if (!targetBatch) {
         targetBatch = new BatchedText();
-        targetBatch.renderOrder = 10_000;
+        targetBatch.renderOrder = LABEL_TEXT_RENDER_ORDER;
         batchedTextsRef.current.set(depthTest, targetBatch);
         group.add(targetBatch);
       }
