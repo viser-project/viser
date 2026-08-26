@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import copy
 import dataclasses
+import inspect
 import warnings
 from collections.abc import Coroutine
 from typing import (
@@ -1736,7 +1736,7 @@ def _phase_filtered_wrapper(
     ``on_drag_start`` / ``on_drag_end`` methods. Tagged so
     ``remove_*`` can locate it by the original ``func`` identity."""
 
-    if asyncio.iscoroutinefunction(func):
+    if inspect.iscoroutinefunction(func):
 
         async def async_wrapper(event: TransformControlsEvent) -> None:
             if event.phase == phase:

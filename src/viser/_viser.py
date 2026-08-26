@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import dataclasses
+import inspect
 import io
 import math
 import mimetypes
@@ -1235,7 +1236,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
                     await self._dispatch_client_callbacks(connect_cbs, client)
 
                 for camera_cb in client.camera._state.camera_cb:
-                    if asyncio.iscoroutinefunction(camera_cb):
+                    if inspect.iscoroutinefunction(camera_cb):
                         await camera_cb(client.camera)
                     else:
                         self._thread_executor.submit(
@@ -1642,7 +1643,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         awaited in order, sync callbacks on the thread pool, every callback
         exception-isolated so one failure cannot starve its siblings."""
         for cb in callbacks:
-            if asyncio.iscoroutinefunction(cb):
+            if inspect.iscoroutinefunction(cb):
                 try:
                     await cb(client)
                 except Exception as exc:
@@ -1690,7 +1691,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
         # This makes sure that the the callback is applied to any clients that
         # connect between the two lines.
         for client in clients:
-            if asyncio.iscoroutinefunction(cb):
+            if inspect.iscoroutinefunction(cb):
                 # run_coroutine_threadsafe, not create_task: registration
                 # typically happens on a user thread, and create_task is
                 # neither thread-safe nor guaranteed to wake the loop.

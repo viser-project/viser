@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import inspect
 import io
 import math
 import time
@@ -3262,7 +3263,7 @@ class SceneApi:
         branches (print_awaited_callback_error / print_threadpool_errors):
         one throwing callback must not starve its sibling callbacks or
         abort the caller (message dispatch, disconnect teardown)."""
-        if asyncio.iscoroutinefunction(cb):
+        if inspect.iscoroutinefunction(cb):
             try:
                 await cb(event)
             except Exception as exc:
@@ -3683,7 +3684,7 @@ class SceneApi:
         # isolated like every other callback path: one throwing cleanup
         # must not starve its siblings or leave the list uncleared.
         for cleanup in list(self._scene_pointer_done_cb):
-            if asyncio.iscoroutinefunction(cleanup):
+            if inspect.iscoroutinefunction(cleanup):
                 # run_coroutine_threadsafe, not create_task: callback removal
                 # can run on a user thread, and create_task is neither
                 # thread-safe nor guaranteed to wake the loop.

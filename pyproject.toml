@@ -93,6 +93,9 @@ viser-build-client = "viser._client_autobuild:build_client_entrypoint"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "error:.*asyncio\\.iscoroutinefunction.*:DeprecationWarning",
+]
 markers = [
     "e2e: end-to-end browser tests (require Playwright)",
 ]
