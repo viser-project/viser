@@ -32,7 +32,21 @@
  * three's flip lands on the intended order: `groupOrder` and `renderOrder`
  * ascending, with the same `z` handling three arrives at on its own.
  *
- * r186 fixes this properly -- https://github.com/mrdoob/three.js/pull/33945
+ * That only holds when three actually flips, which it decides per camera from
+ * `camera.reversedDepth`. That flag is initialized lazily, in `setProgram()` --
+ * which runs *after* `sort()`. A camera therefore renders its first frame with
+ * the flag still false, three skips the flip, and the pre-inverted comparators
+ * land un-flipped: `renderOrder` inverted. The live viewport camera is
+ * long-lived so it is only wrong for one frame, but `get_render()` builds a
+ * fresh `PerspectiveCamera` per request (see MessageHandler.tsx), so *every*
+ * capture would hit it.
+ *
+ * So we also prime each camera's flag before it reaches `sort()`, which is what
+ * three does for its own shadow cameras (`WebGLShadowMap` sets
+ * `shadow.camera._reversedDepth` directly, for the same reason). With the flag
+ * set up front, three always flips and the comparators are always valid.
+ *
+ * r186 fixes all of this properly -- https://github.com/mrdoob/three.js/pull/33945
  * negates the projected `z` in `projectObject()` instead of reversing the sorted
  * lists, so `renderOrder` and custom comparators keep working. r185 is the only
  * affected release, so this is gated on the revision and should be deleted
@@ -107,7 +121,28 @@ export function needsReversedDepthSortFix(
   return reversedDepthBuffer && revision === AFFECTED_REVISION;
 }
 
-/** Install the compensating comparators, if this three build needs them. */
+/**
+ * Mark a camera as rendering with a reversed depth buffer, before three's
+ * render list is sorted.
+ *
+ * This is the same assignment three makes lazily in `setProgram()`, and the
+ * same one `WebGLShadowMap` makes eagerly for shadow cameras. `_reversedDepth`
+ * is private (`reversedDepth` is a getter with no setter), so this is a cast.
+ */
+export function primeCamera(camera: THREE.Camera): void {
+  if (camera.reversedDepth === true) return;
+  (camera as THREE.Camera & { _reversedDepth: boolean })._reversedDepth = true;
+  // The projection matrix has to be rebuilt for the flag to take effect; three
+  // does this in the same breath.
+  if ("updateProjectionMatrix" in camera) {
+    (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
+  }
+}
+
+/**
+ * Install the compensating comparators and camera priming, if this three build
+ * needs them.
+ */
 export function applyReversedDepthSortFix(gl: THREE.WebGLRenderer): void {
   if (
     !needsReversedDepthSortFix(
@@ -119,4 +154,13 @@ export function applyReversedDepthSortFix(gl: THREE.WebGLRenderer): void {
   }
   gl.setOpaqueSort(reversedDepthOpaqueSort);
   gl.setTransparentSort(reversedDepthTransparentSort);
+
+  // Wrap `render` rather than priming individual cameras: the fresh camera
+  // get_render builds is not the only one we would have to remember, and a
+  // camera that reaches `sort()` unprimed silently inverts the whole scene.
+  const render = gl.render.bind(gl);
+  gl.render = (scene: THREE.Object3D, camera: THREE.Camera) => {
+    primeCamera(camera);
+    render(scene, camera);
+  };
 }

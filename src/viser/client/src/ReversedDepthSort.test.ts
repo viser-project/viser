@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
 import {
   needsReversedDepthSortFix,
+  primeCamera,
   reversedDepthOpaqueSort,
   reversedDepthTransparentSort,
 } from "./ReversedDepthSort";
@@ -117,5 +119,29 @@ describe("reversed-depth render list sorting", () => {
     expect(needsReversedDepthSortFix("185", false)).toBe(false);
     expect(needsReversedDepthSortFix("184", true)).toBe(false);
     expect(needsReversedDepthSortFix("186", true)).toBe(false);
+  });
+
+  it("primes a camera's reversedDepth flag before three would", () => {
+    // three only sets this lazily in setProgram(), which runs after sort().
+    // get_render builds a fresh camera per request, so without priming every
+    // capture sorts with the flag still false and lands un-flipped.
+    const camera = new THREE.PerspectiveCamera(50, 1.5, 0.1, 100);
+    expect(camera.reversedDepth).toBe(false);
+    const before = camera.projectionMatrix.elements.slice();
+
+    primeCamera(camera);
+
+    expect(camera.reversedDepth).toBe(true);
+    // The projection matrix has to be rebuilt for the flag to mean anything.
+    expect(Array.from(camera.projectionMatrix.elements)).not.toEqual(
+      Array.from(before),
+    );
+
+    // Idempotent: priming an already-primed camera is a no-op.
+    const after = camera.projectionMatrix.elements.slice();
+    primeCamera(camera);
+    expect(Array.from(camera.projectionMatrix.elements)).toEqual(
+      Array.from(after),
+    );
   });
 });
