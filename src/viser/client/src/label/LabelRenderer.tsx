@@ -10,6 +10,8 @@
  * Atlases exist per font-pixel bucket: a label's rasterization resolution is
  * derived from its own configuration (screen-space labels have a constant
  * on-screen size of 12 * fontScreenScale CSS px) and the device pixel ratio.
+ * Screen-space labels rasterize at their exact physical pixel size and render
+ * with a grid-snapped anchor, so atlas texels map 1:1 to screen pixels.
  *
  * Draw order follows ReversedDepthSort.ts / issue #767 conventions:
  * backgrounds (9999) below Gaussian splats (10000), glyphs (10001) above.
@@ -32,84 +34,104 @@ import {
   LabelRendererContext,
 } from "./LabelRendererContext";
 
-/** Reference viewport height for screen-space label sizing: labels keep a
- * constant pixel size relative to this height. */
-const REFERENCE_VIEWPORT_HEIGHT = 800;
+/** Screen-mode labels are calibrated to a 12 CSS px em at fontScreenScale 1;
+ * this matches the previous implementation's 0.3 * scale world units at 10
+ * units depth in an 800 px-tall viewport. */
+const SCREEN_EM_CSS_PX = 12;
 
-/** Base font size in world units, matching the previous implementation:
- * "screen" mode is calibrated at 0.3 * scale at 10 units depth. */
-function baseFontSize(config: LabelConfig): number {
-  return config.fontSizeMode === "screen"
-    ? 0.3 * config.fontScreenScale
-    : config.fontSceneHeight;
+/** Device pixel ratio used for label rasterization, capped so ultra-dense
+ * displays don't inflate atlas memory. */
+function labelDpr(): number {
+  return Math.min(
+    typeof window !== "undefined" ? (window.devicePixelRatio ?? 1) : 1,
+    3,
+  );
 }
 
-/** Atlas font-pixel bucket for a label, from data we already have: a
- * screen-mode label's on-screen em size is constant at
- * 12 * fontScreenScale CSS px (0.3 * scale * REFERENCE_VIEWPORT_HEIGHT / 2 /
- * 10); scene-mode labels have no intrinsic pixel size, so they use a
- * middle-of-the-road bucket. Scaled by devicePixelRatio and rounded up to a
- * power of two so a handful of atlases serve all labels. */
+/** A screen-mode label's on-screen em size in physical pixels. */
+function screenEmPx(config: LabelConfig): number {
+  return SCREEN_EM_CSS_PX * config.fontScreenScale * labelDpr();
+}
+
+/** Atlas font-pixel bucket for a label, from data we already have.
+ *
+ * Screen-mode labels rasterize at their *exact* on-screen pixel size (their
+ * em size is constant and known from the config), so atlas texels map 1:1 to
+ * screen pixels and text renders as crisply as DOM text; one atlas serves
+ * each distinct (fontScreenScale, devicePixelRatio) in the scene, which is
+ * one or two atlases in practice. Scene-mode labels have no intrinsic pixel
+ * size and use a middle-of-the-road bucket. */
 function fontPxBucket(config: LabelConfig): number {
-  const dpr = Math.min(
-    typeof window !== "undefined" ? (window.devicePixelRatio ?? 1) : 1,
-    2,
-  );
-  const nominalPx =
-    config.fontSizeMode === "screen" ? 12 * config.fontScreenScale * dpr : 64;
-  const clamped = Math.min(256, Math.max(16, nominalPx));
-  return 2 ** Math.ceil(Math.log2(clamped));
+  const nominalPx = config.fontSizeMode === "screen" ? screenEmPx(config) : 64;
+  return Math.min(256, Math.max(8, Math.round(nominalPx)));
+}
+
+/** Value of the aParams.y instance attribute: for scene-mode labels, world
+ * units per atlas px; for screen-mode labels, physical screen px per atlas px
+ * -- exactly 1 unless the bucket clamp bound, so glyph texels stay aligned
+ * with the pixel grid (the em is quantized to the nearest integer px, like
+ * DOM text, rather than resampled). */
+function atlasPxScale(config: LabelConfig, bucket: number): number {
+  if (config.fontSizeMode === "scene") return config.fontSceneHeight / bucket;
+  const nominalPx = screenEmPx(config);
+  return Math.round(nominalPx) === bucket ? 1.0 : nominalPx / bucket;
 }
 
 const VERTEX_SHADER = /* glsl */ `
 attribute float aLabelIndex;
 attribute vec4 aRect;   // (left, bottom, width, height), label-local Y-up atlas px.
 attribute vec4 aUvRect; // (u0, vTop, u1, vBottom).
-attribute vec2 aParams; // (sizeMode: 0 scene / 1 screen, world units per atlas px).
+attribute vec2 aParams; // (sizeMode: 0 scene / 1 screen, scale: see atlasPxScale).
 
 uniform sampler2D uLabelData; // 1 texel per label: (x, y, z, visibility).
 uniform float uLabelTexWidth;
-uniform float uFovScale;        // tan(fov / 2).
-uniform float uViewportHeight;  // px.
-uniform float uIsOrtho;
+uniform vec2 uViewportPhys; // Drawing buffer size, physical px.
 
 varying vec2 vUv;
 varying float vAlpha;
+varying float vScreenMode;
 
 void main() {
   vec4 data = texture2D(
     uLabelData, vec2((aLabelIndex + 0.5) / uLabelTexWidth, 0.5));
   vec3 labelPos = data.xyz;
-  float visibility = data.w;
-
-  float scale = aParams.y;
-  if (aParams.x > 0.5) {
-    // Screen-space sizing: constant pixel size (see
-    // calculateScreenSpaceScale in the previous implementation).
-    float refScale = ${REFERENCE_VIEWPORT_HEIGHT.toFixed(1)} / uViewportHeight;
-    if (uIsOrtho > 0.5) {
-      scale *= refScale;
-    } else {
-      float depth = -(viewMatrix * vec4(labelPos, 1.0)).z;
-      scale *= (depth / 10.0) * uFovScale * refScale;
-    }
-  }
-  // Collapse hidden labels to zero-area quads (no fragments).
-  scale *= visibility;
+  float visibility = data.w; // Hidden labels collapse to zero-area quads.
 
   vec2 corner = position.xy; // Unit quad, [0, 1]^2.
-  vec2 local = (aRect.xy + corner * aRect.zw) * scale;
+  vec4 clip = projectionMatrix * viewMatrix * vec4(labelPos, 1.0);
 
-  // Billboard: camera right/up axes from the view matrix.
-  vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
-  vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-  vec3 worldPos = labelPos + right * local.x + up * local.y;
+  if (aParams.x > 0.5) {
+    // Screen-space labels are laid out directly in physical pixels: the
+    // anchor snaps to the pixel grid and one atlas px maps to aParams.y
+    // (exactly 1 unless the atlas bucket clamp bound) physical px, so glyph
+    // texels align 1:1 with screen pixels. Orthographic projections keep the
+    // previous implementation's behavior of scaling labels with camera zoom:
+    // projection[1][1] is proportional to zoom, and the factor 10 calibrates
+    // to a 20-world-unit frustum height (the perspective path's reference
+    // depth of 10).
+    float orthoZoom =
+      projectionMatrix[3][3] > 0.5 ? projectionMatrix[1][1] * 10.0 : 1.0;
+    vec2 anchorPx =
+      floor((clip.xy / clip.w * 0.5 + 0.5) * uViewportPhys + 0.5);
+    vec2 offsetPx =
+      (aRect.xy + corner * aRect.zw) * (aParams.y * orthoZoom) * visibility;
+    vec2 ndc = (anchorPx + offsetPx) / uViewportPhys * 2.0 - 1.0;
+    gl_Position = vec4(ndc * clip.w, clip.z, clip.w);
+  } else {
+    // Scene-space labels billboard in world units: camera right/up axes come
+    // from the view matrix.
+    vec2 local = (aRect.xy + corner * aRect.zw) * (aParams.y * visibility);
+    vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    gl_Position = projectionMatrix * viewMatrix *
+      vec4(labelPos + right * local.x + up * local.y, 1.0);
+  }
 
-  gl_Position = projectionMatrix * viewMatrix * vec4(worldPos, 1.0);
   vUv = vec2(
     mix(aUvRect.x, aUvRect.z, corner.x),
     mix(aUvRect.w, aUvRect.y, corner.y));
   vAlpha = visibility;
+  vScreenMode = aParams.x;
 }
 `;
 
@@ -117,15 +139,18 @@ const GLYPH_FRAGMENT_SHADER = /* glsl */ `
 uniform sampler2D uAtlas;
 varying vec2 vUv;
 varying float vAlpha;
+varying float vScreenMode;
 
 void main() {
   float a = texture2D(uAtlas, vUv).a;
-  // Sharpen the coverage ramp using screen-space derivatives: this
-  // approximates SDF-style edge thresholding when the glyph is magnified or
-  // trilinear filtering softens it, and degrades to the plain antialiased
-  // coverage for small text (where the ramp already spans ~1 pixel).
+  // Scene-mode labels are sampled at arbitrary magnification, so sharpen the
+  // coverage ramp with screen-space derivatives (approximate SDF-style edge
+  // thresholding). Screen-mode labels sample atlas texels 1:1 with screen
+  // pixels; their coverage is already exact, and thresholding it would only
+  // distort stroke weight -- use it untouched.
   float w = max(fwidth(a), 1e-4);
-  a = clamp((a - 0.5) / min(w, 1.0) + 0.5, 0.0, 1.0);
+  float sharpened = clamp((a - 0.5) / min(w, 1.0) + 0.5, 0.0, 1.0);
+  a = mix(sharpened, a, step(0.5, vScreenMode));
   a *= vAlpha;
   if (a < 0.004) discard;
   gl_FragColor = vec4(0.0, 0.0, 0.0, a);
@@ -135,6 +160,7 @@ void main() {
 const BACKGROUND_FRAGMENT_SHADER = /* glsl */ `
 varying vec2 vUv;
 varying float vAlpha;
+varying float vScreenMode;
 
 void main() {
   gl_FragColor = vec4(1.0, 1.0, 1.0, 0.85 * vAlpha);
@@ -200,9 +226,7 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
     const sharedUniforms = {
       uLabelData: { value: labelTexture },
       uLabelTexWidth: { value: MAX_LABELS },
-      uFovScale: { value: 1.0 },
-      uViewportHeight: { value: REFERENCE_VIEWPORT_HEIGHT },
-      uIsOrtho: { value: 0.0 },
+      uViewportPhys: { value: new THREE.Vector2(1, 1) },
     };
 
     const quad = makeQuadGeometry();
@@ -364,7 +388,7 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           configs.push({
             text: entry.config.text,
             sizeMode: entry.config.fontSizeMode,
-            scalePxToUnit: baseFontSize(entry.config) / bucket,
+            scalePxToUnit: atlasPxScale(entry.config, bucket),
             ...parseAnchor(entry.config.anchor),
             labelIndex: entry.labelIndex,
           });
@@ -488,18 +512,28 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
 
   const tempPosition = React.useMemo(() => new THREE.Vector3(), []);
 
-  useFrame(({ camera, size }) => {
+  const lastDpr = React.useRef(labelDpr());
+
+  useFrame(({ gl }) => {
+    // A device-pixel-ratio change (browser zoom, moving the window between
+    // monitors) changes every screen-mode label's rasterization size; re-key
+    // all entries so they migrate to matching atlases and stay 1:1.
+    const dpr = labelDpr();
+    if (dpr !== lastDpr.current) {
+      lastDpr.current = dpr;
+      state.entries.forEach((entry) => {
+        state.dirtyGroups.add(entry.groupKey);
+        entry.groupKey = groupKey(entry.config);
+        state.dirtyGroups.add(entry.groupKey);
+      });
+    }
+
     // Rebuild groups whose labels were added/removed/changed. Atlas growth
     // (stale UVs) is handled inside the rebuild.
     if (state.dirtyGroups.size > 0) rebuildDirtyGroups();
 
-    // Camera uniforms for screen-space sizing.
-    const isPerspective = "fov" in camera && typeof camera.fov === "number";
-    state.sharedUniforms.uFovScale.value = isPerspective
-      ? Math.tan(((camera as THREE.PerspectiveCamera).fov * Math.PI) / 360)
-      : 1.0;
-    state.sharedUniforms.uIsOrtho.value = isPerspective ? 0.0 : 1.0;
-    state.sharedUniforms.uViewportHeight.value = size.height;
+    // Screen-space label placement works in physical pixels.
+    gl.getDrawingBufferSize(state.sharedUniforms.uViewportPhys.value);
 
     // Per-label: world position + visibility into the data texture.
     state.entries.forEach((entry) => {

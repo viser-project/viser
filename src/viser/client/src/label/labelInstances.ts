@@ -74,8 +74,16 @@ export function buildInstanceBuffers(
       const cell = getCell(glyph.cluster);
       // Pen position in label-local Y-up px: x from block-left, baseline
       // measured down from the block top (layout.offsetY = top edge, Y-up).
-      const penX = layout.offsetX + glyph.x;
-      const penY = layout.offsetY - glyph.baselineY;
+      // Screen-mode pens round to integers: their quads render at 1 atlas px
+      // per physical px with a grid-snapped anchor (see LabelRenderer's
+      // vertex shader), so integer pens keep every glyph texel-aligned. The
+      // <=0.5 px spacing error is invisible; misaligned texels blur.
+      let penX = layout.offsetX + glyph.x;
+      let penY = layout.offsetY - glyph.baselineY;
+      if (entry.sizeMode === "screen") {
+        penX = Math.round(penX);
+        penY = Math.round(penY);
+      }
       const left = penX - cell.penToLeft;
       const top = penY + cell.penToTop;
       glyphs.push({
