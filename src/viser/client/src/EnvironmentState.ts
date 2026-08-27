@@ -5,7 +5,10 @@ import { EnvironmentMapMessage, FogMessage } from "./WebsocketMessages";
 export type EnvironmentState = {
   enableDefaultLights: boolean;
   enableDefaultLightsShadows: boolean;
-  environmentMap: EnvironmentMapMessage;
+  /** Server-configured environment map. `null` means the server hasn't
+   * configured one, in which case the client shows its built-in default
+   * ("city"); a message with `hdri_data: null` disables the map entirely. */
+  environmentMap: EnvironmentMapMessage | null;
   fog: FogMessage;
 };
 
@@ -16,16 +19,7 @@ export function defaultEnvironmentState(): EnvironmentState {
   return {
     enableDefaultLights: true,
     enableDefaultLightsShadows: true,
-    environmentMap: {
-      type: "EnvironmentMapMessage",
-      hdri: "city",
-      background: false,
-      background_blurriness: 0,
-      background_intensity: 1.0,
-      background_wxyz: [1, 0, 0, 0],
-      environment_intensity: 1.0,
-      environment_wxyz: [1, 0, 0, 0],
-    },
+    environmentMap: null,
     fog: {
       type: "FogMessage",
       near: 10.0,
