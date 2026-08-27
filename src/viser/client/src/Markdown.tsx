@@ -163,9 +163,9 @@ const components: Components = {
 /**
  * Renders markdown on the client with GFM support. Unlike the previous
  * MDX-based implementation, markdown is parsed rather than compiled and
- * evaluated: server-sent content can no longer execute arbitrary JavaScript.
- * Raw HTML tags in the markdown are still rendered (via rehype-raw), so
- * content should still come from a trusted server.
+ * evaluated as code. Raw HTML in the markdown is still rendered without
+ * sanitization (via rehype-raw) -- script tags included -- so content must
+ * come from a trusted server, exactly as before.
  */
 export default function Markdown(props: { children?: string }) {
   return (

@@ -71,14 +71,14 @@ import { applyReversedDepthSortFix } from "./ReversedDepthSort";
 // Import logo as asset for proper bundling/inlining.
 import logoSvg from "./assets/logo.svg";
 
-// The client only embeds the default environment map ("city", shown before
-// the server configures anything, and only ever used for lighting -- the
-// background flag can only come from a server message, which carries its own
-// full-resolution bytes). All presets are read from disk by the Python server
-// (src/viser/_assets/hdri/) and arrive as bytes in EnvironmentMapMessage.
-// This embedded copy is a 384x192 re-encode of the "city" preset's HDR JPEG
-// (gainmap): plenty for image-based lighting at a third of the size.
-import defaultHdriUrl from "./assets/potsdamer_platz_384.jpg";
+// The client only embeds one environment map: the default shown before the
+// server configures anything, used purely for lighting (the background flag
+// can only come from a server message, and every server-configured preset --
+// "city" included -- arrives as bytes in EnvironmentMapMessage). The asset
+// is imported from the Python package's preset directory so there's a single
+// copy in the repository; _client_autobuild.py treats that directory as a
+// build input. HDR JPEG (gainmap) format: ~10x smaller than traditional HDR.
+import defaultHdriUrl from "../../_assets/hdri/potsdamer_platz_1k.jpg";
 
 // ======= Utility functions =======
 
@@ -935,7 +935,9 @@ function DefaultLights() {
     };
     const source =
       environmentMap === null ? defaultHdriUrl : environmentMap.hdri_data;
-    if (source === null) return null;
+    // == also catches undefined: recordings from before hdri_data existed
+    // deserialize without the field, and must not reach the JPEG loader.
+    if (source == null) return null;
 
     // Calculate quaternions for world transformation.
     const Rquat_threeworld_world = new THREE.Quaternion(

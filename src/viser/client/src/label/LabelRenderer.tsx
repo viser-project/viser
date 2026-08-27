@@ -20,7 +20,11 @@ import * as THREE from "three";
 import { ViewerContext } from "../ViewerContext";
 import { GlyphAtlas } from "./GlyphAtlas";
 import { parseAnchor } from "./labelLayout";
-import { buildInstanceBuffers, LabelEntryConfig } from "./labelInstances";
+import {
+  buildInstanceBuffers,
+  InstanceBuffers,
+  LabelEntryConfig,
+} from "./labelInstances";
 
 import {
   LabelConfig,
@@ -150,6 +154,20 @@ interface LabelEntry {
   config: LabelConfig;
   labelIndex: number;
   parentName: string;
+  /** Rebuild group this entry currently belongs to (see groupKey). */
+  groupKey: string;
+}
+
+/** Labels are rebuilt in groups of one glyph mesh each: a (depth test, atlas
+ * bucket) pair. Tracking dirtiness per group keeps a single label update from
+ * re-laying-out every label in the scene. */
+function groupKey(config: LabelConfig): string {
+  return `${config.depthTest}-${fontPxBucket(config)}`;
+}
+
+function parseGroupKey(key: string): { depthTest: boolean; bucket: number } {
+  const [depthTest, bucket] = key.split("-");
+  return { depthTest: depthTest === "true", bucket: Number(bucket) };
 }
 
 /** Unit quad geometry with corners in [0, 1]^2 shared by all label meshes. */
@@ -215,7 +233,6 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
 
     return {
       atlases: new Map<number, GlyphAtlas>(),
-      atlasGenerations: new Map<number, number>(),
       labelData,
       labelTexture,
       sharedUniforms,
@@ -226,7 +243,11 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       entries: new Map<symbol, LabelEntry>(),
       freeIndices: [] as number[],
       nextIndex: 0,
-      buffersDirty: false,
+      /** Groups whose instance buffers need rebuilding. */
+      dirtyGroups: new Set<string>(),
+      /** Last-built buffers per group; background meshes concatenate these,
+       * so clean groups don't need re-layout when a sibling group changes. */
+      groupBuffers: new Map<string, InstanceBuffers>(),
     };
   }, []);
 
@@ -236,7 +257,6 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       if (!atlas) {
         atlas = new GlyphAtlas(fontPx);
         state.atlases.set(fontPx, atlas);
-        state.atlasGenerations.set(fontPx, atlas.generation);
       }
       return atlas;
     },
@@ -274,8 +294,8 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
     [state, getAtlas],
   );
 
-  // Rebuild the static instance buffers.
-  const rebuildBuffers = React.useCallback(() => {
+  // Rebuild the instance buffers of every dirty group.
+  const rebuildDirtyGroups = React.useCallback(() => {
     // Each rebuild swaps in a freshly created geometry rather than replacing
     // attributes in place: a once-rendered InstancedBufferGeometry can keep
     // drawing from its original VAO after setAttribute, so in-place updates
@@ -313,55 +333,50 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       mesh.geometry = geometry;
     };
 
-    for (const depthTest of [true, false]) {
-      // Group this depth-test setting's labels by atlas bucket.
-      const byBucket = new Map<number, LabelEntryConfig[]>();
-      state.entries.forEach((entry) => {
-        if (entry.config.depthTest !== depthTest) return;
-        const bucket = fontPxBucket(entry.config);
-        let list = byBucket.get(bucket);
-        if (!list) {
-          list = [];
-          byBucket.set(bucket, list);
-        }
-        list.push({
-          text: entry.config.text,
-          sizeMode: entry.config.fontSizeMode,
-          scalePxToUnit: baseFontSize(entry.config) / bucket,
-          ...parseAnchor(entry.config.anchor),
-          labelIndex: entry.labelIndex,
+    // Building glyph cells can grow an atlas, which invalidates every UV
+    // previously built from it -- including groups built earlier in this very
+    // call, or groups that weren't dirty at all. Snapshot generations, build,
+    // and re-mark everything an atlas resize touched; the attempt cap turns a
+    // scene whose glyphs cannot fit even a maximum-size atlas into a rendering
+    // artifact instead of an infinite loop.
+    const MAX_ATTEMPTS = 4;
+    const touchedDepthTests = new Set<boolean>();
+    for (let attempt = 0; state.dirtyGroups.size > 0; attempt++) {
+      if (attempt >= MAX_ATTEMPTS) {
+        console.warn(
+          "[LabelRenderer] Glyph atlas kept overflowing; some labels may render incorrectly.",
+        );
+        state.dirtyGroups.clear();
+        break;
+      }
+      const groups = [...state.dirtyGroups];
+      state.dirtyGroups.clear();
+      const generationsBefore = new Map(
+        [...state.atlases].map(([bucket, atlas]) => [bucket, atlas.generation]),
+      );
+
+      for (const key of groups) {
+        const { depthTest, bucket } = parseGroupKey(key);
+        touchedDepthTests.add(depthTest);
+        const configs: LabelEntryConfig[] = [];
+        state.entries.forEach((entry) => {
+          if (entry.groupKey !== key) return;
+          configs.push({
+            text: entry.config.text,
+            sizeMode: entry.config.fontSizeMode,
+            scalePxToUnit: baseFontSize(entry.config) / bucket,
+            ...parseAnchor(entry.config.anchor),
+            labelIndex: entry.labelIndex,
+          });
         });
-      });
-
-      // Backgrounds accumulate across buckets into one mesh per depth test.
-      const bgLabelIndex: number[] = [];
-      const bgRect: number[] = [];
-      const bgParams: number[] = [];
-
-      // Every existing bucket mesh gets refreshed (emptied if unused).
-      const buckets = new Set<number>(byBucket.keys());
-      state.glyphMeshes.forEach((_, key) => {
-        if (key.startsWith(`${depthTest}-`)) {
-          buckets.add(Number(key.slice(`${depthTest}-`.length)));
-        }
-      });
-
-      for (const bucket of buckets) {
-        const configs = byBucket.get(bucket) ?? [];
         const atlas = getAtlas(bucket);
-        // The atlas can grow (invalidating cells) while cells are fetched;
-        // retry until the generation is stable.
-        let buffers;
-        for (;;) {
-          const generationBefore = atlas.generation;
-          buffers = buildInstanceBuffers(
-            configs,
-            (text) => atlas.measure(text),
-            (cluster) => atlas.getCell(cluster),
-            { ascent: atlas.ascent, descent: atlas.descent },
-          );
-          if (atlas.generation === generationBefore) break;
-        }
+        const buffers = buildInstanceBuffers(
+          configs,
+          (text) => atlas.measure(text),
+          (cluster) => atlas.getCell(cluster),
+          { ascent: atlas.ascent, descent: atlas.descent },
+        );
+        state.groupBuffers.set(key, buffers);
         swapGeometry(
           getGlyphMesh(depthTest, bucket),
           buffers.glyphLabelIndex,
@@ -370,12 +385,28 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           buffers.glyphUv,
           buffers.glyphCount,
         );
+      }
+
+      state.atlases.forEach((atlas, bucket) => {
+        if (generationsBefore.get(bucket) === atlas.generation) return;
+        for (const key of state.groupBuffers.keys()) {
+          if (parseGroupKey(key).bucket === bucket) state.dirtyGroups.add(key);
+        }
+      });
+    }
+
+    // Backgrounds live in one mesh per depth-test setting; reassemble them
+    // from the cached per-group buffers.
+    for (const depthTest of touchedDepthTests) {
+      const bgLabelIndex: number[] = [];
+      const bgRect: number[] = [];
+      const bgParams: number[] = [];
+      state.groupBuffers.forEach((buffers, key) => {
+        if (parseGroupKey(key).depthTest !== depthTest) return;
         bgLabelIndex.push(...buffers.bgLabelIndex);
         bgRect.push(...buffers.bgRect);
         bgParams.push(...buffers.bgParams);
-        state.atlasGenerations.set(bucket, atlas.generation);
-      }
-
+      });
       swapGeometry(
         state.bgMeshes.get(depthTest)!,
         new Float32Array(bgLabelIndex),
@@ -385,7 +416,6 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
         bgLabelIndex.length,
       );
     }
-    state.buffersDirty = false;
   }, [state, getAtlas, getGlyphMesh]);
 
   const register = React.useCallback(
@@ -400,20 +430,26 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
         return { update: () => {}, dispose: () => {} };
       }
       const key = Symbol();
+      const entryGroup = groupKey(config);
       state.entries.set(key, {
         config,
         labelIndex,
         parentName: config.name.split("/").slice(0, -1).join("/"),
+        groupKey: entryGroup,
       });
-      state.buffersDirty = true;
+      state.dirtyGroups.add(entryGroup);
 
       return {
         update: (newConfig: LabelConfig) => {
           const entry = state.entries.get(key);
           if (!entry) return;
+          // Config changes can move the label between groups (depth test or
+          // bucket changed); both the old and new group need rebuilding.
+          state.dirtyGroups.add(entry.groupKey);
           entry.config = newConfig;
           entry.parentName = newConfig.name.split("/").slice(0, -1).join("/");
-          state.buffersDirty = true;
+          entry.groupKey = groupKey(newConfig);
+          state.dirtyGroups.add(entry.groupKey);
         },
         dispose: () => {
           const entry = state.entries.get(key);
@@ -426,7 +462,7 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
             entry.labelIndex * 4,
             entry.labelIndex * 4 + 4,
           );
-          state.buffersDirty = true;
+          state.dirtyGroups.add(entry.groupKey);
         },
       };
     },
@@ -453,14 +489,9 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
   const tempPosition = React.useMemo(() => new THREE.Vector3(), []);
 
   useFrame(({ camera, size }) => {
-    // Rebuild static buffers if labels were added/removed/changed, or if an
-    // atlas grew since the last build (stale UVs).
-    let atlasesStale = false;
-    state.atlases.forEach((atlas, fontPx) => {
-      if (state.atlasGenerations.get(fontPx) !== atlas.generation)
-        atlasesStale = true;
-    });
-    if (state.buffersDirty || atlasesStale) rebuildBuffers();
+    // Rebuild groups whose labels were added/removed/changed. Atlas growth
+    // (stale UVs) is handled inside the rebuild.
+    if (state.dirtyGroups.size > 0) rebuildDirtyGroups();
 
     // Camera uniforms for screen-space sizing.
     const isPerspective = "fov" in camera && typeof camera.fov === "number";

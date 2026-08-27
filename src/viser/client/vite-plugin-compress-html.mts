@@ -266,11 +266,15 @@ export function compressHtml(): Plugin {
           const scriptMatch = html.match(
             /<script type="module" crossorigin>([\s\S]*?)<\/script>/,
           );
-          if (!styleMatch && !scriptMatch) {
-            console.log(
-              "[compress-html] No inline style or script found, skipping compression",
+          if (!styleMatch || !scriptMatch) {
+            // Hard failure, not a skip: the app's zstd support depends on
+            // this plugin's loader publishing the WASM module (src/zstd.ts),
+            // so silently emitting an unprocessed build would produce a
+            // client that connects but can never decode messages.
+            throw new Error(
+              "[compress-html] Could not find the inline style/script to " +
+                "compress; did vite-plugin-singlefile's output format change?",
             );
-            continue;
           }
 
           let styleText = styleMatch ? styleMatch[1] : "";

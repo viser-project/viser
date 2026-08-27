@@ -1,4 +1,5 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from "vite";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { vanillaExtractPlugin } from "@vanilla-extract/vite-plugin";
 
@@ -13,7 +14,7 @@ import { compressHtml } from "./vite-plugin-compress-html.mts";
 // compressed build). viser registers the classes it actually renders in
 // src/r3f-extend.ts instead, so production builds patch the call out. The
 // dev server keeps the automatic catalogue (its prebundled deps skip this
-// transform); src/r3f-extend.test.ts pins the pattern below so a fiber
+// transform); src/threeCatalogue.test.ts pins the pattern below so a fiber
 // upgrade that changes it fails loudly instead of silently regrowing the
 // bundle.
 function fiberNoAutoExtend(): Plugin {
@@ -48,6 +49,15 @@ export default defineConfig(({ command }) => {
     server: {
       port: 3000,
       hmr: { port: 1025 },
+      fs: {
+        // The default env map is imported from the Python package's HDRI
+        // preset directory (single copy in the repo), which sits outside the
+        // client root; allow the dev server to serve it.
+        allow: [
+          searchForWorkspaceRoot(process.cwd()),
+          fileURLToPath(new URL("../_assets", import.meta.url)),
+        ],
+      },
     },
     build: {
       outDir: "build",

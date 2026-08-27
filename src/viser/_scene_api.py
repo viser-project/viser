@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import functools
 import inspect
 import io
 import math
@@ -123,6 +124,14 @@ _HDRI_FILENAMES = {
     "sunset": "venice_sunset_1k.jpg",
     "warehouse": "empty_warehouse_01_1k.jpg",
 }
+
+
+@functools.lru_cache(maxsize=None)
+def _read_hdri_preset(hdri: str) -> bytes:
+    """Read a preset's HDR JPEG bytes, cached across calls."""
+    return (
+        Path(__file__).absolute().parent / "_assets" / "hdri" / _HDRI_FILENAMES[hdri]
+    ).read_bytes()
 
 
 def _modifier_matches_filter(
@@ -937,6 +946,11 @@ class SceneApi:
     ) -> None:
         """Configure the environment map for the scene. This will set some lights and background.
 
+        Each call sends the preset's HDR JPEG (roughly 30-130 KB) to
+        connected clients, since the client no longer embeds the presets. To
+        animate the scalar parameters (intensities, orientations), prefer
+        infrequent updates or accept the per-call payload cost.
+
         Args:
             hdri: Preset HDRI environment to use.
             background: Show or hide the environment map in the background.
@@ -946,16 +960,7 @@ class SceneApi:
             environment_intensity: Intensity of the environment lighting.
             environment_wxyz: Orientation of the environment lighting.
         """
-        if hdri is None:
-            hdri_data = None
-        else:
-            hdri_path = (
-                Path(__file__).absolute().parent
-                / "_assets"
-                / "hdri"
-                / _HDRI_FILENAMES[hdri]
-            )
-            hdri_data = hdri_path.read_bytes()
+        hdri_data = None if hdri is None else _read_hdri_preset(hdri)
         self._websock_interface.queue_message(
             _messages.EnvironmentMapMessage(
                 hdri_data=hdri_data,
