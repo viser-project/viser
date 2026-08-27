@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { vanillaExtractPlugin } from "@vanilla-extract/vite-plugin";
 
@@ -27,6 +28,15 @@ export default defineConfig(({ command }) => {
     server: {
       port: 3000,
       hmr: { port: 1025 },
+      fs: {
+        // The default env map is imported from the Python package's HDRI
+        // preset directory (single copy in the repo), which sits outside the
+        // client root; allow the dev server to serve it.
+        allow: [
+          searchForWorkspaceRoot(process.cwd()),
+          fileURLToPath(new URL("../_assets", import.meta.url)),
+        ],
+      },
     },
     build: {
       outDir: "build",

@@ -2,13 +2,13 @@ import * as THREE from "three";
 // @ts-ignore - troika-three-text doesn't have type definitions
 import { BatchedText } from "troika-three-text";
 
-// Import font as asset for proper bundling.
-import interFont from "./assets/Inter-VariableFont_slnt,wght.ttf";
+// Shared font asset; also registers the DOM @font-face (see fonts.ts).
+import { interFontUrl } from "./fonts";
 
 /**
  * Shared configuration for label text styling.
  */
-export const LABEL_FONT = interFont;
+export const LABEL_FONT = interFontUrl;
 export const LABEL_TEXT_COLOR = 0x000000; // Black
 export const LABEL_SDF_GLYPH_SIZE = 32;
 

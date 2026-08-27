@@ -872,23 +872,14 @@ class FogMessage(Message, include_in_scene_serialization=True):
 
 @dataclasses.dataclass
 class EnvironmentMapMessage(Message, include_in_scene_serialization=True):
-    """Environment Map message."""
+    """Environment Map message.
 
-    hdri: Union[
-        Literal[
-            "apartment",
-            "city",
-            "dawn",
-            "forest",
-            "lobby",
-            "night",
-            "park",
-            "studio",
-            "sunset",
-            "warehouse",
-        ],
-        None,
-    ]
+    The environment map is sent as HDR JPEG (gainmap) bytes instead of a
+    preset name so the client doesn't need to embed every preset in its
+    bundle; the server reads the preset image from disk.
+    """
+
+    hdri_data: Optional[bytes]
     background: bool
     background_blurriness: float
     background_intensity: float

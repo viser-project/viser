@@ -2,7 +2,10 @@ import React, { useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { createBackToFrontRadixSort } from "./backToFrontRadixSort";
-import { MeshoptSimplifier } from "meshoptimizer";
+// Import the simplifier entry point directly: the package root re-exports the
+// decoder/encoder/clusterizer too, and their embedded WASM blobs would all be
+// pulled into the bundle even though only the simplifier is used.
+import { MeshoptSimplifier } from "meshoptimizer/simplifier";
 import { BatchedMeshHoverOutlines } from "./BatchedMeshHoverOutlines";
 import { useThree } from "@react-three/fiber";
 

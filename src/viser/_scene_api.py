@@ -10,6 +10,7 @@ import warnings
 from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -104,6 +105,24 @@ class _PointerCallbackEntry:
     event_type: _messages.ScenePointerEventType
     modifier: _messages.KeyModifier | None
     event_class: type
+
+
+# HDR JPEG (gainmap format) environment map presets, shipped with the Python
+# package and sent to the client over the websocket. Keeping them out of the
+# client bundle keeps the built client small; the client only embeds the
+# default ("city") preset.
+_HDRI_FILENAMES = {
+    "apartment": "lebombo_1k.jpg",
+    "city": "potsdamer_platz_1k.jpg",
+    "dawn": "kiara_1_dawn_1k.jpg",
+    "forest": "forest_slope_1k.jpg",
+    "lobby": "st_fagans_interior_1k.jpg",
+    "night": "dikhololo_night_1k.jpg",
+    "park": "rooitou_park_1k.jpg",
+    "studio": "studio_small_03_1k.jpg",
+    "sunset": "venice_sunset_1k.jpg",
+    "warehouse": "empty_warehouse_01_1k.jpg",
+}
 
 
 def _modifier_matches_filter(
@@ -927,9 +946,19 @@ class SceneApi:
             environment_intensity: Intensity of the environment lighting.
             environment_wxyz: Orientation of the environment lighting.
         """
+        if hdri is None:
+            hdri_data = None
+        else:
+            hdri_path = (
+                Path(__file__).absolute().parent
+                / "_assets"
+                / "hdri"
+                / _HDRI_FILENAMES[hdri]
+            )
+            hdri_data = hdri_path.read_bytes()
         self._websock_interface.queue_message(
             _messages.EnvironmentMapMessage(
-                hdri=hdri,
+                hdri_data=hdri_data,
                 background=background,
                 background_blurriness=background_blurriness,
                 background_intensity=background_intensity,
