@@ -115,7 +115,14 @@ varying vec2 vUv;
 varying float vAlpha;
 
 void main() {
-  float a = texture2D(uAtlas, vUv).a * vAlpha;
+  float a = texture2D(uAtlas, vUv).a;
+  // Sharpen the coverage ramp using screen-space derivatives: this
+  // approximates SDF-style edge thresholding when the glyph is magnified or
+  // trilinear filtering softens it, and degrades to the plain antialiased
+  // coverage for small text (where the ramp already spans ~1 pixel).
+  float w = max(fwidth(a), 1e-4);
+  a = clamp((a - 0.5) / min(w, 1.0) + 0.5, 0.0, 1.0);
+  a *= vAlpha;
   if (a < 0.004) discard;
   gl_FragColor = vec4(0.0, 0.0, 0.0, a);
 }
