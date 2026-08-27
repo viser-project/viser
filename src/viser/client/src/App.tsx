@@ -3,7 +3,6 @@ import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "./App.css";
 import "./index.css";
-import "./fonts";
 
 import { useInView } from "react-intersection-observer";
 import { Notifications } from "@mantine/notifications";
@@ -63,7 +62,7 @@ import { BrowserWarning } from "./BrowserWarning";
 import { MacWindowWrapper } from "./MacWindowWrapper";
 import { CascadedDirectionalLight } from "./CascadedDirectionalLight";
 import { VISER_VERSION, GITHUB_CONTRIBUTORS, Contributor } from "./VersionInfo";
-import { BatchedLabelManager } from "./BatchedLabelManager";
+import { LabelRenderer } from "./label/LabelRenderer";
 import { applyReversedDepthSortFix } from "./ReversedDepthSort";
 
 // Import logo as asset for proper bundling/inlining.
@@ -761,11 +760,11 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         <SplatRenderContext>
           <AdaptiveDpr />
           {children}
-          <BatchedLabelManager>
+          <LabelRenderer>
             <DragLayer>
               <SceneNodeThreeObject name="" />
             </DragLayer>
-          </BatchedLabelManager>
+          </LabelRenderer>
         </SplatRenderContext>
         <DefaultLights />
         <SceneFog />
