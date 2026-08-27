@@ -1,8 +1,8 @@
 import React from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
 import rehypeColorChips from "rehype-color-chips";
+import { rehypeRawDom } from "./rehypeRawDom";
 import {
   Anchor,
   Blockquote,
@@ -164,14 +164,14 @@ const components: Components = {
  * Renders markdown on the client with GFM support. Unlike the previous
  * MDX-based implementation, markdown is parsed rather than compiled and
  * evaluated as code. Raw HTML in the markdown is still rendered without
- * sanitization (via rehype-raw) -- script tags included -- so content must
+ * sanitization (via rehypeRawDom) -- script tags included -- so content must
  * come from a trusted server, exactly as before.
  */
 export default function Markdown(props: { children?: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw, rehypeCodeblock, rehypeColorChips]}
+      rehypePlugins={[rehypeRawDom, rehypeCodeblock, rehypeColorChips]}
       components={components}
     >
       {props.children ?? ""}
