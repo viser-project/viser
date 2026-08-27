@@ -13,11 +13,12 @@ import { BatchedMeshHoverOutlines } from "./mesh/BatchedMeshHoverOutlines";
 import { MeshBasicMaterial } from "three";
 import { normalizeScale } from "./utils/normalizeScale";
 import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
-// @ts-ignore - troika-three-text doesn't have type definitions
-import { Text as TroikaText } from "troika-three-text";
-import { BatchedLabelManagerContext } from "./BatchedLabelManagerContext";
 import { ViewerContext } from "./ViewerContext";
-import { calculateBaseFontSize, LABEL_FONT } from "./LabelUtils";
+import {
+  LabelRendererContext,
+  LabelConfig,
+  LabelHandle,
+} from "./label/LabelRendererContext";
 
 const originGeom = new THREE.SphereGeometry(1.0);
 
@@ -548,121 +549,51 @@ export const ViserImage = React.forwardRef<
   );
 });
 
-/**
- * Convert label anchor to Troika anchorX and anchorY values.
- */
-function labelAnchorToTroikaAnchors(anchor: string): {
-  anchorX: "left" | "center" | "right";
-  anchorY: "top" | "middle" | "bottom";
-} {
-  const [vertical, horizontal] = anchor.split("-");
-  const anchorY =
-    vertical === "top" ? "top" : vertical === "bottom" ? "bottom" : "middle";
-  const anchorX =
-    horizontal === "left"
-      ? "left"
-      : horizontal === "right"
-        ? "right"
-        : "center";
-  return { anchorX, anchorY };
-}
-
 export const ViserLabel = React.forwardRef<
   THREE.Group,
   LabelMessage & { children?: React.ReactNode }
 >(function ViserLabel({ children, ...message }, ref) {
   const viewer = React.useContext(ViewerContext)!;
   const groupRef = React.useRef<THREE.Group>(null!);
-  const textRef = React.useRef<TroikaText>(null!);
+  const handleRef = React.useRef<LabelHandle | null>(null);
 
-  const manager = React.useContext(BatchedLabelManagerContext);
-  if (!manager) {
-    throw new Error(
-      "ViserLabel must be used within BatchedLabelManager context",
-    );
+  const renderer = React.useContext(LabelRendererContext);
+  if (!renderer) {
+    throw new Error("ViserLabel must be used within LabelRenderer context");
   }
 
-  // Convert anchor to Troika format.
-  const { anchorX, anchorY } = labelAnchorToTroikaAnchors(message.props.anchor);
+  const config: LabelConfig = {
+    name: message.name,
+    text: message.props.text,
+    depthTest: message.props.depth_test,
+    fontSizeMode: message.props.font_size_mode,
+    fontScreenScale: message.props.font_screen_scale,
+    fontSceneHeight: message.props.font_scene_height,
+    anchor: message.props.anchor,
+  };
 
-  // Calculate base font size (used for initial setup).
-  const baseFontSize = calculateBaseFontSize(
-    message.props.font_size_mode,
-    message.props.font_screen_scale,
-    message.props.font_scene_height,
-  );
-
-  // Create text once on mount and register with global manager.
+  // Register once on mount; update in place on prop changes.
   React.useEffect(() => {
-    const text = new TroikaText();
-    text.text = message.props.text;
-    text.font = LABEL_FONT;
-    text.fontSize = baseFontSize;
-    text.color = 0x000000; // Black.
-    text.anchorX = anchorX;
-    text.anchorY = anchorY;
-
-    // Lower SDF resolution for better performance with many labels.
-    // Default is 64, lower values = lower quality but faster rendering.
-    text.sdfGlyphSize = 32;
-
-    // Position is always (0, 0, 0) in local space - parent transform handles wxyz/position.
-    text.position.set(0, 0, 0);
-
-    // Don't sync here - registerText will sync the BatchedText after adding.
-    textRef.current = text;
-    // Register with global manager, passing font parameters and anchor info.
-    manager.registerText(
-      text,
-      message.name,
-      message.props.depth_test,
-      message.props.font_size_mode,
-      message.props.font_screen_scale,
-      message.props.font_scene_height,
-      anchorX,
-      anchorY,
-    );
-
+    handleRef.current = renderer.register(config);
     return () => {
-      manager.unregisterText(text);
-      text.dispose();
+      handleRef.current?.dispose();
+      handleRef.current = null;
     };
   }, []);
 
-  // Update text content when it changes.
   React.useEffect(() => {
-    if (textRef.current) {
-      textRef.current.text = message.props.text;
-      // Don't call text.sync() - let the BatchedText handle it via manager.syncText().
-      manager.syncText(textRef.current);
-    }
-  }, [message.props.text, manager]);
-
-  // Update text properties when they change.
-  // Use updateText() which is much more efficient than unregister/register.
-  React.useEffect(() => {
-    if (textRef.current) {
-      manager.updateText(
-        textRef.current,
-        message.props.depth_test,
-        message.props.font_size_mode,
-        message.props.font_screen_scale,
-        message.props.font_scene_height,
-        anchorX,
-        anchorY,
-      );
-    }
+    handleRef.current?.update(config);
   }, [
+    message.name,
+    message.props.text,
     message.props.depth_test,
     message.props.font_size_mode,
     message.props.font_screen_scale,
     message.props.font_scene_height,
-    anchorX,
-    anchorY,
-    manager,
+    message.props.anchor,
   ]);
 
-  // BatchedLabelManager handles position updates, visibility, and culling.
+  // LabelRenderer handles position updates, visibility, and culling.
   React.useImperativeHandle(ref, () => groupRef.current, []);
 
   // Use a selector to subscribe only to this node's children.
@@ -670,7 +601,7 @@ export const ViserLabel = React.forwardRef<
     return node?.children && node.children.length > 0;
   });
 
-  // Return null when no children - BatchedTextManager handles the text rendering.
+  // Return null when no children - LabelRenderer handles the text rendering.
   // Return group when there are children - SceneTree needs it to apply transforms to child nodes.
   if (!hasChildren) {
     return null;

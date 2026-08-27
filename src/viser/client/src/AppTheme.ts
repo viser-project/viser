@@ -14,7 +14,10 @@ import {
 import { themeToVars } from "@mantine/vanilla-extract";
 
 export const theme = createTheme({
-  fontFamily: "Inter",
+  // System font stack: no font is embedded in the client bundle. Keep in
+  // sync with index.css and label/GlyphAtlas.ts.
+  fontFamily:
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif',
   autoContrast: true,
   // Preserve the Mantine 8 look: v9 changed defaultRadius sm -> md and the
   // `medium` font weight 500 -> 600 across components.

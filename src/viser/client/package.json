@@ -42,7 +42,6 @@
     "remark-gfm": "^4.0.1",
     "three": "^0.185.1",
     "three-stdlib": "^2.36.1",
-    "troika-three-text": "^0.52.5",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.1.0",
     "uplot": "^1.6.32",
