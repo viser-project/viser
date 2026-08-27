@@ -3,6 +3,9 @@ import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "./App.css";
 import "./index.css";
+// Register the Three.js JSX catalogue before anything renders: production
+// builds patch out R3F's automatic extend(THREE) for tree-shaking.
+import "./r3f-extend";
 
 import { useInView } from "react-intersection-observer";
 import { Notifications } from "@mantine/notifications";
@@ -69,11 +72,13 @@ import { applyReversedDepthSortFix } from "./ReversedDepthSort";
 import logoSvg from "./assets/logo.svg";
 
 // The client only embeds the default environment map ("city", shown before
-// the server configures anything); all other presets are read from disk by
-// the Python server and arrive as bytes in EnvironmentMapMessage. The asset
-// lives with the Python package's presets so there's a single copy in the
-// repository. HDR JPEG (gainmap) format: ~10x smaller than traditional HDR.
-import defaultHdriUrl from "../../_assets/hdri/potsdamer_platz_1k.jpg";
+// the server configures anything, and only ever used for lighting -- the
+// background flag can only come from a server message, which carries its own
+// full-resolution bytes). All presets are read from disk by the Python server
+// (src/viser/_assets/hdri/) and arrive as bytes in EnvironmentMapMessage.
+// This embedded copy is a 384x192 re-encode of the "city" preset's HDR JPEG
+// (gainmap): plenty for image-based lighting at a third of the size.
+import defaultHdriUrl from "./assets/potsdamer_platz_384.jpg";
 
 // ======= Utility functions =======
 

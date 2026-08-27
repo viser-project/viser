@@ -1,5 +1,4 @@
-import { defineConfig, searchForWorkspaceRoot } from "vite";
-import { fileURLToPath } from "node:url";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { vanillaExtractPlugin } from "@vanilla-extract/vite-plugin";
 
@@ -8,6 +7,25 @@ import svgrPlugin from "vite-plugin-svgr";
 import browserslistToEsbuild from "browserslist-to-esbuild";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { compressHtml } from "./vite-plugin-compress-html.mts";
+
+// R3F's <Canvas> calls `extend(THREE)` with the entire three namespace,
+// which retains every three export and defeats tree-shaking (~35 KB of the
+// compressed build). viser registers the classes it actually renders in
+// src/r3f-extend.ts instead, so production builds patch the call out. The
+// dev server keeps the automatic catalogue (its prebundled deps skip this
+// transform); src/r3f-extend.test.ts pins the pattern below so a fiber
+// upgrade that changes it fails loudly instead of silently regrowing the
+// bundle.
+function fiberNoAutoExtend(): Plugin {
+  const pattern = "React.useMemo(() => extend(THREE), [])";
+  return {
+    name: "fiber-no-auto-extend",
+    transform(code, id) {
+      if (!id.includes("react-three-fiber") || !code.includes(pattern)) return;
+      return code.replace(pattern, "React.useMemo(() => undefined, [])");
+    },
+  };
+}
 
 // Unified Vite config for both development and production builds.
 // - Development: Standard HMR server without single-file bundling.
@@ -23,20 +41,13 @@ export default defineConfig(({ command }) => {
       svgrPlugin(),
       vanillaExtractPlugin(),
       // Single-file bundling and compression only for production builds.
-      ...(!isDev ? [viteSingleFile(), compressHtml()] : []),
+      ...(!isDev
+        ? [fiberNoAutoExtend(), viteSingleFile(), compressHtml()]
+        : []),
     ],
     server: {
       port: 3000,
       hmr: { port: 1025 },
-      fs: {
-        // The default env map is imported from the Python package's HDRI
-        // preset directory (single copy in the repo), which sits outside the
-        // client root; allow the dev server to serve it.
-        allow: [
-          searchForWorkspaceRoot(process.cwd()),
-          fileURLToPath(new URL("../_assets", import.meta.url)),
-        ],
-      },
     },
     build: {
       outDir: "build",

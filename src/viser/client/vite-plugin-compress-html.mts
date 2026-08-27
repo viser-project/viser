@@ -97,6 +97,65 @@ function fromBase88(text: string): Buffer {
   return out;
 }
 
+// Drop CSS rules for Mantine components the bundle never references.
+// Mantine class names are static hashes (.m_xxxxxxxx) that appear as string
+// literals in the JS of every component that uses them, so a rule whose
+// selector only targets hashes absent from the JS is dead. Rules without
+// Mantine hashes (resets, CSS variables, app styles) are always kept;
+// conditional group rules (@media etc.) are pruned recursively and other
+// at-rules (@keyframes, @font-face) are kept whole.
+function pruneMantineCss(css: string, js: string): string {
+  const usedClasses = new Set(js.match(/m_[0-9a-zA-Z]+/g) ?? []);
+
+  function pruneBlock(block: string): string {
+    let out = "";
+    let i = 0;
+    while (i < block.length) {
+      const open = block.indexOf("{", i);
+      if (open === -1) {
+        out += block.slice(i);
+        break;
+      }
+      let selector = block.slice(i, open);
+      // Pass block-less statements (@charset ...;, @import ...;) through.
+      const statementsEnd = selector.lastIndexOf(";");
+      if (statementsEnd !== -1) {
+        out += selector.slice(0, statementsEnd + 1);
+        selector = selector.slice(statementsEnd + 1);
+      }
+      // Find the matching close brace.
+      let depth = 1;
+      let j = open + 1;
+      while (j < block.length && depth > 0) {
+        const ch = block[j];
+        if (ch === "{") depth++;
+        else if (ch === "}") depth--;
+        j++;
+      }
+      const body = block.slice(open + 1, j - 1);
+      const trimmed = selector.trimStart();
+      if (trimmed.startsWith("@")) {
+        if (/^@(media|layer|supports|container)/.test(trimmed)) {
+          const pruned = pruneBlock(body);
+          if (pruned.trim() !== "") out += selector + "{" + pruned + "}";
+        } else {
+          out += selector + "{" + body + "}";
+        }
+      } else {
+        const hashes = [...selector.matchAll(/\.(m_[0-9a-zA-Z]+)/g)].map(
+          (m) => m[1],
+        );
+        if (hashes.length === 0 || hashes.some((h) => usedClasses.has(h))) {
+          out += selector + "{" + body + "}";
+        }
+      }
+      i = j;
+    }
+    return out;
+  }
+  return pruneBlock(css);
+}
+
 // Extract and gzip-compress the WASM from zstddec package.
 // Returns base88-encoded gzipped WASM for smaller raw file size.
 function getGzippedWasmBase88(): string {
@@ -214,14 +273,17 @@ export function compressHtml(): Plugin {
             continue;
           }
 
-          const styleBytes = Buffer.from(
-            styleMatch ? styleMatch[1] : "",
-            "utf8",
-          );
-          const scriptBytes = Buffer.from(
-            scriptMatch ? scriptMatch[1] : "",
-            "utf8",
-          );
+          let styleText = styleMatch ? styleMatch[1] : "";
+          const scriptText = scriptMatch ? scriptMatch[1] : "";
+          if (styleText !== "" && scriptText !== "") {
+            const beforeKiB = (styleText.length / 1024).toFixed(1);
+            styleText = pruneMantineCss(styleText, scriptText);
+            console.log(
+              `[compress-html] Pruned unused Mantine CSS: ${beforeKiB} KiB -> ${(styleText.length / 1024).toFixed(1)} KiB`,
+            );
+          }
+          const styleBytes = Buffer.from(styleText, "utf8");
+          const scriptBytes = Buffer.from(scriptText, "utf8");
           if (styleMatch) html = html.replace(styleMatch[0], "");
           if (scriptMatch) html = html.replace(scriptMatch[0], "");
 
