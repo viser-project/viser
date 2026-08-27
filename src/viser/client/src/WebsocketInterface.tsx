@@ -5,6 +5,7 @@ import { notifications } from "@mantine/notifications";
 import { ViewerContext } from "./ViewerContext";
 import { syncSearchParamServer } from "./SearchParamsUtils";
 import { WsWorkerIncoming, WsWorkerOutgoing } from "./WebsocketClientWorker";
+import { getLoaderZstdModule } from "./zstd";
 
 /** Component for handling websocket connections. */
 export function WebsocketMessageProducer() {
@@ -23,6 +24,14 @@ export function WebsocketMessageProducer() {
 
     function postToWorker(data: WsWorkerIncoming) {
       worker.postMessage(data);
+    }
+
+    // Hand the page loader's zstd WASM module to the worker (production
+    // single-file builds only; in dev the worker falls back to the zstddec
+    // package). Posted first, so it precedes any websocket traffic.
+    const zstdModule = getLoaderZstdModule();
+    if (zstdModule !== undefined) {
+      postToWorker({ type: "zstd_wasm", module: zstdModule });
     }
 
     // Start or stop the retry interval based on connection state and page focus.

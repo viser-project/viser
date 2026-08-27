@@ -157,6 +157,10 @@ function makeLoaderScript(gzippedWasmBase88: string): string {
     const wasm=await new Response(s.readable).arrayBuffer();
     const m=await WebAssembly.instantiate(wasm,{env:{emscripten_notify_memory_growth:()=>{heap=new Uint8Array(inst.exports.memory.buffer);}}});
     inst=m.instance;heap=new Uint8Array(inst.exports.memory.buffer);
+    /* Publish the compiled module so the app can instantiate its own zstd
+       decoders (src/zstd.ts) without bundling a second copy of the WASM.
+       NOTE: this template is newline-stripped, so no line comments here. */
+    globalThis.__viserZstdWasm=m.module;
   };
   await init();
   const a=de(d.p);
