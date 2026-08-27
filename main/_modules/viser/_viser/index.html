@@ -430,6 +430,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">atexit</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">mimetypes</span>
@@ -1706,7 +1707,7 @@
                     <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dispatch_client_callbacks</span><span class="p">(</span><span class="n">connect_cbs</span><span class="p">,</span> <span class="n">client</span><span class="p">)</span>
 
                 <span class="k">for</span> <span class="n">camera_cb</span> <span class="ow">in</span> <span class="n">client</span><span class="o">.</span><span class="n">camera</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">camera_cb</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">camera_cb</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">inspect</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">camera_cb</span><span class="p">):</span>
                         <span class="k">await</span> <span class="n">camera_cb</span><span class="p">(</span><span class="n">client</span><span class="o">.</span><span class="n">camera</span><span class="p">)</span>
                     <span class="k">else</span><span class="p">:</span>
                         <span class="bp">self</span><span class="o">.</span><span class="n">_thread_executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
@@ -2128,7 +2129,7 @@
 <span class="sd">        awaited in order, sync callbacks on the thread pool, every callback</span>
 <span class="sd">        exception-isolated so one failure cannot starve its siblings."""</span>
         <span class="k">for</span> <span class="n">cb</span> <span class="ow">in</span> <span class="n">callbacks</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">inspect</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
                 <span class="k">try</span><span class="p">:</span>
                     <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">client</span><span class="p">)</span>
                 <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
@@ -2181,7 +2182,7 @@
         <span class="c1"># This makes sure that the the callback is applied to any clients that</span>
         <span class="c1"># connect between the two lines.</span>
         <span class="k">for</span> <span class="n">client</span> <span class="ow">in</span> <span class="n">clients</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">inspect</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
                 <span class="c1"># run_coroutine_threadsafe, not create_task: registration</span>
                 <span class="c1"># typically happens on a user thread, and create_task is</span>
                 <span class="c1"># neither thread-safe nor guaranteed to wake the loop.</span>

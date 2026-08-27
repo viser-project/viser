@@ -429,6 +429,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
@@ -3805,7 +3806,7 @@
 <span class="sd">        branches (print_awaited_callback_error / print_threadpool_errors):</span>
 <span class="sd">        one throwing callback must not starve its sibling callbacks or</span>
 <span class="sd">        abort the caller (message dispatch, disconnect teardown)."""</span>
-        <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">inspect</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cb</span><span class="p">):</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="k">await</span> <span class="n">cb</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
@@ -4247,7 +4248,7 @@
         <span class="c1"># isolated like every other callback path: one throwing cleanup</span>
         <span class="c1"># must not starve its siblings or leave the list uncleared.</span>
         <span class="k">for</span> <span class="n">cleanup</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_scene_pointer_done_cb</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cleanup</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">inspect</span><span class="o">.</span><span class="n">iscoroutinefunction</span><span class="p">(</span><span class="n">cleanup</span><span class="p">):</span>
                 <span class="c1"># run_coroutine_threadsafe, not create_task: callback removal</span>
                 <span class="c1"># can run on a user thread, and create_task is neither</span>
                 <span class="c1"># thread-safe nor guaranteed to wake the loop.</span>
