@@ -429,6 +429,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
@@ -437,6 +438,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Coroutine</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">TYPE_CHECKING</span><span class="p">,</span>
     <span class="n">Any</span><span class="p">,</span>
@@ -531,6 +533,32 @@
     <span class="n">event_type</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">ScenePointerEventType</span>
     <span class="n">modifier</span><span class="p">:</span> <span class="n">_messages</span><span class="o">.</span><span class="n">KeyModifier</span> <span class="o">|</span> <span class="kc">None</span>
     <span class="n">event_class</span><span class="p">:</span> <span class="nb">type</span>
+
+
+<span class="c1"># HDR JPEG (gainmap format) environment map presets, shipped with the Python</span>
+<span class="c1"># package and sent to the client over the websocket. Keeping them out of the</span>
+<span class="c1"># client bundle keeps the built client small; the client only embeds the</span>
+<span class="c1"># default ("city") preset.</span>
+<span class="n">_HDRI_FILENAMES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"apartment"</span><span class="p">:</span> <span class="s2">"lebombo_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"city"</span><span class="p">:</span> <span class="s2">"potsdamer_platz_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"dawn"</span><span class="p">:</span> <span class="s2">"kiara_1_dawn_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"forest"</span><span class="p">:</span> <span class="s2">"forest_slope_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"lobby"</span><span class="p">:</span> <span class="s2">"st_fagans_interior_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"night"</span><span class="p">:</span> <span class="s2">"dikhololo_night_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"park"</span><span class="p">:</span> <span class="s2">"rooitou_park_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"studio"</span><span class="p">:</span> <span class="s2">"studio_small_03_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"sunset"</span><span class="p">:</span> <span class="s2">"venice_sunset_1k.jpg"</span><span class="p">,</span>
+    <span class="s2">"warehouse"</span><span class="p">:</span> <span class="s2">"empty_warehouse_01_1k.jpg"</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_read_hdri_preset</span><span class="p">(</span><span class="n">hdri</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Read a preset's HDR JPEG bytes, cached across calls."""</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">absolute</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"_assets"</span> <span class="o">/</span> <span class="s2">"hdri"</span> <span class="o">/</span> <span class="n">_HDRI_FILENAMES</span><span class="p">[</span><span class="n">hdri</span><span class="p">]</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">read_bytes</span><span class="p">()</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_modifier_matches_filter</span><span class="p">(</span>
@@ -1373,6 +1401,11 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Configure the environment map for the scene. This will set some lights and background.</span>
 
+<span class="sd">        Each call sends the preset's HDR JPEG (roughly 30-130 KB) to</span>
+<span class="sd">        connected clients, since the client no longer embeds the presets. To</span>
+<span class="sd">        animate the scalar parameters (intensities, orientations), prefer</span>
+<span class="sd">        infrequent updates or accept the per-call payload cost.</span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            hdri: Preset HDRI environment to use.</span>
 <span class="sd">            background: Show or hide the environment map in the background.</span>
@@ -1382,9 +1415,10 @@
 <span class="sd">            environment_intensity: Intensity of the environment lighting.</span>
 <span class="sd">            environment_wxyz: Orientation of the environment lighting.</span>
 <span class="sd">        """</span>
+        <span class="n">hdri_data</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">hdri</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_read_hdri_preset</span><span class="p">(</span><span class="n">hdri</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_websock_interface</span><span class="o">.</span><span class="n">queue_message</span><span class="p">(</span>
             <span class="n">_messages</span><span class="o">.</span><span class="n">EnvironmentMapMessage</span><span class="p">(</span>
-                <span class="n">hdri</span><span class="o">=</span><span class="n">hdri</span><span class="p">,</span>
+                <span class="n">hdri_data</span><span class="o">=</span><span class="n">hdri_data</span><span class="p">,</span>
                 <span class="n">background</span><span class="o">=</span><span class="n">background</span><span class="p">,</span>
                 <span class="n">background_blurriness</span><span class="o">=</span><span class="n">background_blurriness</span><span class="p">,</span>
                 <span class="n">background_intensity</span><span class="o">=</span><span class="n">background_intensity</span><span class="p">,</span>
