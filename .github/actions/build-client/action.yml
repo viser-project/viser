@@ -17,8 +17,11 @@ runs:
       with:
         path: src/viser/client/build
         # `build/` and `node_modules/` are gitignored, so on a fresh checkout
-        # this hashes only tracked source -- a stable content address.
-        key: viser-client-build-${{ runner.os }}-${{ hashFiles('src/viser/client/**') }}
+        # this hashes only tracked source -- a stable content address. The
+        # build also embeds assets from _assets (the default environment map
+        # imported by App.tsx), so those are part of the key: without them a
+        # changed asset would silently reuse a stale cached build.
+        key: viser-client-build-${{ runner.os }}-${{ hashFiles('src/viser/client/**', 'src/viser/_assets/**') }}
 
     - name: Use Node.js
       if: steps.cache.outputs.cache-hit != 'true'
