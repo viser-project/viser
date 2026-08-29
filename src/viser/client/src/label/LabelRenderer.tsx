@@ -1,11 +1,17 @@
 /** GPU-instanced 3D label renderer.
  *
  * Replaces the previous troika-three-text pipeline. Text is rasterized with
- * the system font stack into canvas glyph atlases (GlyphAtlas.ts); every
- * label renders as one background quad plus one instanced quad per grapheme
- * cluster. Billboarding and screen-space scaling run in the vertex shader,
- * so the per-frame JS work is just writing each label's world position and
- * visibility into a small data texture.
+ * the system font stack into signed-distance-field glyph atlases
+ * (GlyphAtlas.ts / sdf.ts); every label renders as one background quad plus
+ * one instanced quad per grapheme cluster. Billboarding and screen-space
+ * scaling run in the vertex shader, so the per-frame JS work is just writing
+ * each label's world position and visibility into a small data texture.
+ *
+ * The fragment shader re-thresholds the bilinear-sampled field over a ~1
+ * screen px ramp (troika's formulation), which keeps edges crisp at any
+ * effective scale: adaptive DPR (App.tsx lowers the renderer's pixel ratio
+ * under load), orthographic zoom, and scene-space magnification all resample
+ * the atlas, and a distance field is the representation that survives that.
  *
  * Atlases exist per font-pixel bucket: a label's rasterization resolution is
  * derived from its own configuration (screen-space labels have a constant
@@ -36,6 +42,10 @@ import {
  * constant pixel size relative to this height. */
 const REFERENCE_VIEWPORT_HEIGHT = 800;
 
+/** Screen-mode labels are calibrated to a 12 CSS px em at fontScreenScale 1:
+ * 0.3 * scale world units at 10 units depth in an 800 px-tall viewport. */
+const SCREEN_EM_CSS_PX = 12;
+
 /** Base font size in world units, matching the previous implementation:
  * "screen" mode is calibrated at 0.3 * scale at 10 units depth. */
 function baseFontSize(config: LabelConfig): number {
@@ -44,21 +54,30 @@ function baseFontSize(config: LabelConfig): number {
     : config.fontSceneHeight;
 }
 
-/** Atlas font-pixel bucket for a label, from data we already have: a
- * screen-mode label's on-screen em size is constant at
- * 12 * fontScreenScale CSS px (0.3 * scale * REFERENCE_VIEWPORT_HEIGHT / 2 /
- * 10); scene-mode labels have no intrinsic pixel size, so they use a
- * middle-of-the-road bucket. Scaled by devicePixelRatio and rounded up to a
- * power of two so a handful of atlases serve all labels. */
-function fontPxBucket(config: LabelConfig): number {
-  const dpr = Math.min(
+/** Device pixel ratio used for label rasterization, capped so ultra-dense
+ * displays don't inflate atlas memory. */
+function labelDpr(): number {
+  return Math.min(
     typeof window !== "undefined" ? (window.devicePixelRatio ?? 1) : 1,
-    2,
+    3,
   );
+}
+
+/** Atlas font-pixel bucket for a label, from data we already have.
+ *
+ * Screen-mode labels rasterize at their nominal on-screen pixel size (their
+ * em size is constant and known from the config), so the field is sampled
+ * near 1:1 in the common case; the SDF ramp keeps edges crisp when adaptive
+ * DPR or ortho zoom rescales it. One atlas serves each distinct
+ * (fontScreenScale, devicePixelRatio) in the scene -- one or two in
+ * practice. Scene-mode labels have no intrinsic pixel size and use a
+ * middle-of-the-road bucket. */
+function fontPxBucket(config: LabelConfig): number {
   const nominalPx =
-    config.fontSizeMode === "screen" ? 12 * config.fontScreenScale * dpr : 64;
-  const clamped = Math.min(256, Math.max(16, nominalPx));
-  return 2 ** Math.ceil(Math.log2(clamped));
+    config.fontSizeMode === "screen"
+      ? SCREEN_EM_CSS_PX * config.fontScreenScale * labelDpr()
+      : 64;
+  return Math.min(256, Math.max(8, Math.round(nominalPx)));
 }
 
 const VERTEX_SHADER = /* glsl */ `
@@ -114,19 +133,20 @@ void main() {
 `;
 
 const GLYPH_FRAGMENT_SHADER = /* glsl */ `
-uniform sampler2D uAtlas;
+uniform sampler2D uAtlas;     // Single-channel SDF (see sdf.ts encodeSdf).
+uniform vec2 uAtlasSize;      // Atlas dimensions, px.
+uniform float uSdfRadius;     // SDF encoding radius, atlas px.
 varying vec2 vUv;
 varying float vAlpha;
 
 void main() {
-  float a = texture2D(uAtlas, vUv).a;
-  // Sharpen the coverage ramp using screen-space derivatives: this
-  // approximates SDF-style edge thresholding when the glyph is magnified or
-  // trilinear filtering softens it, and degrades to the plain antialiased
-  // coverage for small text (where the ramp already spans ~1 pixel).
-  float w = max(fwidth(a), 1e-4);
-  a = clamp((a - 0.5) / min(w, 1.0) + 0.5, 0.0, 1.0);
-  a *= vAlpha;
+  // Signed distance to the glyph outline in atlas px, positive inside.
+  float distPx = (texture2D(uAtlas, vUv).r - 0.5) * 2.0 * uSdfRadius;
+  // Re-threshold over a ramp spanning ~1 screen px: fwidth of the atlas-px
+  // sample position is the atlas-px footprint of one screen px (troika's
+  // formulation). This is what keeps edges crisp at any sampling scale.
+  float aa = 0.5 * length(fwidth(vUv * uAtlasSize));
+  float a = smoothstep(-aa, aa, distPx) * vAlpha;
   if (a < 0.004) discard;
   gl_FragColor = vec4(0.0, 0.0, 0.0, a);
 }
@@ -268,12 +288,15 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       const key = `${depthTest}-${fontPx}`;
       let mesh = state.glyphMeshes.get(key);
       if (!mesh) {
+        const atlas = getAtlas(fontPx);
         const material = new THREE.ShaderMaterial({
           vertexShader: VERTEX_SHADER,
           fragmentShader: GLYPH_FRAGMENT_SHADER,
           uniforms: {
             ...state.sharedUniforms,
-            uAtlas: { value: getAtlas(fontPx).texture },
+            uAtlas: { value: atlas.texture },
+            uAtlasSize: { value: new THREE.Vector2(atlas.size, atlas.size) },
+            uSdfRadius: { value: atlas.sdfRadius },
           },
           transparent: true,
           depthTest,
@@ -377,14 +400,21 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           { ascent: atlas.ascent, descent: atlas.descent },
         );
         state.groupBuffers.set(key, buffers);
+        const mesh = getGlyphMesh(depthTest, bucket);
         swapGeometry(
-          getGlyphMesh(depthTest, bucket),
+          mesh,
           buffers.glyphLabelIndex,
           buffers.glyphRect,
           buffers.glyphParams,
           buffers.glyphUv,
           buffers.glyphCount,
         );
+        // Atlas growth swaps in a new, larger texture; refresh the atlas
+        // uniforms so the material tracks it.
+        const material = mesh.material as THREE.ShaderMaterial;
+        material.uniforms.uAtlas.value = atlas.texture;
+        material.uniforms.uAtlasSize.value.set(atlas.size, atlas.size);
+        material.uniforms.uSdfRadius.value = atlas.sdfRadius;
       }
 
       state.atlases.forEach((atlas, bucket) => {
@@ -487,8 +517,22 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
   }, [state]);
 
   const tempPosition = React.useMemo(() => new THREE.Vector3(), []);
+  const lastDpr = React.useRef(labelDpr());
 
   useFrame(({ camera, size }) => {
+    // A device-pixel-ratio change (browser zoom, moving the window between
+    // monitors) changes every screen-mode label's ideal rasterization size;
+    // re-key all entries so they migrate to matching atlases.
+    const dpr = labelDpr();
+    if (dpr !== lastDpr.current) {
+      lastDpr.current = dpr;
+      state.entries.forEach((entry) => {
+        state.dirtyGroups.add(entry.groupKey);
+        entry.groupKey = groupKey(entry.config);
+        state.dirtyGroups.add(entry.groupKey);
+      });
+    }
+
     // Rebuild groups whose labels were added/removed/changed. Atlas growth
     // (stale UVs) is handled inside the rebuild.
     if (state.dirtyGroups.size > 0) rebuildDirtyGroups();
