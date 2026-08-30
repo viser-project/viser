@@ -18,6 +18,32 @@
  */
 import * as THREE from "three";
 import { sdfFromRasterizedGlyph, supersampleForFontPx } from "./sdf";
+import SdfWorkerFactory from "./SdfWorker?worker&inline";
+import type { SdfJob, SdfResult } from "./SdfWorker";
+
+/** Shared worker for glyph distance transforms: the main thread pays only
+ * rasterization + pixel readback per glyph (~0.2 ms), and the expensive
+ * transform runs off-thread. undefined = not yet tried, null = unavailable
+ * (construction failed; atlases fall back to synchronous transforms). */
+let sdfWorker: Worker | null | undefined;
+let nextToken = 0;
+const pendingJobs = new Map<number, (sdf: Uint8Array) => void>();
+
+function getSdfWorker(): Worker | null {
+  if (sdfWorker !== undefined) return sdfWorker;
+  try {
+    sdfWorker = new SdfWorkerFactory();
+    sdfWorker.onmessage = ({ data }: MessageEvent<SdfResult>) => {
+      const finish = pendingJobs.get(data.token);
+      pendingJobs.delete(data.token);
+      finish?.(data.sdf);
+    };
+  } catch (e) {
+    console.warn("[GlyphAtlas] SDF worker unavailable, running inline:", e);
+    sdfWorker = null;
+  }
+  return sdfWorker;
+}
 
 /** Matches the DOM UI's font stack (index.css / AppTheme.ts). */
 export const LABEL_FONT_STACK =
@@ -51,6 +77,10 @@ export class GlyphAtlas {
   /** Measurement context at the atlas font size. */
   private measureCtx: CanvasRenderingContext2D;
   private cells = new Map<string, GlyphCell>();
+  /** Clusters whose cell metrics exist but whose pixels are still being
+   * transformed in the worker, keyed to the job token so a stale response
+   * (superseded after an atlas re-pack) can't mark the new request done. */
+  private pendingPixels = new Map<string, number>();
   private shelfX = 0;
   private shelfY = 0;
   private shelfHeight = 0;
@@ -140,10 +170,17 @@ export class GlyphAtlas {
     return this.measureCtx.measureText(text).width;
   }
 
-  /** Whether a cluster's cell is already rasterized (getCell would be a
+  /** Whether a cluster's cell is already requested (getCell would be a
    * cache hit). Lets the renderer budget rasterization work per frame. */
   has(cluster: string): boolean {
     return this.cells.has(cluster);
+  }
+
+  /** Whether a requested cell's pixels have landed in the atlas. Metrics are
+   * always valid immediately; a group rendered before its pixels arrive
+   * would briefly show blank glyphs, so the renderer defers on this. */
+  cellReady(cluster: string): boolean {
+    return this.cells.has(cluster) && !this.pendingPixels.has(cluster);
   }
 
   /** Get (rasterizing on first use) the atlas cell for a grapheme cluster. */
@@ -191,14 +228,48 @@ export class GlyphAtlas {
     // edge at inkLeft (which includes padding).
     this.scratchCtx.fillText(cluster, inkLeft * ss, (padding + inkAscent) * ss);
     const rgba = this.scratchCtx.getImageData(0, 0, wSS, hSS).data;
-    const sdf = sdfFromRasterizedGlyph(rgba, wSS, hSS, ss, this.sdfRadius);
-    for (let row = 0; row < cellHeight; row++) {
-      this.data.set(
-        sdf.subarray(row * cellWidth, (row + 1) * cellWidth),
-        (y + row) * this.size + x,
+
+    // The transform runs in the shared worker; the cell's metrics and UVs
+    // are final now, so the blit can land whenever the result arrives (the
+    // texture update makes the glyph appear at the already-correct UVs).
+    const blit = (sdf: Uint8Array) => {
+      for (let row = 0; row < cellHeight; row++) {
+        this.data.set(
+          sdf.subarray(row * cellWidth, (row + 1) * cellWidth),
+          (y + row) * this.size + x,
+        );
+      }
+      this.texture.needsUpdate = true;
+    };
+    const worker = getSdfWorker();
+    if (worker === null) {
+      blit(sdfFromRasterizedGlyph(rgba, wSS, hSS, ss, this.sdfRadius));
+    } else {
+      const token = nextToken++;
+      const generation = this.generation;
+      this.pendingPixels.set(cluster, token);
+      pendingJobs.set(token, (sdf) => {
+        // A grow/recycle between request and response re-packed the atlas:
+        // the coordinates (and this cluster's re-request, if any) belong to
+        // a newer generation.
+        if (generation !== this.generation) return;
+        if (this.pendingPixels.get(cluster) === token) {
+          this.pendingPixels.delete(cluster);
+        }
+        blit(sdf);
+      });
+      worker.postMessage(
+        {
+          token,
+          rgba: rgba.buffer,
+          widthSS: wSS,
+          heightSS: hSS,
+          ss,
+          radiusPx: this.sdfRadius,
+        } satisfies SdfJob,
+        [rgba.buffer],
       );
     }
-    this.texture.needsUpdate = true;
 
     // The instanced quad covers only the ink box plus the ramp margin,
     // cutting overdraw; the remaining cell padding stays in the atlas purely
@@ -241,6 +312,10 @@ export class GlyphAtlas {
     this.shelfX = 0;
     this.shelfY = 0;
     this.shelfHeight = 0;
+    // Outstanding worker results now target a stale layout; their callbacks
+    // check the generation and drop themselves, and cleared cells will be
+    // re-requested with fresh tokens.
+    this.pendingPixels.clear();
     this.generation += 1;
   }
 

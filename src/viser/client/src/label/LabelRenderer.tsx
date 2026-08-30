@@ -164,13 +164,15 @@ void main() {
 /** Maximum labels; one texel per label in the data texture. */
 const MAX_LABELS = 4096;
 
-/** Per-frame budget for glyph SDF rasterization (LabelRenderer never blocks a
- * frame on text): a rebuild rasterizes missing glyphs until the budget runs
- * out, then defers the unfinished groups to the next frame -- their previous
- * geometry keeps rendering meanwhile, so a label with many new glyphs streams
- * in over a few fully-interactive frames instead of dropping one. Leftover
- * budget pre-warms printable ASCII in small atlases, so later English text
- * additions are pure cache hits. */
+/** Per-frame budget for main-thread glyph work (LabelRenderer never blocks a
+ * frame on text). Distance transforms run in the shared SDF worker, so the
+ * budget covers only rasterization + pixel readback (~0.2 ms per glyph); a
+ * rebuild requests missing glyphs until the budget runs out, and groups
+ * whose glyph pixels haven't landed yet are deferred to following frames --
+ * their previous geometry keeps rendering meanwhile, so a label with many
+ * new glyphs streams in over a few fully-interactive frames instead of
+ * dropping one. Leftover budget pre-warms printable ASCII in small atlases,
+ * so later English text additions are pure cache hits. */
 const GLYPH_BUDGET_MS = 3;
 
 /** Only pre-warm ASCII in atlases at or below this bucket: larger cells would
@@ -427,13 +429,19 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           let ready = true;
           prefetch: for (const config of configs) {
             for (const cluster of segmentGraphemes(config.text)) {
-              if (cluster.trim() === "" || atlas.has(cluster)) continue;
-              if (rasterized > 0 && performance.now() > deadline) {
-                ready = false;
-                break prefetch;
+              if (cluster.trim() === "") continue;
+              if (!atlas.has(cluster)) {
+                if (rasterized > 0 && performance.now() > deadline) {
+                  ready = false;
+                  break prefetch;
+                }
+                atlas.getCell(cluster);
+                rasterized++;
               }
-              atlas.getCell(cluster);
-              rasterized++;
+              // The cell's pixels may still be in the SDF worker: keep
+              // requesting the rest so transforms run in parallel, but
+              // defer the group until every glyph can actually draw.
+              if (!atlas.cellReady(cluster)) ready = false;
             }
           }
           if (!ready) {
