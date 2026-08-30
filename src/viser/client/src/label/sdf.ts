@@ -18,6 +18,42 @@
 
 const INF = 1e20;
 
+/** Supersampling factor for rasterization before the distance transform.
+ *
+ * The transform locates outlines to ~0.3 px of its input grid; what matters
+ * visually is that error as a fraction of the em. Small atlases need 4x to
+ * hide it; at larger sizes the atlas resolution itself provides the
+ * precision, and lower factors keep per-glyph cost bounded (the transform is
+ * O(supersampled pixels), and large-bucket cells are big). */
+export function supersampleForFontPx(fontPx: number): number {
+  return fontPx < 32 ? 4 : fontPx < 128 ? 2 : 1;
+}
+
+/** Grow-only scratch buffers reused across sdfFromRasterizedGlyph calls:
+ * rebuilds rasterize many glyphs back to back, and per-glyph Float64Array
+ * allocations (megabytes at larger cell sizes) are pure GC churn. */
+const scratch = {
+  toInk: new Float64Array(0),
+  toBg: new Float64Array(0),
+  f: new Float64Array(0),
+  d: new Float64Array(0),
+  v: new Int32Array(0),
+  z: new Float64Array(0),
+};
+
+function growScratch(n: number, rowCol: number) {
+  if (scratch.toInk.length < n) {
+    scratch.toInk = new Float64Array(n);
+    scratch.toBg = new Float64Array(n);
+  }
+  if (scratch.v.length < rowCol) {
+    scratch.f = new Float64Array(rowCol);
+    scratch.d = new Float64Array(rowCol);
+    scratch.v = new Int32Array(rowCol);
+    scratch.z = new Float64Array(rowCol + 1);
+  }
+}
+
 /** 1D squared-distance transform (Felzenszwalb & Huttenlocher). Reads f[0..n),
  * writes d[0..n); v and z are scratch. */
 function edt1d(
@@ -52,11 +88,7 @@ function edt1d(
 /** In-place 2D squared Euclidean distance transform of `grid` (0 at feature
  * pixels, INF elsewhere). */
 function edt2d(grid: Float64Array, width: number, height: number): void {
-  const n = Math.max(width, height);
-  const f = new Float64Array(n);
-  const d = new Float64Array(n);
-  const v = new Int32Array(n);
-  const z = new Float64Array(n + 1);
+  const { f, d, v, z } = scratch;
   for (let x = 0; x < width; x++) {
     for (let y = 0; y < height; y++) f[y] = grid[y * width + x];
     edt1d(f, d, v, z, height);
@@ -99,10 +131,10 @@ export function sdfFromRasterizedGlyph(
     throw new Error("Supersampled dimensions must be multiples of ss");
   }
   const n = widthSS * heightSS;
+  growScratch(n, Math.max(widthSS, heightSS));
 
   // Squared distance to ink (outside) and to background (inside).
-  const toInk = new Float64Array(n);
-  const toBg = new Float64Array(n);
+  const { toInk, toBg } = scratch;
   for (let i = 0; i < n; i++) {
     const ink = rgba[i * 4 + 3] >= 128;
     toInk[i] = ink ? 0 : INF;
@@ -111,19 +143,11 @@ export function sdfFromRasterizedGlyph(
   edt2d(toInk, widthSS, heightSS);
   edt2d(toBg, widthSS, heightSS);
 
-  // Signed distance in supersampled px: positive inside ink. The true edge
-  // lies between an ink pixel and a background pixel, so each one-sided
-  // distance is a half pixel shorter than pixel-center spacing suggests.
-  const signed = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    signed[i] =
-      toBg[i] > 0
-        ? Math.max(0, Math.sqrt(toBg[i]) - 0.5) // Inside ink.
-        : -Math.max(0, Math.sqrt(toInk[i]) - 0.5); // Outside ink.
-  }
-
-  // Box-downsample the field into target resolution, converting supersampled
-  // px to atlas px.
+  // Box-downsample the signed field into target resolution, converting
+  // supersampled px to atlas px. Signed distance is positive inside ink; the
+  // true edge lies between an ink pixel and a background pixel, so each
+  // one-sided distance is a half pixel shorter than pixel-center spacing
+  // suggests.
   const width = widthSS / ss;
   const height = heightSS / ss;
   const out = new Uint8Array(width * height);
@@ -133,7 +157,13 @@ export function sdfFromRasterizedGlyph(
       let sum = 0;
       for (let dy = 0; dy < ss; dy++) {
         const row = (ty * ss + dy) * widthSS + tx * ss;
-        for (let dx = 0; dx < ss; dx++) sum += signed[row + dx];
+        for (let dx = 0; dx < ss; dx++) {
+          const i = row + dx;
+          sum +=
+            toBg[i] > 0
+              ? Math.max(0, Math.sqrt(toBg[i]) - 0.5) // Inside ink.
+              : -Math.max(0, Math.sqrt(toInk[i]) - 0.5); // Outside ink.
+        }
       }
       out[ty * width + tx] = encodeSdf(sum * norm, radiusPx);
     }

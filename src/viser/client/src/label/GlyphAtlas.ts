@@ -17,7 +17,7 @@
  * a matching resolution instead of one fixed size.
  */
 import * as THREE from "three";
-import { sdfFromRasterizedGlyph } from "./sdf";
+import { sdfFromRasterizedGlyph, supersampleForFontPx } from "./sdf";
 
 /** Matches the DOM UI's font stack (index.css / AppTheme.ts). */
 export const LABEL_FONT_STACK =
@@ -62,8 +62,8 @@ export class GlyphAtlas {
   /** Margin kept around the ink box in each glyph quad, covering the
    * distance-field ramp the shader thresholds over. */
   private quadMargin: number;
-  /** Supersampling factor for rasterization before the distance transform;
-   * halved for large fonts to bound per-glyph cost. */
+  /** Supersampling factor for rasterization before the distance transform
+   * (see supersampleForFontPx). */
   private supersample: number;
   readonly fontPx: number;
   /** SDF encoding radius in atlas px (see sdf.ts encodeSdf). */
@@ -82,7 +82,7 @@ export class GlyphAtlas {
     this.cellPadding = Math.max(3, Math.ceil(fontPx / 8));
     this.quadMargin = Math.max(2, Math.ceil(fontPx / 16));
     this.sdfRadius = this.cellPadding;
-    this.supersample = fontPx >= 128 ? 2 : 4;
+    this.supersample = supersampleForFontPx(fontPx);
 
     const measureCanvas = document.createElement("canvas");
     measureCanvas.width = measureCanvas.height = 1;

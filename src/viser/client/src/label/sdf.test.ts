@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { decodeSdf, encodeSdf, sdfFromRasterizedGlyph } from "./sdf";
+import {
+  decodeSdf,
+  encodeSdf,
+  sdfFromRasterizedGlyph,
+  supersampleForFontPx,
+} from "./sdf";
 
 /** RGBA raster of a filled axis-aligned rectangle. */
 function rectRaster(
@@ -97,22 +102,31 @@ describe("sdf", () => {
     ).toThrow();
   });
 
+  it("scales supersampling down as the atlas resolution takes over", () => {
+    expect(supersampleForFontPx(12)).toBe(4);
+    expect(supersampleForFontPx(24)).toBe(4);
+    expect(supersampleForFontPx(64)).toBe(2);
+    expect(supersampleForFontPx(256)).toBe(1);
+  });
+
   it("is smooth across the field (no lumpy quantization)", () => {
     // Along a horizontal line through a rect edge, consecutive texel
     // distances should step by ~1 px each -- large jumps or plateaus are the
     // lumpiness artifact.
-    const sdf = sdfFromRasterizedGlyph(
-      rectRaster(64, 64, 16, 16, 48, 48),
-      64,
-      64,
-      4,
-      8,
-    );
-    const dist = (x: number) => decodeSdf(sdf[8 * 16 + x], 8);
-    for (let x = 1; x < 8; x++) {
-      const step = dist(x) - dist(x - 1);
-      expect(step).toBeGreaterThan(0.8);
-      expect(step).toBeLessThan(1.2);
+    for (const ss of [4, 2]) {
+      const sdf = sdfFromRasterizedGlyph(
+        rectRaster(16 * ss, 16 * ss, 4 * ss, 4 * ss, 12 * ss, 12 * ss),
+        16 * ss,
+        16 * ss,
+        ss,
+        8,
+      );
+      const dist = (x: number) => decodeSdf(sdf[8 * 16 + x], 8);
+      for (let x = 1; x < 8; x++) {
+        const step = dist(x) - dist(x - 1);
+        expect(step).toBeGreaterThan(0.8);
+        expect(step).toBeLessThan(1.2);
+      }
     }
   });
 });
