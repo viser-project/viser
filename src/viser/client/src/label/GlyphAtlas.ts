@@ -124,6 +124,9 @@ export class GlyphAtlas {
   /** Bumped whenever cell UVs are invalidated by an atlas resize; consumers
    * that cached cells must rebuild. */
   generation = 0;
+  /** Full-at-max-size recycles (a subset of generation bumps): consumers use
+   * this to detect glyph sets that cannot fit the atlas at all. */
+  recycles = 0;
 
   constructor(fontPx: number) {
     this.fontPx = fontPx;
@@ -222,8 +225,23 @@ export class GlyphAtlas {
     const inkRight = Math.ceil(m.actualBoundingBoxRight ?? m.width);
     const inkAscent = Math.ceil(m.actualBoundingBoxAscent ?? this.ascent);
     const inkDescent = Math.ceil(m.actualBoundingBoxDescent ?? this.descent);
-    const cellWidth = inkLeft + inkRight + padding;
-    const cellHeight = inkAscent + inkDescent + 2 * padding;
+    let cellWidth = inkLeft + inkRight + padding;
+    let cellHeight = inkAscent + inkDescent + 2 * padding;
+
+    // A cluster can measure larger than the whole atlas (multi-em ligatures
+    // like U+FDFA at large buckets). Grow if a larger atlas would fit it;
+    // at maximum size, clamp the cell and let the glyph clip -- the shelf
+    // logic below only checks height, and an unclamped width would wrap the
+    // blit into neighboring rows (or off the end of the backing store).
+    if (
+      (cellWidth > this.size || cellHeight > this.size) &&
+      this.size < MAX_ATLAS_SIZE
+    ) {
+      this.grow();
+      return this.getCell(cluster);
+    }
+    cellWidth = Math.min(cellWidth, this.size);
+    cellHeight = Math.min(cellHeight, this.size);
 
     // Shelf packing: place on the current shelf, else open a new shelf, else
     // grow the atlas (invalidating existing UVs).
@@ -327,6 +345,7 @@ export class GlyphAtlas {
       this.data.fill(0); // 0 encodes "far outside": renders as empty.
       this.cells.clear();
       this.texture.needsUpdate = true;
+      this.recycles += 1;
     } else {
       // three's WebGL2 texture storage is immutable per size; swap in a new
       // texture (consumers re-read atlas.texture on rebuild).

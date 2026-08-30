@@ -46,7 +46,7 @@ export interface InstanceBuffers {
 export function buildInstanceBuffers(
   entries: LabelEntryConfig[],
   measure: (text: string) => number,
-  getCell: (cluster: string) => GlyphCell,
+  getCell: (cluster: string) => GlyphCell | null,
   metrics: FontMetrics,
 ): InstanceBuffers {
   interface GlyphInstance {
@@ -72,6 +72,8 @@ export function buildInstanceBuffers(
 
     for (const glyph of layout.glyphs) {
       const cell = getCell(glyph.cluster);
+      // null: the renderer's capacity-exceeded fallback -- skip the quad.
+      if (cell === null) continue;
       // Pen position in label-local Y-up px: x from block-left, baseline
       // measured down from the block top (layout.offsetY = top edge, Y-up).
       const penX = layout.offsetX + glyph.x;
