@@ -28,6 +28,22 @@ import type { SdfJob, SdfResult } from "./SdfWorker";
 let sdfWorker: Worker | null | undefined;
 let nextToken = 0;
 const pendingJobs = new Map<number, (sdf: Uint8Array) => void>();
+/** Live atlases, so a worker failure can re-route their in-flight cells to
+ * the inline path instead of leaving them pending forever. */
+const liveAtlases = new Set<GlyphAtlas>();
+
+function onSdfWorkerFailure(event: unknown) {
+  console.warn(
+    "[GlyphAtlas] SDF worker failed, switching to inline transforms:",
+    event,
+  );
+  sdfWorker?.terminate();
+  sdfWorker = null;
+  // In-flight results are gone (their rasterizations were transferred to the
+  // worker); drop the cells so the renderer re-requests them, now inline.
+  pendingJobs.clear();
+  liveAtlases.forEach((atlas) => atlas.abandonPendingCells());
+}
 
 function getSdfWorker(): Worker | null {
   if (sdfWorker !== undefined) return sdfWorker;
@@ -38,6 +54,8 @@ function getSdfWorker(): Worker | null {
       pendingJobs.delete(data.token);
       finish?.(data.sdf);
     };
+    sdfWorker.onerror = onSdfWorkerFailure;
+    sdfWorker.onmessageerror = onSdfWorkerFailure;
   } catch (e) {
     console.warn("[GlyphAtlas] SDF worker unavailable, running inline:", e);
     sdfWorker = null;
@@ -137,6 +155,15 @@ export class GlyphAtlas {
 
     this.data = new Uint8Array(this.size * this.size);
     this.texture = this.createTexture();
+    liveAtlases.add(this);
+  }
+
+  /** Called on SDF worker failure: forget cells whose pixels will never
+   * arrive, so consumers re-request them through the inline path. The
+   * abandoned shelf space is not reclaimed; this only runs on a failure. */
+  abandonPendingCells() {
+    this.pendingPixels.forEach((_token, cluster) => this.cells.delete(cluster));
+    this.pendingPixels.clear();
   }
 
   private configureContexts() {
@@ -320,6 +347,11 @@ export class GlyphAtlas {
   }
 
   dispose() {
+    // Drop in-flight worker jobs so their closures (holding this atlas and
+    // its backing store) don't outlive it and blit into a disposed texture.
+    this.pendingPixels.forEach((token) => pendingJobs.delete(token));
+    this.pendingPixels.clear();
+    liveAtlases.delete(this);
     this.texture.dispose();
   }
 }

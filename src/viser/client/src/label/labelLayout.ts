@@ -76,12 +76,16 @@ export function parseAnchor(anchor: string): {
 
 /** Split text into grapheme clusters (so emoji / combining marks stay
  * together), using Intl.Segmenter when available. */
+let cachedSegmenter: Intl.Segmenter | undefined;
+
 export function segmentGraphemes(text: string): string[] {
   if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    const segmenter = new Intl.Segmenter(undefined, {
+    // Cached: this runs per label per frame while glyph rasterization is
+    // streaming, and Segmenter construction is not free.
+    cachedSegmenter ??= new Intl.Segmenter(undefined, {
       granularity: "grapheme",
     });
-    return Array.from(segmenter.segment(text), (s) => s.segment);
+    return Array.from(cachedSegmenter.segment(text), (s) => s.segment);
   }
   return Array.from(text);
 }

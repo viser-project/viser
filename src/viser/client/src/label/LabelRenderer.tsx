@@ -77,7 +77,11 @@ function fontPxBucket(config: LabelConfig): number {
     config.fontSizeMode === "screen"
       ? SCREEN_EM_CSS_PX * config.fontScreenScale * labelDpr()
       : 64;
-  return Math.min(256, Math.max(8, Math.round(nominalPx)));
+  // Quantize to multiples of 4: sampling an SDF a few percent off its native
+  // resolution is invisible after the shader re-threshold, and coarser
+  // buckets keep an animated fontScreenScale from minting an atlas per pixel
+  // size (unused atlases are also evicted, see rebuildDirtyGroups).
+  return Math.min(256, Math.max(8, Math.round(nominalPx / 4) * 4));
 }
 
 const VERTEX_SHADER = /* glsl */ `
@@ -145,7 +149,12 @@ void main() {
   // Re-threshold over a ramp spanning ~1 screen px: fwidth of the atlas-px
   // sample position is the atlas-px footprint of one screen px (troika's
   // formulation). This is what keeps edges crisp at any sampling scale.
-  float aa = 0.5 * length(fwidth(vUv * uAtlasSize));
+  // Under strong minification the unclamped ramp would span past the quad's
+  // margin, where the field saturates -- every quad would fill with uniform
+  // partial alpha (dark smudges instead of distant text). Clamping to half
+  // the encoding radius (~ the quad margin) lets far text fade out cleanly.
+  float aa = min(
+    0.5 * length(fwidth(vUv * uAtlasSize)), 0.5 * uSdfRadius);
   float a = smoothstep(-aa, aa, distPx) * vAlpha;
   if (a < 0.004) discard;
   gl_FragColor = vec4(0.0, 0.0, 0.0, a);
@@ -282,6 +291,9 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       nextIndex: 0,
       /** Groups whose instance buffers need rebuilding. */
       dirtyGroups: new Set<string>(),
+      /** Per-bucket progress of background ASCII warming; reset when the
+       * atlas's generation changes (recycle invalidates warmed cells). */
+      warmCursors: new Map<number, { generation: number; next: number }>(),
       /** Last-built buffers per group; background meshes concatenate these,
        * so clean groups don't need re-layout when a sibling group changes. */
       groupBuffers: new Map<string, InstanceBuffers>(),
@@ -507,6 +519,33 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           bgLabelIndex.length,
         );
       }
+
+      // Evict atlases (and their meshes / cached buffers) for buckets no
+      // label uses anymore: bucket migrations -- DPR changes, an animated
+      // fontScreenScale -- would otherwise accumulate ~1 MB atlases, GPU
+      // textures, and ASCII warm work without bound.
+      const activeBuckets = new Set<number>();
+      state.entries.forEach((entry) =>
+        activeBuckets.add(parseGroupKey(entry.groupKey).bucket),
+      );
+      state.atlases.forEach((atlas, bucket) => {
+        if (activeBuckets.has(bucket)) return;
+        atlas.dispose();
+        state.atlases.delete(bucket);
+        state.warmCursors.delete(bucket);
+        for (const depthTest of [true, false]) {
+          const key = `${depthTest}-${bucket}`;
+          const mesh = state.glyphMeshes.get(key);
+          if (mesh) {
+            state.group.remove(mesh);
+            mesh.geometry.dispose();
+            (mesh.material as THREE.Material).dispose();
+            state.glyphMeshes.delete(key);
+          }
+          state.groupBuffers.delete(key);
+          state.dirtyGroups.delete(key);
+        }
+      });
     },
     [state, getAtlas, getGlyphMesh],
   );
@@ -582,13 +621,6 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
   const tempPosition = React.useMemo(() => new THREE.Vector3(), []);
   const lastDpr = React.useRef(labelDpr());
 
-  /** Per-(bucket) progress of background ASCII warming; reset when the
-   * atlas's generation changes (recycle invalidates warmed cells). */
-  const warmCursors = React.useMemo(
-    () => new Map<number, { generation: number; next: number }>(),
-    [],
-  );
-
   // Spend leftover frame budget rasterizing printable ASCII into small
   // atlases that are already in use, so future English text additions hit
   // the cache instead of paying first-use rasterization.
@@ -596,7 +628,7 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
     (deadline: number) => {
       state.atlases.forEach((atlas, bucket) => {
         if (bucket > WARM_MAX_FONT_PX) return;
-        let cursor = warmCursors.get(bucket);
+        let cursor = state.warmCursors.get(bucket);
         if (!cursor || cursor.generation !== atlas.generation) {
           cursor = { generation: atlas.generation, next: ASCII_FIRST };
         }
@@ -614,10 +646,10 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
             cursor.generation = atlas.generation;
           }
         }
-        warmCursors.set(bucket, cursor);
+        state.warmCursors.set(bucket, cursor);
       });
     },
-    [state, warmCursors],
+    [state],
   );
 
   useFrame(({ camera, size }) => {
