@@ -140,6 +140,12 @@ export class GlyphAtlas {
     return this.measureCtx.measureText(text).width;
   }
 
+  /** Whether a cluster's cell is already rasterized (getCell would be a
+   * cache hit). Lets the renderer budget rasterization work per frame. */
+  has(cluster: string): boolean {
+    return this.cells.has(cluster);
+  }
+
   /** Get (rasterizing on first use) the atlas cell for a grapheme cluster. */
   getCell(cluster: string): GlyphCell {
     let cell = this.cells.get(cluster);

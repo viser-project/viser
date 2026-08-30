@@ -25,7 +25,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ViewerContext } from "../ViewerContext";
 import { GlyphAtlas } from "./GlyphAtlas";
-import { parseAnchor } from "./labelLayout";
+import { parseAnchor, segmentGraphemes } from "./labelLayout";
 import {
   buildInstanceBuffers,
   InstanceBuffers,
@@ -163,6 +163,21 @@ void main() {
 
 /** Maximum labels; one texel per label in the data texture. */
 const MAX_LABELS = 4096;
+
+/** Per-frame budget for glyph SDF rasterization (LabelRenderer never blocks a
+ * frame on text): a rebuild rasterizes missing glyphs until the budget runs
+ * out, then defers the unfinished groups to the next frame -- their previous
+ * geometry keeps rendering meanwhile, so a label with many new glyphs streams
+ * in over a few fully-interactive frames instead of dropping one. Leftover
+ * budget pre-warms printable ASCII in small atlases, so later English text
+ * additions are pure cache hits. */
+const GLYPH_BUDGET_MS = 3;
+
+/** Only pre-warm ASCII in atlases at or below this bucket: larger cells would
+ * fill (and grow) an atlas for glyphs that may never be used. */
+const WARM_MAX_FONT_PX = 32;
+const ASCII_FIRST = 33; // "!" -- skip space, whitespace has no quad.
+const ASCII_LAST = 126; // "~".
 
 /** Draw order (see ReversedDepthSort.ts and issue #767): backgrounds below
  * Gaussian splats (10000, GaussianSplats.tsx), glyphs strictly above them --
@@ -317,136 +332,176 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
     [state, getAtlas],
   );
 
-  // Rebuild the instance buffers of every dirty group.
-  const rebuildDirtyGroups = React.useCallback(() => {
-    // Each rebuild swaps in a freshly created geometry rather than replacing
-    // attributes in place: a once-rendered InstancedBufferGeometry can keep
-    // drawing from its original VAO after setAttribute, so in-place updates
-    // silently render stale content. Rebuilds only happen when labels are
-    // added/removed/changed, so the reallocation cost is irrelevant.
-    const swapGeometry = (
-      mesh: THREE.Mesh,
-      labelIndex: Float32Array,
-      rect: Float32Array,
-      params: Float32Array,
-      uv: Float32Array,
-      count: number,
-    ) => {
-      const geometry = new THREE.InstancedBufferGeometry();
-      geometry.index = state.quad.index!.clone();
-      geometry.attributes.position = state.quad.attributes.position.clone();
-      geometry.setAttribute(
-        "aLabelIndex",
-        new THREE.InstancedBufferAttribute(labelIndex, 1),
-      );
-      geometry.setAttribute(
-        "aRect",
-        new THREE.InstancedBufferAttribute(rect, 4),
-      );
-      geometry.setAttribute(
-        "aParams",
-        new THREE.InstancedBufferAttribute(params, 2),
-      );
-      geometry.setAttribute(
-        "aUvRect",
-        new THREE.InstancedBufferAttribute(uv, 4),
-      );
-      geometry.instanceCount = count;
-      mesh.geometry.dispose();
-      mesh.geometry = geometry;
-    };
-
-    // Building glyph cells can grow an atlas, which invalidates every UV
-    // previously built from it -- including groups built earlier in this very
-    // call, or groups that weren't dirty at all. Snapshot generations, build,
-    // and re-mark everything an atlas resize touched; the attempt cap turns a
-    // scene whose glyphs cannot fit even a maximum-size atlas into a rendering
-    // artifact instead of an infinite loop.
-    const MAX_ATTEMPTS = 4;
-    const touchedDepthTests = new Set<boolean>();
-    for (let attempt = 0; state.dirtyGroups.size > 0; attempt++) {
-      if (attempt >= MAX_ATTEMPTS) {
-        console.warn(
-          "[LabelRenderer] Glyph atlas kept overflowing; some labels may render incorrectly.",
+  // Rebuild the instance buffers of every dirty group whose glyphs can be
+  // rasterized before `deadline`; groups with more missing glyphs than the
+  // budget allows are deferred to later frames (their previous geometry keeps
+  // rendering meanwhile), so text streams in without ever blocking a frame.
+  const rebuildDirtyGroups = React.useCallback(
+    (deadline: number) => {
+      // Each rebuild swaps in a freshly created geometry rather than replacing
+      // attributes in place: a once-rendered InstancedBufferGeometry can keep
+      // drawing from its original VAO after setAttribute, so in-place updates
+      // silently render stale content. Rebuilds only happen when labels are
+      // added/removed/changed, so the reallocation cost is irrelevant.
+      const swapGeometry = (
+        mesh: THREE.Mesh,
+        labelIndex: Float32Array,
+        rect: Float32Array,
+        params: Float32Array,
+        uv: Float32Array,
+        count: number,
+      ) => {
+        const geometry = new THREE.InstancedBufferGeometry();
+        geometry.index = state.quad.index!.clone();
+        geometry.attributes.position = state.quad.attributes.position.clone();
+        geometry.setAttribute(
+          "aLabelIndex",
+          new THREE.InstancedBufferAttribute(labelIndex, 1),
         );
-        state.dirtyGroups.clear();
-        break;
-      }
-      const groups = [...state.dirtyGroups];
-      state.dirtyGroups.clear();
-      const generationsBefore = new Map(
-        [...state.atlases].map(([bucket, atlas]) => [bucket, atlas.generation]),
-      );
-
-      for (const key of groups) {
-        const { depthTest, bucket } = parseGroupKey(key);
-        touchedDepthTests.add(depthTest);
-        const configs: LabelEntryConfig[] = [];
-        state.entries.forEach((entry) => {
-          if (entry.groupKey !== key) return;
-          configs.push({
-            text: entry.config.text,
-            sizeMode: entry.config.fontSizeMode,
-            scalePxToUnit: baseFontSize(entry.config) / bucket,
-            ...parseAnchor(entry.config.anchor),
-            labelIndex: entry.labelIndex,
-          });
-        });
-        const atlas = getAtlas(bucket);
-        const buffers = buildInstanceBuffers(
-          configs,
-          (text) => atlas.measure(text),
-          (cluster) => atlas.getCell(cluster),
-          { ascent: atlas.ascent, descent: atlas.descent },
+        geometry.setAttribute(
+          "aRect",
+          new THREE.InstancedBufferAttribute(rect, 4),
         );
-        state.groupBuffers.set(key, buffers);
-        const mesh = getGlyphMesh(depthTest, bucket);
-        swapGeometry(
-          mesh,
-          buffers.glyphLabelIndex,
-          buffers.glyphRect,
-          buffers.glyphParams,
-          buffers.glyphUv,
-          buffers.glyphCount,
+        geometry.setAttribute(
+          "aParams",
+          new THREE.InstancedBufferAttribute(params, 2),
         );
-        // Atlas growth swaps in a new, larger texture; refresh the atlas
-        // uniforms so the material tracks it.
-        const material = mesh.material as THREE.ShaderMaterial;
-        material.uniforms.uAtlas.value = atlas.texture;
-        material.uniforms.uAtlasSize.value.set(atlas.size, atlas.size);
-        material.uniforms.uSdfRadius.value = atlas.sdfRadius;
-      }
+        geometry.setAttribute(
+          "aUvRect",
+          new THREE.InstancedBufferAttribute(uv, 4),
+        );
+        geometry.instanceCount = count;
+        mesh.geometry.dispose();
+        mesh.geometry = geometry;
+      };
 
-      state.atlases.forEach((atlas, bucket) => {
-        if (generationsBefore.get(bucket) === atlas.generation) return;
-        for (const key of state.groupBuffers.keys()) {
-          if (parseGroupKey(key).bucket === bucket) state.dirtyGroups.add(key);
+      // Building glyph cells can grow an atlas, which invalidates every UV
+      // previously built from it -- including groups built earlier in this very
+      // call, or groups that weren't dirty at all. Snapshot generations, build,
+      // and re-mark everything an atlas resize touched; the attempt cap turns a
+      // scene whose glyphs cannot fit even a maximum-size atlas into a rendering
+      // artifact instead of an infinite loop.
+      const MAX_ATTEMPTS = 4;
+      const touchedDepthTests = new Set<boolean>();
+      // Groups deferred for budget (not overflow); re-marked dirty at the end
+      // so they don't count as retry attempts.
+      const deferredGroups = new Set<string>();
+      // At least one glyph always rasterizes per call, so deferred groups make
+      // progress even when a single glyph exceeds the budget.
+      let rasterized = 0;
+      for (let attempt = 0; state.dirtyGroups.size > 0; attempt++) {
+        if (attempt >= MAX_ATTEMPTS) {
+          console.warn(
+            "[LabelRenderer] Glyph atlas kept overflowing; some labels may render incorrectly.",
+          );
+          state.dirtyGroups.clear();
+          break;
         }
-      });
-    }
+        const groups = [...state.dirtyGroups];
+        state.dirtyGroups.clear();
+        const generationsBefore = new Map(
+          [...state.atlases].map(([bucket, atlas]) => [
+            bucket,
+            atlas.generation,
+          ]),
+        );
 
-    // Backgrounds live in one mesh per depth-test setting; reassemble them
-    // from the cached per-group buffers.
-    for (const depthTest of touchedDepthTests) {
-      const bgLabelIndex: number[] = [];
-      const bgRect: number[] = [];
-      const bgParams: number[] = [];
-      state.groupBuffers.forEach((buffers, key) => {
-        if (parseGroupKey(key).depthTest !== depthTest) return;
-        bgLabelIndex.push(...buffers.bgLabelIndex);
-        bgRect.push(...buffers.bgRect);
-        bgParams.push(...buffers.bgParams);
-      });
-      swapGeometry(
-        state.bgMeshes.get(depthTest)!,
-        new Float32Array(bgLabelIndex),
-        new Float32Array(bgRect),
-        new Float32Array(bgParams),
-        new Float32Array(bgLabelIndex.length * 4),
-        bgLabelIndex.length,
-      );
-    }
-  }, [state, getAtlas, getGlyphMesh]);
+        for (const key of groups) {
+          if (deferredGroups.has(key)) continue;
+          const { depthTest, bucket } = parseGroupKey(key);
+          const configs: LabelEntryConfig[] = [];
+          state.entries.forEach((entry) => {
+            if (entry.groupKey !== key) return;
+            configs.push({
+              text: entry.config.text,
+              sizeMode: entry.config.fontSizeMode,
+              scalePxToUnit: baseFontSize(entry.config) / bucket,
+              ...parseAnchor(entry.config.anchor),
+              labelIndex: entry.labelIndex,
+            });
+          });
+          const atlas = getAtlas(bucket);
+
+          // Rasterize this group's missing glyphs within the frame budget;
+          // defer the group if the budget runs out first.
+          let ready = true;
+          prefetch: for (const config of configs) {
+            for (const cluster of segmentGraphemes(config.text)) {
+              if (cluster.trim() === "" || atlas.has(cluster)) continue;
+              if (rasterized > 0 && performance.now() > deadline) {
+                ready = false;
+                break prefetch;
+              }
+              atlas.getCell(cluster);
+              rasterized++;
+            }
+          }
+          if (!ready) {
+            deferredGroups.add(key);
+            continue;
+          }
+
+          touchedDepthTests.add(depthTest);
+          const buffers = buildInstanceBuffers(
+            configs,
+            (text) => atlas.measure(text),
+            (cluster) => atlas.getCell(cluster),
+            { ascent: atlas.ascent, descent: atlas.descent },
+          );
+          state.groupBuffers.set(key, buffers);
+          const mesh = getGlyphMesh(depthTest, bucket);
+          swapGeometry(
+            mesh,
+            buffers.glyphLabelIndex,
+            buffers.glyphRect,
+            buffers.glyphParams,
+            buffers.glyphUv,
+            buffers.glyphCount,
+          );
+          // Atlas growth swaps in a new, larger texture; refresh the atlas
+          // uniforms so the material tracks it.
+          const material = mesh.material as THREE.ShaderMaterial;
+          material.uniforms.uAtlas.value = atlas.texture;
+          material.uniforms.uAtlasSize.value.set(atlas.size, atlas.size);
+          material.uniforms.uSdfRadius.value = atlas.sdfRadius;
+        }
+
+        state.atlases.forEach((atlas, bucket) => {
+          if (generationsBefore.get(bucket) === atlas.generation) return;
+          for (const key of state.groupBuffers.keys()) {
+            if (parseGroupKey(key).bucket === bucket)
+              state.dirtyGroups.add(key);
+          }
+        });
+      }
+
+      // Budget-deferred groups continue next frame.
+      deferredGroups.forEach((key) => state.dirtyGroups.add(key));
+
+      // Backgrounds live in one mesh per depth-test setting; reassemble them
+      // from the cached per-group buffers.
+      for (const depthTest of touchedDepthTests) {
+        const bgLabelIndex: number[] = [];
+        const bgRect: number[] = [];
+        const bgParams: number[] = [];
+        state.groupBuffers.forEach((buffers, key) => {
+          if (parseGroupKey(key).depthTest !== depthTest) return;
+          bgLabelIndex.push(...buffers.bgLabelIndex);
+          bgRect.push(...buffers.bgRect);
+          bgParams.push(...buffers.bgParams);
+        });
+        swapGeometry(
+          state.bgMeshes.get(depthTest)!,
+          new Float32Array(bgLabelIndex),
+          new Float32Array(bgRect),
+          new Float32Array(bgParams),
+          new Float32Array(bgLabelIndex.length * 4),
+          bgLabelIndex.length,
+        );
+      }
+    },
+    [state, getAtlas, getGlyphMesh],
+  );
 
   const register = React.useCallback(
     (config: LabelConfig): LabelHandle => {
@@ -519,6 +574,44 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
   const tempPosition = React.useMemo(() => new THREE.Vector3(), []);
   const lastDpr = React.useRef(labelDpr());
 
+  /** Per-(bucket) progress of background ASCII warming; reset when the
+   * atlas's generation changes (recycle invalidates warmed cells). */
+  const warmCursors = React.useMemo(
+    () => new Map<number, { generation: number; next: number }>(),
+    [],
+  );
+
+  // Spend leftover frame budget rasterizing printable ASCII into small
+  // atlases that are already in use, so future English text additions hit
+  // the cache instead of paying first-use rasterization.
+  const warmAscii = React.useCallback(
+    (deadline: number) => {
+      state.atlases.forEach((atlas, bucket) => {
+        if (bucket > WARM_MAX_FONT_PX) return;
+        let cursor = warmCursors.get(bucket);
+        if (!cursor || cursor.generation !== atlas.generation) {
+          cursor = { generation: atlas.generation, next: ASCII_FIRST };
+        }
+        while (cursor.next <= ASCII_LAST && performance.now() < deadline) {
+          atlas.getCell(String.fromCharCode(cursor.next));
+          cursor.next++;
+          if (atlas.generation !== cursor.generation) {
+            // Warming grew the atlas: existing UVs are stale, rebuild the
+            // bucket's groups. (Not expected at warmable sizes, but safe.)
+            for (const key of state.groupBuffers.keys()) {
+              if (parseGroupKey(key).bucket === bucket) {
+                state.dirtyGroups.add(key);
+              }
+            }
+            cursor.generation = atlas.generation;
+          }
+        }
+        warmCursors.set(bucket, cursor);
+      });
+    },
+    [state, warmCursors],
+  );
+
   useFrame(({ camera, size }) => {
     // A device-pixel-ratio change (browser zoom, moving the window between
     // monitors) changes every screen-mode label's ideal rasterization size;
@@ -533,9 +626,13 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       });
     }
 
-    // Rebuild groups whose labels were added/removed/changed. Atlas growth
-    // (stale UVs) is handled inside the rebuild.
-    if (state.dirtyGroups.size > 0) rebuildDirtyGroups();
+    // Rebuild groups whose labels were added/removed/changed, within this
+    // frame's glyph rasterization budget. Atlas growth (stale UVs) is
+    // handled inside the rebuild; budget-deferred groups stay dirty and
+    // continue next frame.
+    const deadline = performance.now() + GLYPH_BUDGET_MS;
+    if (state.dirtyGroups.size > 0) rebuildDirtyGroups(deadline);
+    else warmAscii(deadline);
 
     // Camera uniforms for screen-space sizing.
     const isPerspective = "fov" in camera && typeof camera.fov === "number";
