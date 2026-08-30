@@ -77,11 +77,11 @@ function fontPxBucket(config: LabelConfig): number {
     config.fontSizeMode === "screen"
       ? SCREEN_EM_CSS_PX * config.fontScreenScale * labelDpr()
       : 64;
-  // Quantize to multiples of 4: sampling an SDF a few percent off its native
-  // resolution is invisible after the shader re-threshold, and coarser
-  // buckets keep an animated fontScreenScale from minting an atlas per pixel
-  // size (unused atlases are also evicted, see rebuildDirtyGroups).
-  return Math.min(256, Math.max(8, Math.round(nominalPx / 4) * 4));
+  // Round up to a power of two: the SDF re-threshold makes off-native
+  // sampling invisible, and bounding the bucket set to {8..256} bounds the
+  // number of atlases the renderer can ever hold -- no eviction machinery.
+  const clamped = Math.min(256, Math.max(8, nominalPx));
+  return 2 ** Math.ceil(Math.log2(clamped));
 }
 
 const VERTEX_SHADER = /* glsl */ `
@@ -173,22 +173,13 @@ void main() {
 /** Maximum labels; one texel per label in the data texture. */
 const MAX_LABELS = 4096;
 
-/** Per-frame budget for main-thread glyph work (LabelRenderer never blocks a
- * frame on text). Distance transforms run in the shared SDF worker, so the
- * budget covers only rasterization + pixel readback (~0.2 ms per glyph); a
- * rebuild requests missing glyphs until the budget runs out, and groups
- * whose glyph pixels haven't landed yet are deferred to following frames --
- * their previous geometry keeps rendering meanwhile, so a label with many
- * new glyphs streams in over a few fully-interactive frames instead of
- * dropping one. Leftover budget pre-warms printable ASCII in small atlases,
- * so later English text additions are pure cache hits. */
+/** Per-frame budget for glyph rasterization (LabelRenderer never blocks a
+ * frame on text): a rebuild rasterizes missing glyphs (~1.4 ms each at the
+ * scene bucket) until the budget runs out, then defers the unfinished
+ * groups to following frames -- their previous geometry keeps rendering
+ * meanwhile, so a label with many new glyphs streams in over interactive
+ * frames instead of dropping one. */
 const GLYPH_BUDGET_MS = 3;
-
-/** Only pre-warm ASCII in atlases at or below this bucket: larger cells would
- * fill (and grow) an atlas for glyphs that may never be used. */
-const WARM_MAX_FONT_PX = 32;
-const ASCII_FIRST = 33; // "!" -- skip space, whitespace has no quad.
-const ASCII_LAST = 126; // "~".
 
 /** Draw order (see ReversedDepthSort.ts and issue #767): backgrounds below
  * Gaussian splats (10000, GaussianSplats.tsx), glyphs strictly above them --
@@ -300,15 +291,10 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       nextIndex: 0,
       /** Groups whose instance buffers need rebuilding. */
       dirtyGroups: new Set<string>(),
-      /** Per-bucket progress of background ASCII warming; reset when the
-       * atlas's generation changes (recycle invalidates warmed cells). */
-      warmCursors: new Map<number, { generation: number; next: number }>(),
       /** Per-group count of deferrals that coincided with a full-atlas
        * recycle: a group whose glyphs cannot fit even a maximum-size atlas
        * would otherwise re-defer forever (see rebuildDirtyGroups). */
       groupRecycleStrikes: new Map<string, number>(),
-      /** When each bucket last had labels, for grace-period eviction. */
-      bucketLastActive: new Map<number, number>(),
       /** Last-built buffers per group; background meshes concatenate these,
        * so clean groups don't need re-layout when a sibling group changes. */
       groupBuffers: new Map<string, InstanceBuffers>(),
@@ -455,18 +441,13 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           prefetch: for (const entry of [...members, ...incoming]) {
             for (const cluster of segmentGraphemes(entry.config.text)) {
               if (cluster.trim() === "") continue;
-              if (!atlas.has(cluster)) {
-                if (rasterized > 0 && performance.now() > deadline) {
-                  ready = false;
-                  break prefetch;
-                }
-                atlas.getCell(cluster);
-                rasterized++;
+              if (atlas.has(cluster)) continue;
+              if (rasterized > 0 && performance.now() > deadline) {
+                ready = false;
+                break prefetch;
               }
-              // The cell's pixels may still be in the SDF worker: keep
-              // requesting the rest so transforms run in parallel, but
-              // defer the group until every glyph can actually draw.
-              if (!atlas.cellReady(cluster)) ready = false;
+              atlas.getCell(cluster);
+              rasterized++;
             }
           }
           if (!ready) {
@@ -567,47 +548,6 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           bgLabelIndex.length,
         );
       }
-
-      // Evict atlases (and their meshes / cached buffers) for buckets no
-      // label uses anymore: bucket migrations -- DPR changes, an animated
-      // fontScreenScale -- would otherwise accumulate ~1 MB atlases, GPU
-      // textures, and ASCII warm work without bound. A grace period keeps an
-      // oscillating scale (or a scene clear-and-reload) from thrashing full
-      // dispose/re-rasterize cycles.
-      const EVICT_GRACE_MS = 5_000;
-      const now = performance.now();
-      const activeBuckets = new Set<number>();
-      state.entries.forEach((entry) => {
-        activeBuckets.add(parseGroupKey(entry.groupKey).bucket);
-        if (entry.targetGroupKey) {
-          activeBuckets.add(parseGroupKey(entry.targetGroupKey).bucket);
-        }
-      });
-      activeBuckets.forEach((bucket) =>
-        state.bucketLastActive.set(bucket, now),
-      );
-      state.atlases.forEach((atlas, bucket) => {
-        if (activeBuckets.has(bucket)) return;
-        const lastActive = state.bucketLastActive.get(bucket) ?? now;
-        if (now - lastActive < EVICT_GRACE_MS) return;
-        atlas.dispose();
-        state.atlases.delete(bucket);
-        state.warmCursors.delete(bucket);
-        state.bucketLastActive.delete(bucket);
-        for (const depthTest of [true, false]) {
-          const key = makeGroupKey(depthTest, bucket);
-          const mesh = state.glyphMeshes.get(key);
-          if (mesh) {
-            state.group.remove(mesh);
-            mesh.geometry.dispose();
-            (mesh.material as THREE.Material).dispose();
-            state.glyphMeshes.delete(key);
-          }
-          state.groupBuffers.delete(key);
-          state.dirtyGroups.delete(key);
-          state.groupRecycleStrikes.delete(key);
-        }
-      });
     },
     [state, getAtlas, getGlyphMesh],
   );
@@ -694,37 +634,6 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
   const tempPosition = React.useMemo(() => new THREE.Vector3(), []);
   const lastDpr = React.useRef(labelDpr());
 
-  // Spend leftover frame budget rasterizing printable ASCII into small
-  // atlases that are already in use, so future English text additions hit
-  // the cache instead of paying first-use rasterization.
-  const warmAscii = React.useCallback(
-    (deadline: number) => {
-      state.atlases.forEach((atlas, bucket) => {
-        if (bucket > WARM_MAX_FONT_PX) return;
-        let cursor = state.warmCursors.get(bucket);
-        if (!cursor || cursor.generation !== atlas.generation) {
-          cursor = { generation: atlas.generation, next: ASCII_FIRST };
-        }
-        while (cursor.next <= ASCII_LAST && performance.now() < deadline) {
-          atlas.getCell(String.fromCharCode(cursor.next));
-          cursor.next++;
-          if (atlas.generation !== cursor.generation) {
-            // Warming grew the atlas: existing UVs are stale, rebuild the
-            // bucket's groups. (Not expected at warmable sizes, but safe.)
-            for (const key of state.groupBuffers.keys()) {
-              if (parseGroupKey(key).bucket === bucket) {
-                state.dirtyGroups.add(key);
-              }
-            }
-            cursor.generation = atlas.generation;
-          }
-        }
-        state.warmCursors.set(bucket, cursor);
-      });
-    },
-    [state],
-  );
-
   useFrame(({ camera, size }) => {
     // A device-pixel-ratio change (browser zoom, moving the window between
     // monitors) changes every screen-mode label's ideal rasterization size;
@@ -745,9 +654,9 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
     // frame's glyph rasterization budget. Atlas growth (stale UVs) is
     // handled inside the rebuild; budget-deferred groups stay dirty and
     // continue next frame.
-    const deadline = performance.now() + GLYPH_BUDGET_MS;
-    if (state.dirtyGroups.size > 0) rebuildDirtyGroups(deadline);
-    else warmAscii(deadline);
+    if (state.dirtyGroups.size > 0) {
+      rebuildDirtyGroups(performance.now() + GLYPH_BUDGET_MS);
+    }
 
     // Camera uniforms for screen-space sizing.
     const isPerspective = "fov" in camera && typeof camera.fov === "number";
