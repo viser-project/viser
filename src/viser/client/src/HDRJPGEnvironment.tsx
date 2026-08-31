@@ -30,6 +30,22 @@ interface HDRJPGEnvironmentProps {
 // Initial canvas opacity while loading.
 const LOADING_OPACITY = 0.05;
 
+/** Byte-level equality for environment sources: every EnvironmentMapMessage
+ * re-sends the image bytes (rotating the environment or changing a scalar
+ * intensity re-sends the same preset), and msgpack decodes a fresh
+ * Uint8Array each time. Comparing contents lets the decode effect below
+ * skip identical images, keeping scalar-parameter updates cheap. */
+function sourcesEqual(
+  a: string | Uint8Array<ArrayBuffer>,
+  b: string | Uint8Array<ArrayBuffer>,
+): boolean {
+  if (a === b) return true;
+  if (typeof a === "string" || typeof b === "string") return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 export function HDRJPGEnvironment({
   source,
   background = false,
@@ -42,6 +58,14 @@ export function HDRJPGEnvironment({
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
+
+  // Keep the previous source reference while the bytes are unchanged, so the
+  // load effect's dependency doesn't churn on every message.
+  const stableSourceRef = useRef(source);
+  if (!sourcesEqual(stableSourceRef.current, source)) {
+    stableSourceRef.current = source;
+  }
+  const stableSource = stableSourceRef.current;
 
   // Track fade-in progress (0 to 1).
   const fadeProgress = useRef(0);
@@ -59,9 +83,9 @@ export function HDRJPGEnvironment({
 
     // Bytes from the server are loaded through a temporary object URL.
     const url =
-      typeof source === "string"
-        ? source
-        : URL.createObjectURL(new Blob([source], { type: "image/jpeg" }));
+      typeof stableSource === "string"
+        ? stableSource
+        : URL.createObjectURL(new Blob([stableSource], { type: "image/jpeg" }));
 
     loader.load(
       url,
@@ -93,9 +117,9 @@ export function HDRJPGEnvironment({
 
     return () => {
       disposed = true;
-      if (typeof source !== "string") URL.revokeObjectURL(url);
+      if (typeof stableSource !== "string") URL.revokeObjectURL(url);
     };
-  }, [source, gl]);
+  }, [stableSource, gl]);
 
   // Dispose of previous texture when changed.
   useEffect(() => {
