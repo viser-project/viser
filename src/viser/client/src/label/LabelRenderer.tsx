@@ -180,8 +180,10 @@ const MAX_LABELS = 4096;
  * scene bucket) until the budget runs out, then defers the unfinished
  * groups to following frames -- their previous geometry keeps rendering
  * meanwhile, so a label with many new glyphs streams in over interactive
- * frames instead of dropping one. */
-const GLYPH_BUDGET_MS = 3;
+ * frames instead of dropping one. 5 ms matches common cooperative-slicing
+ * practice, stays under a third of a 60 Hz frame, and keeps the deferred
+ * window (the subtlest state in this file) short. */
+const GLYPH_BUDGET_MS = 5;
 
 /** Draw order (see ReversedDepthSort.ts and issue #767): backgrounds below
  * Gaussian splats (10000, GaussianSplats.tsx), glyphs strictly above them --
