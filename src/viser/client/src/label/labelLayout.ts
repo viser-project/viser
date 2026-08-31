@@ -138,17 +138,16 @@ export function layoutLabel(
 
   const glyphs: GlyphPlacement[] = [];
   measuredLines.forEach((line, lineIndex) => {
-    // Center each line horizontally within the block, matching troika's
-    // default multi-line alignment for centered labels; for left/right
-    // anchors the block itself is offset, and lines stay centered (this
-    // matches textAlign: center behavior).
-    const lineStart = (width - line.width) / 2;
+    // Lines are left-aligned within the block, matching the previous
+    // troika-based implementation (which used troika's default
+    // textAlign: "left"); the anchor offsets below position the block
+    // itself.
     const baselineY = lineIndex * lineHeight + metrics.ascent;
     line.clusters.forEach((cluster, i) => {
       if (cluster.trim() === "") return; // Whitespace needs no quad.
       glyphs.push({
         cluster,
-        x: lineStart + line.offsets[i],
+        x: line.offsets[i],
         baselineY,
       });
     });

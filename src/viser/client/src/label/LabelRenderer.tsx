@@ -605,6 +605,13 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
         labelIndex = state.freeIndices.pop()!;
       } else if (state.nextIndex < MAX_LABELS) {
         labelIndex = state.nextIndex++;
+      } else if (state.pendingFreeIndices.length > 0) {
+        // Last resort: a mass replace (dispose + register of thousands of
+        // labels in one commit) can exhaust fresh indices while disposed
+        // ones are still cooling down. Reusing a cooling index risks one
+        // frame of the old label's quads at the new position -- better than
+        // permanently dropping the label.
+        labelIndex = state.pendingFreeIndices.shift()!.index;
       } else {
         console.warn("[LabelRenderer] Too many labels; label dropped.");
         return { update: () => {}, dispose: () => {} };

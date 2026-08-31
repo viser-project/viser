@@ -119,6 +119,20 @@ describe("buildInstanceBuffers", () => {
     expect(height).toBeCloseTo(10 + 2);
   });
 
+  it("skips glyphs whose cell is null (capacity-exceeded fallback)", () => {
+    // The renderer passes a getCell that returns null for glyphs that no
+    // longer fit the atlas; those clusters get no quad, but the label's
+    // layout (and background) is otherwise unaffected.
+    const buffers = buildInstanceBuffers(
+      [entry({ text: "abc" })],
+      fakeMeasure,
+      (cluster) => (cluster === "b" ? null : fakeGetCell(cluster)),
+      METRICS,
+    );
+    expect(buffers.glyphCount).toBe(2);
+    expect(buffers.bgCount).toBe(1);
+  });
+
   it("handles an empty entry list", () => {
     const buffers = buildInstanceBuffers([], fakeMeasure, fakeGetCell, METRICS);
     expect(buffers.glyphCount).toBe(0);

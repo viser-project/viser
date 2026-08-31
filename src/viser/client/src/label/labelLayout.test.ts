@@ -83,7 +83,7 @@ describe("layoutLabel", () => {
     expect(layout.width).toBe(30);
   });
 
-  it("stacks and centers multiple lines", () => {
+  it("stacks multiple lines, left-aligned like troika", () => {
     const layout = layoutLabel(
       "abcd\nab",
       fakeMeasure,
@@ -94,8 +94,10 @@ describe("layoutLabel", () => {
     expect(layout.width).toBe(40);
     expect(layout.height).toBe(2 * LINE_HEIGHT);
     const secondLine = layout.glyphs.filter((g) => g.baselineY > LINE_HEIGHT);
-    // Second line ("ab", 20 wide) centered in the 40-wide block.
-    expect(secondLine.map((g) => g.x)).toEqual([10, 20]);
+    // Second line ("ab") starts flush with the block's left edge: the
+    // previous troika implementation used textAlign "left" (its default),
+    // and anchoring positions the block, not the lines.
+    expect(secondLine.map((g) => g.x)).toEqual([0, 10]);
     expect(secondLine[0].baselineY).toBe(LINE_HEIGHT + METRICS.ascent);
   });
 

@@ -101,8 +101,8 @@ def _assert_glyphs_dark_on_both_surfaces(
     (issue #767), while get_render() captures invert when the compensating
     sort is applied to a fresh camera whose reversedDepth flag is not yet set.
 
-    Label text rasterizes asynchronously (troika builds the SDF glyph atlas
-    off the main thread), so early frames can legitimately predate the glyphs;
+    Label glyphs stream in over frames (LabelRenderer rasterizes them under
+    a per-frame budget), so early frames can legitimately predate the glyphs;
     polling until the deadline separates "not rendered yet" from "rendered in
     the wrong order", which never darkens no matter how long we wait.
     """
