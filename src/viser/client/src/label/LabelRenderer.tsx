@@ -451,24 +451,30 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
         );
 
         // One membership pass per attempt (instead of one full-entry scan
-        // per group, which is quadratic while groups stream over frames):
-        // members render in the group now; incoming entries are migrating
-        // in and flip over once the group is ready.
+        // per group, which is quadratic while groups stream over frames),
+        // indexing only the dirty groups: members render in the group now;
+        // incoming entries are migrating in and flip once it is ready.
+        const dirtySet = new Set(groups);
         const membership = new Map<
           string,
           { members: LabelEntry[]; incoming: LabelEntry[] }
         >();
-        const membershipOf = (groupKey_: string) => {
-          let entry = membership.get(groupKey_);
-          if (!entry) {
-            entry = { members: [], incoming: [] };
-            membership.set(groupKey_, entry);
+        const membershipOf = (key: string) => {
+          let record = membership.get(key);
+          if (!record) {
+            record = { members: [], incoming: [] };
+            membership.set(key, record);
           }
-          return entry;
+          return record;
         };
         state.entries.forEach((entry) => {
-          membershipOf(entry.groupKey).members.push(entry);
-          if (entry.targetGroupKey !== undefined) {
+          if (dirtySet.has(entry.groupKey)) {
+            membershipOf(entry.groupKey).members.push(entry);
+          }
+          if (
+            entry.targetGroupKey !== undefined &&
+            dirtySet.has(entry.targetGroupKey)
+          ) {
             membershipOf(entry.targetGroupKey).incoming.push(entry);
           }
         });
@@ -476,7 +482,11 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
         for (const key of groups) {
           if (deferredGroups.has(key)) continue;
           const { depthTest, bucket } = parseGroupKey(key);
-          const { members, incoming } = membershipOf(key);
+          // entry.groupKey is authoritative: an entry may have flipped out
+          // of this group while an earlier group in this attempt built.
+          const record = membershipOf(key);
+          const members = record.members.filter((e) => e.groupKey === key);
+          const incoming = record.incoming;
           const atlas = getAtlas(bucket);
 
           // Rasterize this group's missing glyphs within the frame budget;
@@ -536,15 +546,10 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           // The group is (as-)ready(-as-it-gets): migrating entries now
           // render here, and their old groups drop them.
           for (const entry of incoming) {
-            const oldKey = entry.groupKey;
+            state.dirtyGroups.add(entry.groupKey);
             entry.groupKey = key;
             entry.targetGroupKey = undefined;
             members.push(entry);
-            state.dirtyGroups.add(oldKey);
-            // Keep the membership index consistent for groups processed
-            // later in this same attempt: the entry left its old group.
-            const old = membership.get(oldKey);
-            if (old) old.members = old.members.filter((e) => e !== entry);
           }
 
           const configs: LabelEntryConfig[] = members.map((entry) => ({
@@ -642,14 +647,14 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
   );
 
   // Shared migration protocol for update() and DPR re-keying: same group ->
-  // dissolve any pending migration and rebuild in place; different group ->
-  // migrate transactionally (the entry keeps rendering in its old group
-  // until the target group's glyphs are ready; rebuildDirtyGroups flips it).
+  // dissolve any pending migration (the entry never left; the caller marks
+  // the group if its content changed); different group -> migrate
+  // transactionally (the entry keeps rendering in its old group until the
+  // target group's glyphs are ready; rebuildDirtyGroups flips it).
   const retargetEntry = React.useCallback(
     (entry: LabelEntry, newKey: string) => {
       if (newKey === entry.groupKey) {
         entry.targetGroupKey = undefined;
-        markGroupChanged(entry.groupKey);
       } else {
         entry.targetGroupKey = newKey;
         markGroupChanged(newKey);
@@ -694,8 +699,8 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           entry.clusters = undefined;
           entry.parentName = newConfig.name.split("/").slice(0, -1).join("/");
           // The current group re-renders immediately (the text may have
-          // changed); retargetEntry then rebuilds in place or starts a
-          // transactional migration if the bucket/depth-test changed.
+          // changed); retargetEntry additionally starts a transactional
+          // migration if the bucket/depth-test changed.
           markGroupChanged(entry.groupKey);
           retargetEntry(entry, groupKey(newConfig));
         },
