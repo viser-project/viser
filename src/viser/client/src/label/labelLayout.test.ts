@@ -54,6 +54,18 @@ describe("segmentGraphemes", () => {
     expect(segmentGraphemes("áb")).toEqual(["á", "b"]);
     expect(segmentGraphemes("x👍🏽y")).toEqual(["x", "👍🏽", "y"]);
   });
+  it("splits CJK text into per-character clusters", () => {
+    // Han, hiragana, katakana, hangul: one cluster per character, so each
+    // gets its own atlas cell and quad.
+    expect(segmentGraphemes("\u70b9\u4e91")).toEqual(["\u70b9", "\u4e91"]);
+    expect(segmentGraphemes("\u30dd\u30a4\u30f3\u30c8")).toHaveLength(4);
+    expect(segmentGraphemes("\ud3ec\uc778\ud2b8")).toHaveLength(3);
+  });
+
+  it("segments mixed Latin and CJK text", () => {
+    expect(segmentGraphemes("pt\u70b9")).toEqual(["p", "t", "\u70b9"]);
+  });
+
   it("handles plain ASCII", () => {
     expect(segmentGraphemes("hi")).toEqual(["h", "i"]);
   });
@@ -99,6 +111,36 @@ describe("layoutLabel", () => {
     // and anchoring positions the block, not the lines.
     expect(secondLine.map((g) => g.x)).toEqual([0, 10]);
     expect(secondLine[0].baselineY).toBe(LINE_HEIGHT + METRICS.ascent);
+  });
+
+  it("treats ideographic space as whitespace: advance kept, no quad", () => {
+    // U+3000 separates CJK words; like ASCII spaces it must advance the pen
+    // (String.prototype.trim strips it) without emitting a glyph quad.
+    const layout = layoutLabel(
+      "\u70b9\u3000\u4e91",
+      fakeMeasure,
+      METRICS,
+      "left",
+      "top",
+    );
+    expect(layout.glyphs.map((g) => g.cluster)).toEqual(["\u70b9", "\u4e91"]);
+    expect(layout.glyphs.map((g) => g.x)).toEqual([0, 20]);
+    expect(layout.width).toBe(30);
+  });
+
+  it("lays out multi-line CJK text", () => {
+    const layout = layoutLabel(
+      "\u70b9\u4e91\u56f3\n\u30c6\u30b9\u30c8",
+      fakeMeasure,
+      METRICS,
+      "center",
+      "middle",
+    );
+    expect(layout.glyphs).toHaveLength(6);
+    expect(layout.width).toBe(30);
+    expect(layout.height).toBe(2 * LINE_HEIGHT);
+    const secondLine = layout.glyphs.filter((g) => g.baselineY > LINE_HEIGHT);
+    expect(secondLine.map((g) => g.x)).toEqual([0, 10, 20]);
   });
 
   it("returns no glyphs for empty text", () => {

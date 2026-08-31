@@ -119,6 +119,18 @@ describe("buildInstanceBuffers", () => {
     expect(height).toBeCloseTo(10 + 2);
   });
 
+  it("emits one quad per CJK character, none for ideographic spaces", () => {
+    const buffers = buildInstanceBuffers(
+      [entry({ text: "\u70b9\u3000\u4e91" })],
+      fakeMeasure,
+      fakeGetCell,
+      METRICS,
+    );
+    expect(buffers.glyphCount).toBe(2);
+    // Distinct clusters get distinct atlas cells (distinct u0 values).
+    expect(buffers.glyphUv[0]).not.toBe(buffers.glyphUv[4]);
+  });
+
   it("skips glyphs whose cell is null (capacity-exceeded fallback)", () => {
     // The renderer passes a getCell that returns null for glyphs that no
     // longer fit the atlas; those clusters get no quad, but the label's
