@@ -153,8 +153,10 @@ void main() {
   // margin, where the field saturates -- every quad would fill with uniform
   // partial alpha (dark smudges instead of distant text). Clamping to half
   // the encoding radius (~ the quad margin) lets far text fade out cleanly.
-  float aa = min(
-    0.5 * length(fwidth(vUv * uAtlasSize)), 0.5 * uSdfRadius);
+  // The floor guards fwidth quantizing to exactly 0 at extreme
+  // magnification, where smoothstep(edge0 == edge1) is undefined.
+  float aa = clamp(
+    0.5 * length(fwidth(vUv * uAtlasSize)), 1e-4, 0.5 * uSdfRadius);
   float a = smoothstep(-aa, aa, distPx) * vAlpha;
   if (a < 0.004) discard;
   gl_FragColor = vec4(0.0, 0.0, 0.0, a);
@@ -198,6 +200,10 @@ interface LabelEntry {
    * are ready, then rebuildDirtyGroups flips it over -- so migrations never
    * blank the label. */
   targetGroupKey?: string;
+  /** Lazily-computed grapheme clusters of config.text (invalidated on
+   * update): the prefetch re-scans deferred groups every frame, and
+   * re-segmenting every label each time is avoidable garbage. */
+  clusters?: string[];
 }
 
 /** Labels are rebuilt in groups of one glyph mesh each: a (depth test, atlas
@@ -288,6 +294,11 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       glyphMeshes: new Map<string, THREE.Mesh>(),
       entries: new Map<symbol, LabelEntry>(),
       freeIndices: [] as number[],
+      /** Disposed labels' indices, releasable only after their group has
+       * rebuilt: a budget-deferred group still renders the old quads bound
+       * to the index, and reusing it early would billboard the old label's
+       * text at the new label's position. */
+      pendingFreeIndices: [] as { index: number; groupKey: string }[],
       nextIndex: 0,
       /** Groups whose instance buffers need rebuilding. */
       dirtyGroups: new Set<string>(),
@@ -390,6 +401,17 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
         mesh.geometry = geometry;
       };
 
+      // Atlas growth swaps in a new texture object; every material of the
+      // bucket must re-point at it (including deferred groups' materials --
+      // binding a disposed texture makes three re-allocate GL storage for it,
+      // which then leaks when the uniform finally swaps).
+      const refreshAtlasUniforms = (mesh: THREE.Mesh, atlas: GlyphAtlas) => {
+        const material = mesh.material as THREE.ShaderMaterial;
+        material.uniforms.uAtlas.value = atlas.texture;
+        material.uniforms.uAtlasSize.value.set(atlas.size, atlas.size);
+        material.uniforms.uSdfRadius.value = atlas.sdfRadius;
+      };
+
       // Building glyph cells can grow an atlas, which invalidates every UV
       // previously built from it -- including groups built earlier in this very
       // call, or groups that weren't dirty at all. Snapshot generations, build,
@@ -410,6 +432,10 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
             "[LabelRenderer] Glyph atlas kept overflowing; some labels may render incorrectly.",
           );
           state.dirtyGroups.clear();
+          state.pendingFreeIndices.forEach((entry) =>
+            state.freeIndices.push(entry.index),
+          );
+          state.pendingFreeIndices = [];
           break;
         }
         const groups = [...state.dirtyGroups];
@@ -435,31 +461,43 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           const atlas = getAtlas(bucket);
 
           // Rasterize this group's missing glyphs within the frame budget;
-          // defer the group if the budget runs out first.
+          // defer the group if the budget runs out first. A group whose
+          // strikes are capped (its glyph set exceeded atlas capacity, see
+          // below) stops rasterizing entirely and renders with the glyphs
+          // that fit, until a register/update/dispose gives it a new chance.
+          const capped = (state.groupRecycleStrikes.get(key) ?? 0) >= 2;
           const recyclesBefore = atlas.recycles;
-          let ready = true;
-          prefetch: for (const entry of [...members, ...incoming]) {
-            for (const cluster of segmentGraphemes(entry.config.text)) {
-              if (cluster.trim() === "") continue;
-              if (atlas.has(cluster)) continue;
-              if (rasterized > 0 && performance.now() > deadline) {
-                ready = false;
-                break prefetch;
+          const generationBefore = atlas.generation;
+          let ready = !capped;
+          if (!capped) {
+            prefetch: for (const entry of [...members, ...incoming]) {
+              entry.clusters ??= segmentGraphemes(entry.config.text);
+              for (const cluster of entry.clusters) {
+                if (cluster.trim() === "") continue;
+                if (atlas.has(cluster)) continue;
+                if (rasterized > 0 && performance.now() > deadline) {
+                  ready = false;
+                  break prefetch;
+                }
+                atlas.getCell(cluster);
+                rasterized++;
               }
-              atlas.getCell(cluster);
-              rasterized++;
             }
+            // Atlas growth during the prefetch wiped cells checked earlier
+            // in this very pass; a "ready" verdict from before the growth
+            // would let the build below re-rasterize them with no deadline.
+            if (atlas.generation !== generationBefore) ready = false;
           }
-          if (!ready) {
+          if (!ready && !capped) {
             // A recycle during prefetch means this group's glyph set may not
-            // fit even a maximum-size atlas; after repeated recycles, give
-            // up on completeness and render with the glyphs that fit, so it
-            // doesn't burn the budget (and wipe the atlas) forever.
+            // fit even a maximum-size atlas; after repeated recycles, cap
+            // the group so it stops burning the budget (and wiping the
+            // atlas) forever.
             const strikes =
               (state.groupRecycleStrikes.get(key) ?? 0) +
               (atlas.recycles > recyclesBefore ? 1 : 0);
+            state.groupRecycleStrikes.set(key, strikes);
             if (strikes < 2) {
-              state.groupRecycleStrikes.set(key, strikes);
               deferredGroups.add(key);
               continue;
             }
@@ -467,7 +505,7 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
               "[LabelRenderer] Glyph set exceeds atlas capacity; rendering with the glyphs that fit.",
             );
           }
-          state.groupRecycleStrikes.delete(key);
+          if (ready) state.groupRecycleStrikes.delete(key);
 
           // The group is (as-)ready(-as-it-gets): migrating entries now
           // render here, and their old groups drop them.
@@ -507,16 +545,22 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
             buffers.glyphUv,
             buffers.glyphCount,
           );
-          // Atlas growth swaps in a new, larger texture; refresh the atlas
-          // uniforms so the material tracks it.
-          const material = mesh.material as THREE.ShaderMaterial;
-          material.uniforms.uAtlas.value = atlas.texture;
-          material.uniforms.uAtlasSize.value.set(atlas.size, atlas.size);
-          material.uniforms.uSdfRadius.value = atlas.sdfRadius;
+          refreshAtlasUniforms(mesh, atlas);
+          // The old geometry (which may have referenced disposed labels'
+          // indices) is gone; those indices are safe to reuse now.
+          state.pendingFreeIndices = state.pendingFreeIndices.filter((p) => {
+            if (p.groupKey !== key) return true;
+            state.freeIndices.push(p.index);
+            return false;
+          });
         }
 
         state.atlases.forEach((atlas, bucket) => {
           if (generationsBefore.get(bucket) === atlas.generation) return;
+          for (const depthTest of [true, false]) {
+            const mesh = state.glyphMeshes.get(makeGroupKey(depthTest, bucket));
+            if (mesh) refreshAtlasUniforms(mesh, atlas);
+          }
           for (const key of state.groupBuffers.keys()) {
             if (parseGroupKey(key).bucket === bucket)
               state.dirtyGroups.add(key);
@@ -565,6 +609,7 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       }
       const key = Symbol();
       const entryGroup = groupKey(config);
+      state.groupRecycleStrikes.delete(entryGroup);
       state.entries.set(key, {
         config,
         labelIndex,
@@ -578,8 +623,11 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           const entry = state.entries.get(key);
           if (!entry) return;
           entry.config = newConfig;
+          entry.clusters = undefined;
           entry.parentName = newConfig.name.split("/").slice(0, -1).join("/");
           const newKey = groupKey(newConfig);
+          state.groupRecycleStrikes.delete(entry.groupKey);
+          state.groupRecycleStrikes.delete(newKey);
           if (newKey === entry.groupKey) {
             // Same group: rebuild in place (an aborted migration, if any,
             // just dissolves -- the entry never left this group).
@@ -599,7 +647,11 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           const entry = state.entries.get(key);
           if (!entry) return;
           state.entries.delete(key);
-          state.freeIndices.push(entry.labelIndex);
+          state.pendingFreeIndices.push({
+            index: entry.labelIndex,
+            groupKey: entry.groupKey,
+          });
+          state.groupRecycleStrikes.delete(entry.groupKey);
           // Zero the slot so a stale texel can't flash before rebuild.
           state.labelData.fill(
             0,
