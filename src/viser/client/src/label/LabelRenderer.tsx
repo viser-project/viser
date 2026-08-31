@@ -202,9 +202,10 @@ interface LabelEntry {
    * are ready, then rebuildDirtyGroups flips it over -- so migrations never
    * blank the label. */
   targetGroupKey?: string;
-  /** Lazily-computed grapheme clusters of config.text (invalidated on
-   * update): the prefetch re-scans deferred groups every frame, and
-   * re-segmenting every label each time is avoidable garbage. */
+  /** Lazily-computed unique non-whitespace grapheme clusters of
+   * config.text (invalidated on update): the prefetch re-scans deferred
+   * groups every frame, and re-segmenting/re-filtering each time is
+   * avoidable garbage. */
   clusters?: string[];
 }
 
@@ -427,7 +428,7 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       const deferredGroups = new Set<string>();
       // At least one glyph always rasterizes per call, so deferred groups make
       // progress even when a single glyph exceeds the budget.
-      let rasterized = 0;
+      let rasterizedAny = false;
       for (let attempt = 0; state.dirtyGroups.size > 0; attempt++) {
         if (attempt >= MAX_ATTEMPTS) {
           console.warn(
@@ -449,17 +450,33 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           ]),
         );
 
+        // One membership pass per attempt (instead of one full-entry scan
+        // per group, which is quadratic while groups stream over frames):
+        // members render in the group now; incoming entries are migrating
+        // in and flip over once the group is ready.
+        const membership = new Map<
+          string,
+          { members: LabelEntry[]; incoming: LabelEntry[] }
+        >();
+        const membershipOf = (groupKey_: string) => {
+          let entry = membership.get(groupKey_);
+          if (!entry) {
+            entry = { members: [], incoming: [] };
+            membership.set(groupKey_, entry);
+          }
+          return entry;
+        };
+        state.entries.forEach((entry) => {
+          membershipOf(entry.groupKey).members.push(entry);
+          if (entry.targetGroupKey !== undefined) {
+            membershipOf(entry.targetGroupKey).incoming.push(entry);
+          }
+        });
+
         for (const key of groups) {
           if (deferredGroups.has(key)) continue;
           const { depthTest, bucket } = parseGroupKey(key);
-          // Current members, plus entries migrating in (still rendered by
-          // their old group; they flip over once this group is ready).
-          const members: LabelEntry[] = [];
-          const incoming: LabelEntry[] = [];
-          state.entries.forEach((entry) => {
-            if (entry.groupKey === key) members.push(entry);
-            else if (entry.targetGroupKey === key) incoming.push(entry);
-          });
+          const { members, incoming } = membershipOf(key);
           const atlas = getAtlas(bucket);
 
           // Rasterize this group's missing glyphs within the frame budget;
@@ -467,47 +484,54 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           // strikes are capped (its glyph set exceeded atlas capacity, see
           // below) stops rasterizing entirely and renders with the glyphs
           // that fit, until a register/update/dispose gives it a new chance.
-          const capped = (state.groupRecycleStrikes.get(key) ?? 0) >= 2;
-          const recyclesBefore = atlas.recycles;
-          const generationBefore = atlas.generation;
-          let ready = !capped;
-          if (!capped) {
+          let ready = false;
+          if ((state.groupRecycleStrikes.get(key) ?? 0) < 2) {
+            const recyclesBefore = atlas.recycles;
+            const generationBefore = atlas.generation;
+            ready = true;
             prefetch: for (const entry of [...members, ...incoming]) {
-              entry.clusters ??= segmentGraphemes(entry.config.text);
+              entry.clusters ??= [
+                ...new Set(
+                  segmentGraphemes(entry.config.text).filter(
+                    (cluster) => cluster.trim() !== "",
+                  ),
+                ),
+              ];
               for (const cluster of entry.clusters) {
-                if (cluster.trim() === "") continue;
                 if (atlas.has(cluster)) continue;
-                if (rasterized > 0 && performance.now() > deadline) {
+                if (rasterizedAny && performance.now() > deadline) {
                   ready = false;
                   break prefetch;
                 }
                 atlas.getCell(cluster);
-                rasterized++;
+                rasterizedAny = true;
               }
             }
             // Atlas growth during the prefetch wiped cells checked earlier
             // in this very pass; a "ready" verdict from before the growth
             // would let the build below re-rasterize them with no deadline.
             if (atlas.generation !== generationBefore) ready = false;
-          }
-          if (!ready && !capped) {
-            // A recycle during prefetch means this group's glyph set may not
-            // fit even a maximum-size atlas; after repeated recycles, cap
-            // the group so it stops burning the budget (and wiping the
-            // atlas) forever.
-            const strikes =
-              (state.groupRecycleStrikes.get(key) ?? 0) +
-              (atlas.recycles > recyclesBefore ? 1 : 0);
-            state.groupRecycleStrikes.set(key, strikes);
-            if (strikes < 2) {
-              deferredGroups.add(key);
-              continue;
+
+            if (ready) {
+              state.groupRecycleStrikes.delete(key);
+            } else {
+              // A recycle during prefetch means this group's glyph set may
+              // not fit even a maximum-size atlas; after repeated recycles,
+              // cap the group so it stops burning the budget (and wiping
+              // the atlas) forever.
+              const strikes =
+                (state.groupRecycleStrikes.get(key) ?? 0) +
+                (atlas.recycles > recyclesBefore ? 1 : 0);
+              state.groupRecycleStrikes.set(key, strikes);
+              if (strikes < 2) {
+                deferredGroups.add(key);
+                continue;
+              }
+              console.warn(
+                "[LabelRenderer] Glyph set exceeds atlas capacity; rendering with the glyphs that fit.",
+              );
             }
-            console.warn(
-              "[LabelRenderer] Glyph set exceeds atlas capacity; rendering with the glyphs that fit.",
-            );
           }
-          if (ready) state.groupRecycleStrikes.delete(key);
 
           // The group is (as-)ready(-as-it-gets): migrating entries now
           // render here, and their old groups drop them.
@@ -517,6 +541,10 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
             entry.targetGroupKey = undefined;
             members.push(entry);
             state.dirtyGroups.add(oldKey);
+            // Keep the membership index consistent for groups processed
+            // later in this same attempt: the entry left its old group.
+            const old = membership.get(oldKey);
+            if (old) old.members = old.members.filter((e) => e !== entry);
           }
 
           const configs: LabelEntryConfig[] = members.map((entry) => ({
@@ -538,16 +566,17 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
             { ascent: atlas.ascent, descent: atlas.descent },
           );
           state.groupBuffers.set(key, buffers);
-          const mesh = getGlyphMesh(depthTest, bucket);
           swapGeometry(
-            mesh,
+            getGlyphMesh(depthTest, bucket),
             buffers.glyphLabelIndex,
             buffers.glyphRect,
             buffers.glyphParams,
             buffers.glyphUv,
             buffers.glyphCount,
           );
-          refreshAtlasUniforms(mesh, atlas);
+          // (Atlas-texture uniforms need no refresh here: any texture swap
+          // bumps the generation, and the end-of-attempt sweep re-points
+          // every mesh of the affected bucket.)
           // The old geometry (which may have referenced disposed labels'
           // indices) is gone; those indices are safe to reuse now.
           state.pendingFreeIndices = state.pendingFreeIndices.filter((p) => {
@@ -598,6 +627,37 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
     [state, getAtlas, getGlyphMesh],
   );
 
+  // A membership change -- label added, removed, retargeted, or its text
+  // changed -- rebuilds the group AND clears its capacity cap: the glyph set
+  // is different now, so a group previously capped as "exceeds atlas
+  // capacity" gets a fresh chance. Rebuild-internal dirty marks (deferral,
+  // generation invalidation, a migration's old key) use dirtyGroups.add
+  // directly: those must not reset strikes.
+  const markGroupChanged = React.useCallback(
+    (key: string) => {
+      state.dirtyGroups.add(key);
+      state.groupRecycleStrikes.delete(key);
+    },
+    [state],
+  );
+
+  // Shared migration protocol for update() and DPR re-keying: same group ->
+  // dissolve any pending migration and rebuild in place; different group ->
+  // migrate transactionally (the entry keeps rendering in its old group
+  // until the target group's glyphs are ready; rebuildDirtyGroups flips it).
+  const retargetEntry = React.useCallback(
+    (entry: LabelEntry, newKey: string) => {
+      if (newKey === entry.groupKey) {
+        entry.targetGroupKey = undefined;
+        markGroupChanged(entry.groupKey);
+      } else {
+        entry.targetGroupKey = newKey;
+        markGroupChanged(newKey);
+      }
+    },
+    [markGroupChanged],
+  );
+
   const register = React.useCallback(
     (config: LabelConfig): LabelHandle => {
       let labelIndex: number;
@@ -618,14 +678,13 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
       }
       const key = Symbol();
       const entryGroup = groupKey(config);
-      state.groupRecycleStrikes.delete(entryGroup);
       state.entries.set(key, {
         config,
         labelIndex,
         parentName: config.name.split("/").slice(0, -1).join("/"),
         groupKey: entryGroup,
       });
-      state.dirtyGroups.add(entryGroup);
+      markGroupChanged(entryGroup);
 
       return {
         update: (newConfig: LabelConfig) => {
@@ -634,23 +693,11 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
           entry.config = newConfig;
           entry.clusters = undefined;
           entry.parentName = newConfig.name.split("/").slice(0, -1).join("/");
-          const newKey = groupKey(newConfig);
-          state.groupRecycleStrikes.delete(entry.groupKey);
-          state.groupRecycleStrikes.delete(newKey);
-          if (newKey === entry.groupKey) {
-            // Same group: rebuild in place (an aborted migration, if any,
-            // just dissolves -- the entry never left this group).
-            entry.targetGroupKey = undefined;
-            state.dirtyGroups.add(entry.groupKey);
-          } else {
-            // Group changed (bucket or depth test): migrate transactionally.
-            // The entry keeps rendering in its old group -- rebuilt so text
-            // changes still show immediately -- until the target group's
-            // glyphs are ready (see rebuildDirtyGroups).
-            entry.targetGroupKey = newKey;
-            state.dirtyGroups.add(entry.groupKey);
-            state.dirtyGroups.add(newKey);
-          }
+          // The current group re-renders immediately (the text may have
+          // changed); retargetEntry then rebuilds in place or starts a
+          // transactional migration if the bucket/depth-test changed.
+          markGroupChanged(entry.groupKey);
+          retargetEntry(entry, groupKey(newConfig));
         },
         dispose: () => {
           const entry = state.entries.get(key);
@@ -660,19 +707,18 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
             index: entry.labelIndex,
             groupKey: entry.groupKey,
           });
-          state.groupRecycleStrikes.delete(entry.groupKey);
           // Zero the slot so a stale texel can't flash before rebuild.
           state.labelData.fill(
             0,
             entry.labelIndex * 4,
             entry.labelIndex * 4 + 4,
           );
-          state.dirtyGroups.add(entry.groupKey);
-          if (entry.targetGroupKey) state.dirtyGroups.add(entry.targetGroupKey);
+          markGroupChanged(entry.groupKey);
+          if (entry.targetGroupKey) markGroupChanged(entry.targetGroupKey);
         },
       };
     },
-    [state],
+    [state, markGroupChanged, retargetEntry],
   );
 
   const api = React.useMemo(() => ({ register }), [register]);
@@ -703,11 +749,7 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
     if (dpr !== lastDpr.current) {
       lastDpr.current = dpr;
       state.entries.forEach((entry) => {
-        // Migrate transactionally, like update(): entries keep rendering in
-        // their old group until the re-keyed group's glyphs are ready.
-        const newKey = groupKey(entry.config);
-        entry.targetGroupKey = newKey === entry.groupKey ? undefined : newKey;
-        if (entry.targetGroupKey) state.dirtyGroups.add(entry.targetGroupKey);
+        retargetEntry(entry, groupKey(entry.config));
       });
     }
 

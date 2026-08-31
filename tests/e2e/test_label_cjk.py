@@ -15,40 +15,24 @@ arrive (or render washed out).
 
 from __future__ import annotations
 
-from typing import Generator
+import time
 
-import pytest
 from playwright.sync_api import Browser
 
 import viser
-import viser._client_autobuild
 
-from .test_label_render_order import _assert_glyphs_dark_on_both_surfaces
-from .utils import connect_client, find_free_port, wait_for_server_ready
-
-
-@pytest.fixture()
-def own_server() -> Generator[viser.ViserServer, None, None]:
-    viser._client_autobuild.ensure_client_is_built = lambda: None
-    server: viser.ViserServer | None = None
-    for attempt in range(3):
-        try:
-            server = viser.ViserServer(port=find_free_port(), verbose=False)
-            break
-        except OSError:
-            if attempt == 2:
-                raise
-    assert server is not None
-    wait_for_server_ready(server.get_port())
-    yield server
-    server.stop()
+from .test_label_render_order import (
+    _assert_glyphs_dark_on_both_surfaces,
+    _live_dark_pixels,
+)
+from .utils import connect_client
 
 
-def test_cjk_label_renders(own_server: viser.ViserServer, browser: Browser) -> None:
+def test_cjk_label_renders(viser_server: viser.ViserServer, browser: Browser) -> None:
     """A mixed Han/kana/hangul label renders dark glyphs on both surfaces."""
-    client, page, context = connect_client(own_server, browser)
+    client, page, context = connect_client(viser_server, browser)
     try:
-        own_server.scene.add_label(
+        viser_server.scene.add_label(
             "/cjk",
             "点云 ポイント 포인트",
             position=(0.0, 0.0, 0.0),
@@ -60,7 +44,7 @@ def test_cjk_label_renders(own_server: viser.ViserServer, browser: Browser) -> N
 
 
 def test_cjk_glyphs_stream_to_completion(
-    own_server: viser.ViserServer, browser: Browser
+    viser_server: viser.ViserServer, browser: Browser
 ) -> None:
     """A label with many unique CJK glyphs fully streams in.
 
@@ -69,15 +53,13 @@ def test_cjk_glyphs_stream_to_completion(
     glyphs) by requiring substantially more dark pixels than a short label
     produces.
     """
-    import time
-
-    client, page, context = connect_client(own_server, browser)
+    client, page, context = connect_client(viser_server, browser)
     try:
         # 60 unique Han characters across three lines.
         text = "".join(
             chr(0x4E00 + i * 13) + ("\n" if i % 20 == 19 else "") for i in range(60)
         )
-        own_server.scene.add_label(
+        viser_server.scene.add_label(
             "/cjk_many",
             text,
             position=(0.0, 0.0, 0.0),
@@ -87,8 +69,6 @@ def test_cjk_glyphs_stream_to_completion(
         # First wait for any glyphs, then for the pixel count to plateau
         # (streaming finished), then require a count consistent with the
         # full glyph set rather than a partial first batch.
-        from .test_label_render_order import _live_dark_pixels
-
         deadline = time.monotonic() + 30.0
         last, stable_since = -1, time.monotonic()
         while time.monotonic() < deadline:

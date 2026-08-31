@@ -78,9 +78,8 @@ describe("sdf", () => {
       ss,
       RADIUS,
     );
-    // Bar center row (y=3.5,4 -> take y=4 texel at center 4.5: 1.5 px from
-    // the top edge at 6... rows [2,6): edges at y=2 and y=6; texel y=3
-    // (center 3.5) is 1.5 px from either edge.
+    // Rows [2,6): edges at y=2 and y=6; texel y=3 (center 3.5) is 1.5 px
+    // from either edge.
     expect(decodeSdf(sdf[3 * 24 + 12], RADIUS)).toBeCloseTo(1.5, 0);
   });
 
