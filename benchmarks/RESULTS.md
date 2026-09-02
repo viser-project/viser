@@ -26,6 +26,16 @@ than raw FPS.
 | 3: GUI batches bypass loop | idle | 1.01 | 1.2 | 203 | 15% | 0.07 |
 | 3: GUI batches bypass loop | gui | 1.12 | 1.3 | 203 | 33% | 0.79 |
 | 4: base64 loader | idle | 1.00 | 1.0 | 203 | 19% | 0.03 |
+| final (all steps) | idle | 1.10* | 1.3 | 203 | 20% | 0.10 |
+| final (all steps) | orbit | 1.19 | 5.0 | 422** | 113% | 0.29 |
+| final (all steps) | gui | 1.13 | 1.2 | 203 | 39% | 1.02 |
+| final (all steps) | scene | 1.10 | 9.8 | 203 | 105% | 0.50 |
+
+\* first browser launch after a cold start measured 1.95 s; the other modes
+in the same run loaded in 1.1-1.2 s.
+\*\* orbit draw calls depend on where in the orbit the sample lands (the
+whole 250-frame grid is in view for part of it); 293-422 across runs, vs 673
+at baseline.
 
 Reading the table:
 
