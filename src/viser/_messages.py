@@ -2207,6 +2207,34 @@ class GuiButtonGroupMessage(_CreateGuiComponentMessage):
 
 
 @dataclasses.dataclass
+class GuiTableColumn:
+    """Configuration for a single table column."""
+
+    title: str
+    """Column header title."""
+    cell_type: Literal["string", "number"]
+    """Data type for cells in this column."""
+    editable: bool
+    """Whether cells in this column can be edited."""
+
+
+@dataclasses.dataclass
+class GuiTableDataProps(GuiBaseProps):
+    columns: Tuple[GuiTableColumn, ...]
+    """Column definitions for the table."""
+    selection_mode: Literal["none", "single"]
+    """Row selection mode. 'none' disables selection, 'single' allows one row."""
+
+
+@dataclasses.dataclass
+class GuiTableDataMessage(_CreateGuiComponentMessage):
+    value: Tuple[Tuple[Union[str, float, int], ...], ...]
+    """Table data as tuple of rows, where each row is a tuple of cell values."""
+    container_uuid: str
+    props: GuiTableDataProps
+
+
+@dataclasses.dataclass
 class GuiUpdateMessage(
     Message,
     entity=EntityLifecycle("gui", "update_dict", "uuid"),

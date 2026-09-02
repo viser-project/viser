@@ -28,6 +28,7 @@ import ProgressBarComponent from "../components/ProgressBar";
 import ImageComponent from "../components/Image";
 import HtmlComponent from "../components/Html";
 import DividerComponent from "../components/Divider";
+import TableDataComponent from "../components/TableData";
 
 /** Root of generated inputs. */
 /** Dims and freezes its children while the websocket is not connected: the GUI
@@ -213,6 +214,8 @@ function GeneratedInput(props: {
       return <RgbaComponent {...conf} />;
     case "GuiButtonGroupMessage":
       return <ButtonGroupComponent {...conf} />;
+    case "GuiTableDataMessage":
+      return <TableDataComponent {...conf} />;
     case "GuiProgressBarMessage":
       return <ProgressBarComponent {...conf} />;
     default:
