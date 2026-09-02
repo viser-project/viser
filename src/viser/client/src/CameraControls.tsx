@@ -1,4 +1,4 @@
-import { ViewerContext } from "./ViewerContext";
+import { ViewerContext, ViewerMutable } from "./ViewerContext";
 import {
   CameraControls,
   Grid,
@@ -166,6 +166,42 @@ function OrbitOriginTool({
       <CrosshairVisual visible={enableOrbitCrosshair && crosshairVisible} />
     </PivotControls>
   );
+}
+
+/** Wrap a camera-controls instance so that every method call and property
+ * write on it requests a frame.
+ *
+ * Under frameloop="demand", drei's <CameraControls> invalidates on the
+ * library's own events -- but those fire from inside `controls.update()`,
+ * which itself only runs during a frame. A programmatic `setLookAt` /
+ * `setTarget` / `controls.distance = ...` made OUTSIDE a frame (server camera
+ * messages applied by the hidden-tab drain, dev tools, e2e tests) therefore
+ * never produced the first frame that would let the controls notice. Routing
+ * all access through this proxy makes `viewerMutable.cameraControl` request
+ * that frame by construction; the transition then self-sustains via drei's
+ * 'update' subscription. */
+function renderRequestingCameraControls(
+  controls: CameraControls,
+  viewerMutable: ViewerMutable,
+): CameraControls {
+  return new Proxy(controls, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== "function") return value;
+      return function (this: unknown, ...args: unknown[]) {
+        // Methods run against the underlying instance (private fields and
+        // `this` checks), not the proxy.
+        const result = value.apply(target, args);
+        viewerMutable.requestRender();
+        return result;
+      };
+    },
+    set(target, prop, value) {
+      const ok = Reflect.set(target, prop, value);
+      viewerMutable.requestRender();
+      return ok;
+    },
+  });
 }
 
 export function SynchronizedCameraControls() {
@@ -673,7 +709,10 @@ export function SynchronizedCameraControls() {
   // not on every commit (which an inline arrow would cause).
   const setCameraControlRef = React.useCallback(
     (controls: CameraControls | null) => {
-      viewerMutable.cameraControl = controls;
+      viewerMutable.cameraControl =
+        controls === null
+          ? null
+          : renderRequestingCameraControls(controls, viewerMutable);
       viewer.interaction.cameraLocks.apply();
     },
     [viewerMutable, viewer.interaction.cameraLocks],
