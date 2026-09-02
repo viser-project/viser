@@ -4,6 +4,7 @@ import { GlbMessage } from "../WebsocketMessages";
 import { useGlbLoader } from "./GlbLoaderUtils";
 import { useFrame, useThree } from "@react-three/fiber";
 import { HoverableContext } from "../HoverContext";
+import { ViewerContext } from "../ViewerContext";
 import { OutlinesMaterial } from "../OutlinesMaterial";
 import { normalizeScale } from "../utils/normalizeScale";
 
@@ -35,9 +36,13 @@ export const SingleGlbAsset = React.forwardRef<
     });
   }, [gltf, message.props.cast_shadow, message.props.receive_shadow]);
 
-  // Update animations on each frame if mixer exists.
+  // Update animations on each frame if mixer exists. A playing mixer needs
+  // continuous frames under the on-demand loop.
+  const viewerMutable = React.useContext(ViewerContext)!.mutable.current;
   useFrame((_, delta: number) => {
-    mixerRef.current?.update(delta);
+    if (mixerRef.current === null) return;
+    mixerRef.current.update(delta);
+    viewerMutable.requestRender();
   });
 
   // Get rendering context for screen size.

@@ -286,6 +286,8 @@ export function SynchronizedCameraControls() {
       // Clear animation when complete.
       if (progress >= 1) {
         cameraAnimationRef.current = null;
+      } else {
+        viewerMutable.requestRender();
       }
     }
   });
@@ -308,6 +310,7 @@ export function SynchronizedCameraControls() {
     const currentLookAt = cameraControls.getTarget(new THREE.Vector3());
 
     // Start new animation.
+    viewerMutable.requestRender();
     cameraAnimationRef.current = {
       startUp: camera.up.clone(),
       targetUp: targetUp,
@@ -615,6 +618,7 @@ export function SynchronizedCameraControls() {
       // Ignore auto-repeat: only a fresh press counts as a new hold.
       if (held.has(event.code)) return;
       held.add(event.code);
+      viewerMutable.requestRender();
       setKeyboardCrosshairCounter((count) => count + 1);
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -660,6 +664,8 @@ export function SynchronizedCameraControls() {
     if (held.has("ArrowRight")) cameraControls.rotate(angular, 0, true);
     if (held.has("ArrowUp")) cameraControls.rotate(0, -angular, true);
     if (held.has("ArrowDown")) cameraControls.rotate(0, angular, true);
+    // Keep frames coming while keys are held (on-demand loop).
+    viewerMutable.requestRender();
   });
 
   // Stable ref callback so React only invokes it when the controls instance

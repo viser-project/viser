@@ -173,6 +173,7 @@ function PlaybackInterface({
       const message = recording.messages[mutable.currentIndex][1];
       viewerMutable.messageQueue.push(message);
     }
+    if (viewerMutable.messageQueue.length > 0) viewerMutable.requestRender();
 
     // Don't loop for static scenes (durationSeconds === 0).
     if (

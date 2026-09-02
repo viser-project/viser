@@ -167,14 +167,22 @@ const components: Components = {
  * sanitization (via rehypeRawDom) -- script tags included -- so content must
  * come from a trusted server, exactly as before.
  */
-export default function Markdown(props: { children?: string }) {
+const remarkPlugins = [remarkGfm];
+const rehypePlugins = [rehypeRawDom, rehypeCodeblock, rehypeColorChips];
+
+// Memoized: react-markdown rebuilds its unified pipeline and re-parses on
+// EVERY render, so a parent re-render with unchanged content would otherwise
+// re-run the whole parse/transform/DOM round-trip. The plugin arrays are
+// hoisted for the same reason (fresh literals would defeat the memo).
+const Markdown = React.memo(function Markdown(props: { children?: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRawDom, rehypeCodeblock, rehypeColorChips]}
+      remarkPlugins={remarkPlugins}
+      rehypePlugins={rehypePlugins}
       components={components}
     >
       {props.children ?? ""}
     </ReactMarkdown>
   );
-}
+});
+export default Markdown;

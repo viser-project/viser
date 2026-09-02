@@ -71,23 +71,26 @@ export function GuiComponentContextProvider({
   const updateGuiProps = viewer.guiActions.updateGuiProps;
   const messageSender = useThrottledMessageSender(50).send;
 
-  function setValue(uuid: string, value: NonNullable<unknown>) {
-    updateGuiProps(uuid, { value: value });
-    messageSender({
-      type: "GuiUpdateMessage",
-      uuid: uuid,
-      updates: { value: value },
-    });
-  }
+  // Stable identity: a fresh value object per render would re-render every
+  // consumer (all generated inputs) whenever this provider renders.
+  const value = React.useMemo(
+    () => ({
+      folderDepth: 0,
+      GuiContainer: GuiContainer,
+      messageSender: messageSender,
+      setValue: (uuid: string, value: NonNullable<unknown>) => {
+        updateGuiProps(uuid, { value: value });
+        messageSender({
+          type: "GuiUpdateMessage",
+          uuid: uuid,
+          updates: { value: value },
+        });
+      },
+    }),
+    [messageSender, updateGuiProps],
+  );
   return (
-    <GuiComponentContext.Provider
-      value={{
-        folderDepth: 0,
-        GuiContainer: GuiContainer,
-        messageSender: messageSender,
-        setValue: setValue,
-      }}
-    >
+    <GuiComponentContext.Provider value={value}>
       <DisconnectedGate>{children}</DisconnectedGate>
     </GuiComponentContext.Provider>
   );

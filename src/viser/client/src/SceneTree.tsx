@@ -891,6 +891,8 @@ export function SceneNodeThreeObject(props: { name: string }) {
       // Re-check hover state after objNode changes (mesh geometry update).
       if (hoverRecheckCountdown.current > 0) {
         hoverRecheckCountdown.current--;
+        // The countdown needs consecutive frames (on-demand loop).
+        if (hoverRecheckCountdown.current > 0) viewerMutable.requestRender();
         if (
           hoverRecheckCountdown.current === 0 &&
           hoveredRef.current.isHovered &&

@@ -1051,6 +1051,9 @@ function useFileDownloadHandler(): (
   };
 }
 
+/** Drain cadence while the tab is hidden (rAF is paused there). */
+const HIDDEN_DRAIN_INTERVAL_MS = 100;
+
 export function FrameSynchronizedMessageHandler() {
   const handleMessage = useMessageHandler();
   const viewer = useContext(ViewerContext)!;
@@ -1059,188 +1062,220 @@ export function FrameSynchronizedMessageHandler() {
   const splatContext = React.useContext(GaussianSplatsContext)!;
   const gl = useThree((state) => state.gl);
 
-  useFrame(
-    () => {
-      // Handle messages, but only if we're not trying to render something.
-      // (Render capture itself lives in the second useFrame below, which runs
-      // later in the same frame -- after SceneTree's pose appliers.)
-      if (
-        viewerMutable.getRenderRequestState === "ready" &&
-        messageQueue.length > 0
-      ) {
-        // Handle messages before every frame.
-        // Place this directly in ws.onmessage can cause race conditions!
-        //
-        // If a render is requested, note that we don't handle any more messages
-        // until the render is done.
-        const requestRenderIndex = messageQueue.findIndex(
-          (message) => message.type === "GetRenderRequestMessage",
-        );
-        const numMessages =
-          requestRenderIndex !== -1
-            ? requestRenderIndex + 1
-            : messageQueue.length;
-        const processBatch = messageQueue.splice(0, numMessages);
+  // Drain the message queue. Called from the render loop (below) and, while
+  // the tab is hidden, from a timer: rAF pauses in background tabs, so
+  // without the timer every message received while hidden piled up and was
+  // applied as one multi-second batch on the first visible frame.
+  const drainMessageQueue = React.useCallback(() => {
+    // Handle messages, but only if we're not trying to render something.
+    // (Render capture itself lives in the second useFrame below, which runs
+    // later in the same frame -- after SceneTree's pose appliers.)
+    if (
+      viewerMutable.getRenderRequestState === "ready" &&
+      messageQueue.length > 0
+    ) {
+      // Handle messages before every frame.
+      // Place this directly in ws.onmessage can cause race conditions!
+      //
+      // If a render is requested, note that we don't handle any more messages
+      // until the render is done.
+      const requestRenderIndex = messageQueue.findIndex(
+        (message) => message.type === "GetRenderRequestMessage",
+      );
+      const numMessages =
+        requestRenderIndex !== -1
+          ? requestRenderIndex + 1
+          : messageQueue.length;
+      const processBatch = messageQueue.splice(0, numMessages);
 
-        // Hack: On the very first batch, handle any root node SetOrientationMessage
-        // (from set_up_direction()) before all other messages. This ensures
-        // T_threeworld_world is up-to-date when initial camera messages are processed.
-        if (viewerMutable.firstMessageBatch) {
-          viewerMutable.firstMessageBatch = false;
-          const rootOrientationIndex = processBatch.findIndex(
-            (msg) => msg.type === "SetOrientationMessage" && msg.name === "",
+      // Hack: On the very first batch, handle any root node SetOrientationMessage
+      // (from set_up_direction()) before all other messages. This ensures
+      // T_threeworld_world is up-to-date when initial camera messages are processed.
+      if (viewerMutable.firstMessageBatch) {
+        viewerMutable.firstMessageBatch = false;
+        const rootOrientationIndex = processBatch.findIndex(
+          (msg) => msg.type === "SetOrientationMessage" && msg.name === "",
+        );
+        if (rootOrientationIndex !== -1) {
+          const rootNodeUpdate = handleMessage(
+            processBatch[rootOrientationIndex],
           );
-          if (rootOrientationIndex !== -1) {
-            const rootNodeUpdate = handleMessage(
-              processBatch[rootOrientationIndex],
-            );
-            const rootNode = viewer.useSceneTree.get("")!;
-            viewer.useSceneTree.set({
-              "": {
-                ...rootNode,
-                wxyz:
-                  rootNodeUpdate?.kind === "sceneNodeAttrUpdate"
-                    ? (rootNodeUpdate.updates.wxyz ?? rootNode.wxyz)
-                    : rootNode.wxyz,
-              },
-            });
-
-            // Remove the message from the batch.
-            processBatch.splice(rootOrientationIndex, 1);
-          }
-        }
-
-        // Handle all messages and accumulate batched updates.
-        // Three kinds of updates are accumulated and applied as single setState calls:
-        // - parked scene updates: SceneNode attributes (wxyz, visibility,
-        //   ...) and message.props fields, per (owner, name) -- see
-        //   batchedSceneUpdates.ts for the parking/routing semantics.
-        // - guiUpdates: GUI component property updates
-        const parked = createParkedSceneUpdates(
-          viewer.useSceneTree,
-          viewer.sceneTreeActions,
-        );
-        const guiUpdates: { uuid: string; updates: { [key: string]: any } }[] =
-          [];
-
-        for (const msg of processBatch) {
-          // An add or variant remove flips the name's variant topology at
-          // receive time; parked updates for it must land first to keep
-          // wire order (see the drainFor contract).
-          if (
-            isSceneNodeMessage(msg) ||
-            msg.type === "RemoveSceneNodeMessage"
-          ) {
-            parked.drainFor(msg.name);
-          }
-          const result = handleMessage(msg);
-          if (result === undefined) continue;
-          switch (result.kind) {
-            case "sceneNodeAttrUpdate": {
-              parked.parkAttr(
-                ownerOf(msg as { owner?: string }),
-                result.targetNode,
-                result.updates,
-              );
-              break;
-            }
-            case "sceneNodePropsUpdate": {
-              parked.parkProps(
-                ownerOf(msg as { owner?: string }),
-                result.targetNode,
-                result.propsUpdates,
-              );
-              break;
-            }
-            case "guiUpdate":
-              guiUpdates.push(result);
-              break;
-          }
-        }
-
-        // Apply all accumulated scene tree updates in a single set().
-        const { mergedUpdates, visibilityNames } = parked.flush();
-        if (Object.keys(mergedUpdates).length > 0) {
-          viewer.useSceneTree.set(mergedUpdates);
-        }
-
-        // Apply all accumulated GUI config updates in a single set().
-        if (guiUpdates.length > 0) {
-          const configUpdates: Record<string, GuiComponentMessage | undefined> =
-            {};
-          // Containers sort by guiOrderFromUuid (written at add time), so an
-          // `order` update must also land there or the new order renders only
-          // after a reconnect.
-          const orderUpdates: Record<string, number> = {};
-          const panelSnapshot = viewer.useGui.get().panels;
-          for (const { uuid, updates } of guiUpdates) {
-            // Standalone panels live in their own store (not configStore), and
-            // their tab/visibility updates also arrive as GuiUpdateMessages.
-            // Route those to updatePanel.
-            if (uuid in panelSnapshot) {
-              viewer.guiActions.updatePanel(uuid, updates);
-              continue;
-            }
-            const current =
-              configUpdates[uuid] ?? viewer.useGuiConfig.get(uuid);
-            if (current === undefined) {
-              console.error(
-                `Tried to update non-existent component '${uuid}'`,
-                updates,
-              );
-              continue;
-            }
-            const updated = applyGuiConfigUpdate(current, updates);
-            if (updated !== current) {
-              configUpdates[uuid] = updated;
-            }
-            if ("order" in updates && typeof updates.order === "number") {
-              orderUpdates[uuid] = updates.order;
-            }
-          }
-          if (Object.keys(configUpdates).length > 0) {
-            viewer.useGuiConfig.set(configUpdates);
-          }
-          viewer.useGui.set((state) => {
-            const changed = Object.entries(orderUpdates).filter(
-              ([uuid, order]) =>
-                !Object.is(state.guiOrderFromUuid[uuid], order),
-            );
-            if (changed.length === 0) return {};
-            return {
-              guiOrderFromUuid: {
-                ...state.guiOrderFromUuid,
-                ...Object.fromEntries(changed),
-              },
-            };
+          const rootNode = viewer.useSceneTree.get("")!;
+          viewer.useSceneTree.set({
+            "": {
+              ...rootNode,
+              wxyz:
+                rootNodeUpdate?.kind === "sceneNodeAttrUpdate"
+                  ? (rootNodeUpdate.updates.wxyz ?? rootNode.wxyz)
+                  : rootNode.wxyz,
+            },
           });
-        }
 
-        // Recompute effective visibility for nodes whose visibility change
-        // actually merged into an effective variant (updates consumed into
-        // a shadow slot don't affect what renders). This needs to be done
-        // after updates are applied.
-        for (const name of visibilityNames) {
-          viewer.sceneTreeActions.computeEffectiveVisibility(name);
-        }
-
-        // A render request that arrived with no messages in front of it has
-        // nothing waiting on a React commit: skip "commit_wait" so the
-        // capture hook below fires this same frame, after the SceneTree pose
-        // appliers. This is the common case for tight get_render() loops.
-        // (requestRenderIndex === 0 means the processed batch was exactly the
-        // request, whose handler just set the state to "commit_wait".)
-        if (requestRenderIndex === 0) {
-          viewerMutable.getRenderRequestState = "capture";
+          // Remove the message from the batch.
+          processBatch.splice(rootOrientationIndex, 1);
         }
       }
-    },
+
+      // Handle all messages and accumulate batched updates.
+      // Three kinds of updates are accumulated and applied as single setState calls:
+      // - parked scene updates: SceneNode attributes (wxyz, visibility,
+      //   ...) and message.props fields, per (owner, name) -- see
+      //   batchedSceneUpdates.ts for the parking/routing semantics.
+      // - guiUpdates: GUI component property updates
+      const parked = createParkedSceneUpdates(
+        viewer.useSceneTree,
+        viewer.sceneTreeActions,
+      );
+      const guiUpdates: { uuid: string; updates: { [key: string]: any } }[] =
+        [];
+
+      for (const msg of processBatch) {
+        // An add or variant remove flips the name's variant topology at
+        // receive time; parked updates for it must land first to keep
+        // wire order (see the drainFor contract).
+        if (isSceneNodeMessage(msg) || msg.type === "RemoveSceneNodeMessage") {
+          parked.drainFor(msg.name);
+        }
+        const result = handleMessage(msg);
+        if (result === undefined) continue;
+        switch (result.kind) {
+          case "sceneNodeAttrUpdate": {
+            parked.parkAttr(
+              ownerOf(msg as { owner?: string }),
+              result.targetNode,
+              result.updates,
+            );
+            break;
+          }
+          case "sceneNodePropsUpdate": {
+            parked.parkProps(
+              ownerOf(msg as { owner?: string }),
+              result.targetNode,
+              result.propsUpdates,
+            );
+            break;
+          }
+          case "guiUpdate":
+            guiUpdates.push(result);
+            break;
+        }
+      }
+
+      // Apply all accumulated scene tree updates in a single set().
+      const { mergedUpdates, visibilityNames } = parked.flush();
+      if (Object.keys(mergedUpdates).length > 0) {
+        viewer.useSceneTree.set(mergedUpdates);
+      }
+
+      // Apply all accumulated GUI config updates in a single set().
+      if (guiUpdates.length > 0) {
+        const configUpdates: Record<string, GuiComponentMessage | undefined> =
+          {};
+        // Containers sort by guiOrderFromUuid (written at add time), so an
+        // `order` update must also land there or the new order renders only
+        // after a reconnect.
+        const orderUpdates: Record<string, number> = {};
+        const panelSnapshot = viewer.useGui.get().panels;
+        for (const { uuid, updates } of guiUpdates) {
+          // Standalone panels live in their own store (not configStore), and
+          // their tab/visibility updates also arrive as GuiUpdateMessages.
+          // Route those to updatePanel.
+          if (uuid in panelSnapshot) {
+            viewer.guiActions.updatePanel(uuid, updates);
+            continue;
+          }
+          const current = configUpdates[uuid] ?? viewer.useGuiConfig.get(uuid);
+          if (current === undefined) {
+            console.error(
+              `Tried to update non-existent component '${uuid}'`,
+              updates,
+            );
+            continue;
+          }
+          const updated = applyGuiConfigUpdate(current, updates);
+          if (updated !== current) {
+            configUpdates[uuid] = updated;
+          }
+          if ("order" in updates && typeof updates.order === "number") {
+            orderUpdates[uuid] = updates.order;
+          }
+        }
+        if (Object.keys(configUpdates).length > 0) {
+          viewer.useGuiConfig.set(configUpdates);
+        }
+        viewer.useGui.set((state) => {
+          const changed = Object.entries(orderUpdates).filter(
+            ([uuid, order]) => !Object.is(state.guiOrderFromUuid[uuid], order),
+          );
+          if (changed.length === 0) return {};
+          return {
+            guiOrderFromUuid: {
+              ...state.guiOrderFromUuid,
+              ...Object.fromEntries(changed),
+            },
+          };
+        });
+      }
+
+      // Recompute effective visibility for nodes whose visibility change
+      // actually merged into an effective variant (updates consumed into
+      // a shadow slot don't affect what renders). This needs to be done
+      // after updates are applied.
+      for (const name of visibilityNames) {
+        viewer.sceneTreeActions.computeEffectiveVisibility(name);
+      }
+
+      // A render request that arrived with no messages in front of it has
+      // nothing waiting on a React commit: skip "commit_wait" so the
+      // capture hook below fires this same frame, after the SceneTree pose
+      // appliers. This is the common case for tight get_render() loops.
+      // (requestRenderIndex === 0 means the processed batch was exactly the
+      // request, whose handler just set the state to "commit_wait".)
+      if (requestRenderIndex === 0) {
+        viewerMutable.getRenderRequestState = "capture";
+      }
+      // A capture in flight needs more frames (its state machine advances
+      // per frame, and messages behind it wait on "ready").
+      if (viewerMutable.getRenderRequestState !== "ready") {
+        viewerMutable.requestRender();
+      }
+    }
+  }, [handleMessage, viewer, viewerMutable, messageQueue]);
+
+  useFrame(
+    drainMessageQueue,
     // We should handle messages before doing anything else!!
     //
     // Importantly, this priority should be *lower* than the useFrame priority
     // used to update scene node transforms in SceneTree.tsx.
     -100000,
   );
+
+  React.useEffect(() => {
+    viewerMutable.drainMessageQueue = drainMessageQueue;
+    return () => {
+      viewerMutable.drainMessageQueue = null;
+    };
+  }, [viewerMutable, drainMessageQueue]);
+
+  React.useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const sync = () => {
+      if (document.visibilityState === "hidden") {
+        if (interval === null)
+          interval = setInterval(drainMessageQueue, HIDDEN_DRAIN_INTERVAL_MS);
+      } else if (interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      if (interval !== null) clearInterval(interval);
+    };
+  }, [drainMessageQueue]);
 
   // Render capture for get_render() requests, in its own hook so it can run
   // at a priority AFTER SceneTree's per-node pose appliers (-1000) and the
@@ -1255,6 +1290,7 @@ export function FrameSynchronizedMessageHandler() {
         // React flushes those commits (sync lane) before the next frame;
         // capture on the next pass.
         viewerMutable.getRenderRequestState = "capture";
+        viewerMutable.requestRender();
         return;
       }
       if (viewerMutable.getRenderRequestState !== "capture") return;
@@ -1435,6 +1471,9 @@ export function FrameSynchronizedMessageHandler() {
           splatMeshProps.sortedIndexAttribute.needsUpdate = true;
         }
       }
+      // Messages queued behind the capture were gated on "ready"; wake the
+      // loop so they drain (and the visible frame is redrawn at full size).
+      viewerMutable.requestRender();
     },
     // Between SceneTree's pose appliers (-1000) and the Gaussian splat
     // per-frame hook (-100): capture must see this frame's poses, and the
