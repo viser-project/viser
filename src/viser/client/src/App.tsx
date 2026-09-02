@@ -1054,10 +1054,12 @@ function SceneFog() {
     } else {
       scene.fog = null;
     }
+    viewer.mutable.current.requestRender();
     return () => {
       scene.fog = null;
+      viewer.mutable.current.requestRender();
     };
-  }, [fog, scene]);
+  }, [fog, scene, viewer]);
 
   return null;
 }
