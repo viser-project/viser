@@ -71,6 +71,16 @@ INIT_SCRIPT = """
 """
 
 
+def _chromium_executable() -> str | None:
+    """Fall back to a system-provided chromium if playwright's is missing."""
+    import os
+
+    for candidate in (os.environ.get("BENCH_CHROMIUM"), "/opt/pw-browsers/chromium"):
+        if candidate and Path(candidate).exists():
+            return candidate
+    return None
+
+
 def find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
@@ -177,13 +187,19 @@ def run_mode(pw, mode: str, args: argparse.Namespace, out_dir: Path) -> dict:
     try:
         browser = pw.chromium.launch(
             headless=True,
+            # Prefer the pre-installed chromium when the pinned playwright
+            # download is absent (e.g. sandboxed CI images).
+            executable_path=_chromium_executable(),
             args=[
                 "--enable-unsafe-swiftshader",
                 "--disable-features=CalculateNativeWinOcclusion",
             ],
         )
+        # Small viewport: SwiftShader (software WebGL) raster cost scales with
+        # pixel count and can drown out the JS/three.js costs we optimize.
         context = browser.new_context(
-            viewport={"width": 1280, "height": 720}, device_scale_factor=1
+            viewport={"width": args.viewport_width, "height": args.viewport_height},
+            device_scale_factor=1,
         )
         page = context.new_page()
         page.add_init_script(INIT_SCRIPT)
@@ -315,6 +331,8 @@ def main() -> None:
     parser.add_argument("--num-meshes", type=int, default=50)
     parser.add_argument("--num-controls", type=int, default=100)
     parser.add_argument("--build", action="store_true", help="npm run build first")
+    parser.add_argument("--viewport-width", type=int, default=640)
+    parser.add_argument("--viewport-height", type=int, default=400)
     args = parser.parse_args()
 
     if args.build:
