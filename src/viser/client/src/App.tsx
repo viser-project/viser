@@ -1089,7 +1089,10 @@ function AdaptiveDprMonitor() {
     refreshrate: 0,
     factor: 1.0,
   });
-  const IDLE_GAP_MS = 100;
+  // Gap classification: the heartbeat (1 s) and post-settle idle gaps are
+  // >= ~750 ms; a genuinely slow frame on a struggling GPU is far shorter
+  // (at 500 ms the scene is at 2 FPS and a DPR floor won't rescue it).
+  const IDLE_GAP_MS = 500;
   const WINDOW_MS = 250;
   const ITERATIONS = 10;
   const THRESHOLD = 0.75;
