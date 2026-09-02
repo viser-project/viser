@@ -1,6 +1,6 @@
 import { PivotControls } from "@react-three/drei";
 import { Grid } from "./Grid";
-import { ContextBridge, useContextBridge } from "its-fine";
+import { useContextBridge } from "its-fine";
 import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect } from "react";
 import * as THREE from "three";
@@ -215,10 +215,39 @@ const ViserSpotLight = React.forwardRef<
   );
 });
 
+/** Body of a 3D GUI container: a Paper panel bridged into drei's <Html />
+ * (which mounts a separate ReactDOM root, so React context doesn't flow into
+ * it). The bridge lives HERE rather than in SceneNodeThreeObject on purpose:
+ * its-fine's useContextBridge → useFiber does a depth-first search of the
+ * whole R3F fiber tree to find the calling component, so calling it once per
+ * scene node made scene construction O(N²). Only the (few) Gui3D nodes pay
+ * for it now. */
+function Gui3DHtmlPanel(props: { containerUuid: string }) {
+  const ContextBridge = useContextBridge();
+  return (
+    <ContextBridge>
+      <Paper
+        style={{
+          width: "18em",
+          fontSize: "0.875em",
+          marginLeft: "0.5em",
+          marginTop: "0.5em",
+        }}
+        shadow="0 0 0.8em 0 rgba(0,0,0,0.1)"
+        pb="0.25em"
+        onPointerDown={(evt) => {
+          evt.stopPropagation();
+        }}
+      >
+        <GeneratedGuiContainer containerUuid={props.containerUuid} />
+      </Paper>
+    </ContextBridge>
+  );
+}
+
 function createObjectFactory(
   message: SceneNodeMessage | undefined,
   viewer: ViewerContextContents,
-  ContextBridge: ContextBridge,
 ): {
   makeObject: MakeObject;
   unmountWhenInvisible?: boolean;
@@ -527,25 +556,7 @@ function createObjectFactory(
           return (
             <group ref={ref}>
               <Html>
-                <ContextBridge>
-                  <Paper
-                    style={{
-                      width: "18em",
-                      fontSize: "0.875em",
-                      marginLeft: "0.5em",
-                      marginTop: "0.5em",
-                    }}
-                    shadow="0 0 0.8em 0 rgba(0,0,0,0.1)"
-                    pb="0.25em"
-                    onPointerDown={(evt) => {
-                      evt.stopPropagation();
-                    }}
-                  >
-                    <GeneratedGuiContainer
-                      containerUuid={message.props.container_uuid}
-                    />
-                  </Paper>
-                </ContextBridge>
+                <Gui3DHtmlPanel containerUuid={message.props.container_uuid} />
               </Html>
               {children}
             </group>
@@ -755,15 +766,13 @@ function createObjectFactory(
 export function SceneNodeThreeObject(props: { name: string }) {
   const viewer = React.useContext(ViewerContext)!;
   const message = viewer.useSceneTree(props.name, (node) => node?.message);
-  const ContextBridge = useContextBridge();
-
   const {
     makeObject,
     unmountWhenInvisible,
     computeClickInstanceIndexFromInstanceId,
   } = React.useMemo(
-    () => createObjectFactory(message, viewer, ContextBridge),
-    [message, viewer, ContextBridge],
+    () => createObjectFactory(message, viewer),
+    [message, viewer],
   );
 
   const [unmount, setUnmount] = React.useState(false);
@@ -853,8 +862,11 @@ export function SceneNodeThreeObject(props: { name: string }) {
     }
   }, [objNode]);
 
-  // Get R3F state for raycasting.
-  const { raycaster, camera } = useThree();
+  // Get R3F state for raycasting. Selectors, not a bare useThree(): the
+  // bare form subscribes to the whole store, so every setSize/setDpr write
+  // (resize ticks, dock drags, adaptive DPR) re-rendered every scene node.
+  const raycaster = useThree((state) => state.raycaster);
+  const camera = useThree((state) => state.camera);
 
   // Reusable Vector2 for hover recheck raycasting.
   const pointerNDC = React.useMemo(() => new THREE.Vector2(), []);

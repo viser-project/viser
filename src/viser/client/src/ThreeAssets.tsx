@@ -1,4 +1,5 @@
-import { Instance, Instances, shaderMaterial } from "@react-three/drei";
+import { shaderMaterial } from "@react-three/drei";
+import { mergeBufferGeometries } from "three-stdlib";
 import { useFrame, useThree } from "@react-three/fiber";
 import { OutlinesIfHovered } from "./OutlinesIfHovered";
 import React from "react";
@@ -19,8 +20,6 @@ import {
   LabelConfig,
   LabelHandle,
 } from "./label/LabelRendererContext";
-
-const originGeom = new THREE.SphereGeometry(1.0);
 
 const PointCloudMaterial = /* @__PURE__ */ shaderMaterial(
   {
@@ -219,6 +218,151 @@ export const PointCloud = React.forwardRef<
   );
 });
 
+// ---------------------------------------------------------------------------
+// Coordinate frames.
+//
+// A frame is rendered as ONE mesh: the origin sphere and the three axis
+// cylinders are merged into a single vertex-colored geometry, shared (via a
+// refcounted cache keyed on the frame's parameters) between every frame with
+// the same dimensions. This replaces the previous drei <Instances> design,
+// which cost two draw calls per frame plus four useFrame hooks that re-uploaded
+// the instance matrix/color buffers on EVERY frame (drei's `frames=Infinity`
+// default) -- for a scene with hundreds of frames that was ~1000 per-frame
+// callbacks and buffer uploads for geometry that never changed.
+// ---------------------------------------------------------------------------
+
+const frameMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
+
+const frameGeometryCache = new Map<
+  string,
+  { geometry: THREE.BufferGeometry; refCount: number }
+>();
+
+function withVertexColor(
+  geometry: THREE.BufferGeometry,
+  color: THREE.Color,
+): THREE.BufferGeometry {
+  const count = geometry.attributes.position.count;
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
+function buildFrameGeometry(
+  axesLength: number,
+  axesRadius: number,
+  originRadius: number,
+  originColor: number,
+): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(
+    withVertexColor(
+      new THREE.SphereGeometry(originRadius),
+      new THREE.Color(originColor),
+    ),
+  );
+  const axes: [THREE.Euler, THREE.Vector3, number][] = [
+    [
+      new THREE.Euler(0.0, 0.0, (3.0 * Math.PI) / 2.0),
+      new THREE.Vector3(0.5 * axesLength, 0.0, 0.0),
+      0xcc0000,
+    ],
+    [
+      new THREE.Euler(0.0, 0.0, 0.0),
+      new THREE.Vector3(0.0, 0.5 * axesLength, 0.0),
+      0x00cc00,
+    ],
+    [
+      new THREE.Euler(Math.PI / 2.0, 0.0, 0.0),
+      new THREE.Vector3(0.0, 0.0, 0.5 * axesLength),
+      0x0000cc,
+    ],
+  ];
+  const T = new THREE.Matrix4();
+  for (const [rotation, position, color] of axes) {
+    const cylinder = new THREE.CylinderGeometry(
+      axesRadius,
+      axesRadius,
+      axesLength,
+      16,
+    );
+    cylinder.applyMatrix4(
+      T.makeRotationFromEuler(rotation).setPosition(position),
+    );
+    parts.push(withVertexColor(cylinder, new THREE.Color(color)));
+  }
+  const merged = mergeBufferGeometries(parts, false)!;
+  for (const part of parts) part.dispose();
+  return merged;
+}
+
+function frameGeometryKey(
+  axesLength: number,
+  axesRadius: number,
+  originRadius: number,
+  originColor: number,
+): string {
+  return `${axesLength}|${axesRadius}|${originRadius}|${originColor}`;
+}
+
+/** Hook returning a shared, refcounted merged frame geometry. */
+function useFrameGeometry(
+  axesLength: number,
+  axesRadius: number,
+  originRadius: number,
+  originColor: number,
+): THREE.BufferGeometry {
+  const key = frameGeometryKey(
+    axesLength,
+    axesRadius,
+    originRadius,
+    originColor,
+  );
+  const geometry = React.useMemo(() => {
+    let entry = frameGeometryCache.get(key);
+    if (entry === undefined) {
+      entry = {
+        geometry: buildFrameGeometry(
+          axesLength,
+          axesRadius,
+          originRadius,
+          originColor,
+        ),
+        refCount: 0,
+      };
+      frameGeometryCache.set(key, entry);
+    }
+    return entry.geometry;
+  }, [key, axesLength, axesRadius, originRadius, originColor]);
+  React.useEffect(() => {
+    // Retain in an effect (not the memo) so StrictMode's double-invoked
+    // memo/effects and unmounts stay balanced. If an entry was evicted
+    // between memo and effect (StrictMode remount), re-register the same
+    // geometry object: a disposed BufferGeometry re-uploads on next render.
+    let entry = frameGeometryCache.get(key);
+    if (entry === undefined || entry.geometry !== geometry) {
+      entry = { geometry, refCount: 0 };
+      frameGeometryCache.set(key, entry);
+    }
+    entry.refCount += 1;
+    return () => {
+      const current = frameGeometryCache.get(key);
+      if (current === undefined || current.geometry !== geometry) return;
+      current.refCount -= 1;
+      if (current.refCount <= 0) {
+        frameGeometryCache.delete(key);
+        geometry.dispose();
+      }
+    };
+  }, [key, geometry]);
+  return geometry;
+}
+
 /** Helper for adding coordinate frames as scene nodes. */
 export const CoordinateFrame = React.forwardRef<
   THREE.Group,
@@ -243,55 +387,41 @@ export const CoordinateFrame = React.forwardRef<
   },
   ref,
 ) {
-  originRadius = originRadius ?? axesRadius * 2;
   return (
     <group ref={ref}>
       <group scale={normalizeScale(scale)}>
         {showAxes && (
-          <>
-            <mesh
-              geometry={originGeom}
-              scale={
-                new THREE.Vector3(originRadius, originRadius, originRadius)
-              }
-            >
-              <meshBasicMaterial color={originColor} />
-              <OutlinesIfHovered />
-            </mesh>
-            <Instances limit={6}>
-              <meshBasicMaterial />
-              <cylinderGeometry
-                args={[axesRadius, axesRadius, axesLength, 16]}
-              />
-              <Instance
-                rotation={new THREE.Euler(0.0, 0.0, (3.0 * Math.PI) / 2.0)}
-                position={[0.5 * axesLength, 0.0, 0.0]}
-                color={0xcc0000}
-              >
-                {/* unmountOnHide is needed to use OutlineIfHovered within <Instances />. */}
-                <OutlinesIfHovered unmountOnHide enableCreaseAngle />
-              </Instance>
-              <Instance
-                position={[0.0, 0.5 * axesLength, 0.0]}
-                color={0x00cc00}
-              >
-                <OutlinesIfHovered unmountOnHide enableCreaseAngle />
-              </Instance>
-              <Instance
-                rotation={new THREE.Euler(Math.PI / 2.0, 0.0, 0.0)}
-                position={[0.0, 0.0, 0.5 * axesLength]}
-                color={0x0000cc}
-              >
-                <OutlinesIfHovered unmountOnHide enableCreaseAngle />
-              </Instance>
-            </Instances>
-          </>
+          <FrameMesh
+            axesLength={axesLength}
+            axesRadius={axesRadius}
+            originRadius={originRadius ?? axesRadius * 2}
+            originColor={originColor}
+          />
         )}
       </group>
       {children}
     </group>
   );
 });
+
+function FrameMesh(props: {
+  axesLength: number;
+  axesRadius: number;
+  originRadius: number;
+  originColor: number;
+}) {
+  const geometry = useFrameGeometry(
+    props.axesLength,
+    props.axesRadius,
+    props.originRadius,
+    props.originColor,
+  );
+  return (
+    <mesh geometry={geometry} material={frameMaterial}>
+      <OutlinesIfHovered enableCreaseAngle />
+    </mesh>
+  );
+}
 
 /** Helper for adding batched/instanced coordinate frames as scene nodes. */
 export const InstancedAxes = React.forwardRef<
