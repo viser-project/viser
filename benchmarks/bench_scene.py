@@ -31,7 +31,11 @@ def build_scene(server: viser.ViserServer, num_frames: int, num_meshes: int):
     side = math.ceil(math.sqrt(num_frames))
     for i in range(num_frames):
         x, y = divmod(i, side)
-        name = f"/frames/f{x}/n{y}" if y % 4 == 0 else f"/frames/f{x}/n{y - y % 4}/c{y % 4}"
+        name = (
+            f"/frames/f{x}/n{y}"
+            if y % 4 == 0
+            else f"/frames/f{x}/n{y - y % 4}/c{y % 4}"
+        )
         frame_handles.append(
             server.scene.add_frame(
                 name,
@@ -83,13 +87,17 @@ def build_gui(server: viser.ViserServer, num_controls: int):
             for i in range(min(10, num_controls - f * 10)):
                 kind = i % 5
                 if kind == 0:
-                    server.gui.add_slider(f"Slider {f}.{i}", min=0, max=100, step=1, initial_value=i)
+                    server.gui.add_slider(
+                        f"Slider {f}.{i}", min=0, max=100, step=1, initial_value=i
+                    )
                 elif kind == 1:
                     server.gui.add_checkbox(f"Check {f}.{i}", initial_value=bool(i % 2))
                 elif kind == 2:
                     server.gui.add_text(f"Text {f}.{i}", initial_value=f"value {i}")
                 elif kind == 3:
-                    server.gui.add_vector3(f"Vec {f}.{i}", initial_value=(0.0, 1.0, 2.0))
+                    server.gui.add_vector3(
+                        f"Vec {f}.{i}", initial_value=(0.0, 1.0, 2.0)
+                    )
                 else:
                     server.gui.add_markdown(f"Static markdown **{f}.{i}** with `code`.")
     return handles
@@ -98,7 +106,9 @@ def build_gui(server: viser.ViserServer, num_controls: int):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--mode", choices=["idle", "orbit", "gui", "scene"], default="idle")
+    parser.add_argument(
+        "--mode", choices=["idle", "orbit", "gui", "scene"], default="idle"
+    )
     parser.add_argument("--num-frames", type=int, default=250)
     parser.add_argument("--num-meshes", type=int, default=50)
     parser.add_argument("--num-controls", type=int, default=100)

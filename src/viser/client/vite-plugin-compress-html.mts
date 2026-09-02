@@ -9,10 +9,13 @@
  * - The inline <style> and <script type="module"> bodies are concatenated and
  *   compressed as a single zstd frame, so shared content between CSS and JS
  *   deduplicates and the entropy tables are shared.
- * - The compressed frame is stored in a data attribute using a base-88
- *   encoding (4 bytes -> 5 chars, 25% overhead vs. base64's 33%). The
- *   alphabet is every printable ASCII character that needs no escaping in a
- *   double-quoted HTML attribute.
+ * - The compressed frame is stored base64-encoded in a data attribute and
+ *   decoded NATIVELY at startup (Uint8Array.fromBase64, falling back to a
+ *   fetch() of a data: URL). An earlier base-88 encoding was 6% smaller on
+ *   disk, but needed a hand-written JS decode loop that ran once, cold, on
+ *   the critical path (~25-40 ms desktop, more on mobile) -- and because the
+ *   server gzips index.html, the wire size was actually ~10 KB LARGER than
+ *   base64 (byte-aligned base64 deflates better than base-88).
  * - The zstd WASM decoder bootstraps via gzip (native DecompressionStream).
  */
 
@@ -25,77 +28,6 @@ import {
 } from "zlib";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
-
-// Base-88 alphabet: printable ASCII (0x21-0x7E) minus the characters that are
-// unsafe or escape-prone inside a double-quoted HTML attribute and inside the
-// loader's own JS string context: " & < > ' `
-const B88_ALPHABET = (() => {
-  let chars = "";
-  for (let c = 0x21; c <= 0x7e; c++) {
-    const ch = String.fromCharCode(c);
-    if ("\"&<>'`".includes(ch)) continue;
-    chars += ch;
-  }
-  if (chars.length !== 88) {
-    throw new Error(`Expected 88-char alphabet, got ${chars.length}`);
-  }
-  return chars;
-})();
-
-// Encode 4 bytes into 5 chars (final partial group of r bytes -> r+1 chars).
-function toBase88(buffer: Buffer): string {
-  const out: string[] = [];
-  let i = 0;
-  for (; i + 4 <= buffer.length; i += 4) {
-    let v = buffer.readUInt32BE(i);
-    const group = new Array<string>(5);
-    for (let j = 4; j >= 0; j--) {
-      group[j] = B88_ALPHABET[v % 88];
-      v = Math.floor(v / 88);
-    }
-    out.push(group.join(""));
-  }
-  const r = buffer.length - i;
-  if (r > 0) {
-    let v = 0;
-    for (let j = 0; j < r; j++) v = v * 256 + buffer[i + j];
-    const group = new Array<string>(r + 1);
-    for (let j = r; j >= 0; j--) {
-      group[j] = B88_ALPHABET[v % 88];
-      v = Math.floor(v / 88);
-    }
-    out.push(group.join(""));
-  }
-  return out.join("");
-}
-
-// Reference decoder, used to verify the round trip at build time. The loader
-// script embeds an equivalent (minified) implementation.
-function fromBase88(text: string): Buffer {
-  const lut = new Map<string, number>();
-  for (let i = 0; i < 88; i++) lut.set(B88_ALPHABET[i], i);
-  const nGroups = Math.floor(text.length / 5);
-  const r = text.length % 5; // Final group of k chars encodes k-1 bytes.
-  const outLen = nGroups * 4 + (r > 0 ? r - 1 : 0);
-  const out = Buffer.alloc(outLen);
-  let oi = 0;
-  let i = 0;
-  for (; i + 5 <= text.length; i += 5) {
-    let v = 0;
-    for (let j = 0; j < 5; j++) v = v * 88 + lut.get(text[i + j])!;
-    out.writeUInt32BE(v >>> 0, oi);
-    oi += 4;
-  }
-  if (r > 0) {
-    let v = 0;
-    for (let j = 0; j < r; j++) v = v * 88 + lut.get(text[i + j])!;
-    for (let j = r - 2; j >= 0; j--) {
-      out[oi + j] = v % 256;
-      v = Math.floor(v / 256);
-    }
-  }
-  return out;
-}
 
 // Drop CSS rules for Mantine components the bundle never references.
 // Mantine class names are static hashes (.m_xxxxxxxx) that appear as string
@@ -157,8 +89,8 @@ function pruneMantineCss(css: string, js: string): string {
 }
 
 // Extract and gzip-compress the WASM from zstddec package.
-// Returns base88-encoded gzipped WASM for smaller raw file size.
-function getGzippedWasmBase88(): string {
+// Returns base64-encoded gzipped WASM for smaller raw file size.
+function getGzippedWasmBase64(): string {
   // Find zstddec in node_modules relative to this file or cwd.
   const paths = [
     join(
@@ -173,10 +105,10 @@ function getGzippedWasmBase88(): string {
       const content = readFileSync(path, "utf8");
       const match = content.match(/var wasm = '([^']+)'/);
       if (match) {
-        // Decode the base64 WASM, gzip it, then re-encode as base88.
+        // Decode the base64 WASM, gzip it, then re-encode as base64.
         const wasmBinary = Buffer.from(match[1], "base64");
         const gzipped = gzipSync(wasmBinary, { level: 9 });
-        return toBase88(gzipped);
+        return gzipped.toString("base64");
       }
     } catch {
       continue;
@@ -188,31 +120,19 @@ function getGzippedWasmBase88(): string {
 // Minimal zstd decompression loader script.
 // First decompresses gzipped WASM with native DecompressionStream, then uses
 // zstddec for the payload: a single zstd frame holding the CSS (data-ss bytes)
-// followed by the JS (data-cs bytes), base88-encoded in data-p.
+// followed by the JS (data-cs bytes), base64-encoded in data-p.
 // Waits for DOMContentLoaded to ensure the root element exists before React runs.
-function makeLoaderScript(gzippedWasmBase88: string): string {
+function makeLoaderScript(gzippedWasmBase64: string): string {
   return `
 (async()=>{
   const d=document.currentScript.dataset;
-  const A=${JSON.stringify(B88_ALPHABET)};
-  const L=new Int8Array(127);for(let i=0;i<88;i++)L[A.charCodeAt(i)]=i;
-  const de=(s)=>{
-    const n=Math.floor(s.length/5),r=s.length%5,a=new Uint8Array(n*4+(r?r-1:0));
-    let i=0,o=0;
-    for(;i+5<=s.length;i+=5){
-      let v=0;for(let j=0;j<5;j++)v=v*88+L[s.charCodeAt(i+j)];
-      a[o++]=v/16777216&255;a[o++]=v/65536&255;a[o++]=v/256&255;a[o++]=v&255;
-    }
-    if(r){
-      let v=0;for(let j=0;j<r;j++)v=v*88+L[s.charCodeAt(i+j)];
-      for(let j=r-2;j>=0;j--){a[o+j]=v%256;v=Math.floor(v/256);}
-    }
-    return a;
-  };
-  const gzWasm=${JSON.stringify(gzippedWasmBase88)};
+  /* Native base64 decode: Uint8Array.fromBase64 where available, else the
+     browser's data: URL parser -- both C++, no per-char JS loop. */
+  const de=async(s)=>Uint8Array.fromBase64?Uint8Array.fromBase64(s):new Uint8Array(await (await fetch("data:application/octet-stream;base64,"+s)).arrayBuffer());
+  const gzWasm=${JSON.stringify(gzippedWasmBase64)};
   let inst,heap;
   const init=async()=>{
-    const s=new DecompressionStream("gzip");const w=s.writable.getWriter();w.write(de(gzWasm));w.close();
+    const s=new DecompressionStream("gzip");const w=s.writable.getWriter();w.write(await de(gzWasm));w.close();
     const wasm=await new Response(s.readable).arrayBuffer();
     const m=await WebAssembly.instantiate(wasm,{env:{emscripten_notify_memory_growth:()=>{heap=new Uint8Array(inst.exports.memory.buffer);}}});
     inst=m.instance;heap=new Uint8Array(inst.exports.memory.buffer);
@@ -222,7 +142,7 @@ function makeLoaderScript(gzippedWasmBase88: string): string {
     globalThis.__viserZstdWasm=m.module;
   };
   await init();
-  const a=de(d.p);
+  const a=await de(d.p);
   const ss=+d.ss,cs=+d.cs,sz=ss+cs;
   const cp=inst.exports.malloc(a.length);heap.set(a,cp);
   const up=inst.exports.malloc(sz);
@@ -250,10 +170,10 @@ export function compressHtml(): Plugin {
     enforce: "post",
     generateBundle(_, bundle) {
       if (loaderScript === null) {
-        const gzippedWasmBase88 = getGzippedWasmBase88();
-        loaderScript = makeLoaderScript(gzippedWasmBase88);
+        const gzippedWasmBase64 = getGzippedWasmBase64();
+        loaderScript = makeLoaderScript(gzippedWasmBase64);
         console.log(
-          `[compress-html] Using zstd with ${(gzippedWasmBase88.length / 1024).toFixed(1)} KiB gzipped WASM decoder`,
+          `[compress-html] Using zstd with ${(gzippedWasmBase64.length / 1024).toFixed(1)} KiB gzipped WASM decoder`,
         );
       }
 
@@ -296,10 +216,10 @@ export function compressHtml(): Plugin {
           const compressed = zstdCompressSync(payload, {
             params: { [constants.ZSTD_c_compressionLevel]: 22 },
           });
-          const encoded = toBase88(compressed);
+          const encoded = compressed.toString("base64");
 
           // Verify the encode/compress round trip before shipping it.
-          const decoded = fromBase88(encoded);
+          const decoded = Buffer.from(encoded, "base64");
           if (
             !decoded.equals(compressed) ||
             !zstdDecompressSync(decoded).equals(payload)
@@ -312,8 +232,8 @@ export function compressHtml(): Plugin {
             ` data-ss="${styleBytes.length}" data-cs="${scriptBytes.length}">` +
             `${loaderScript}</script>`;
           // NOTE: the replacement must be a function. A replacement *string*
-          // gives `$` special meaning ("$$" collapses to "$"), and `$` is
-          // part of the base88 alphabet, which silently corrupts the payload.
+          // gives `$` special meaning ("$$" collapses to "$"); base64 has no
+          // `$`, but the loader script itself could, so keep it robust.
           html = html.replace("</head>", () => `${loaderTag}</head>`);
           if (!html.includes(encoded)) {
             throw new Error(
