@@ -37,10 +37,36 @@ jobs:
           rm -rf src/viser/client/*
           git checkout src/viser/client
           mv ./__built_client src/viser/client/build
-      - name: Build and publish
+      - name: Build
+        run: uv build
+      - name: Verify wheel contents
+        # The client build and the HDRI presets are runtime dependencies of
+        # the installed package (the client is served from build/index.html;
+        # configure_environment_map reads _assets/hdri from disk), but both
+        # sit outside the usual Python-file packaging path -- fail the
+        # release if either is missing from the wheel.
+        run: |
+          python3 - <<'EOF'
+          import glob
+          import pathlib
+          import zipfile
+
+          (wheel,) = glob.glob("dist/*.whl")
+          names = set(zipfile.ZipFile(wheel).namelist())
+          missing = [
+              path
+              for path in ["viser/client/build/index.html"]
+              + sorted(
+                  f"viser/_assets/hdri/{f.name}"
+                  for f in pathlib.Path("src/viser/_assets/hdri").iterdir()
+              )
+              if path not in names
+          ]
+          assert not missing, f"Missing from {wheel}: {missing}"
+          print(f"{wheel} OK: client build + {len(names)} files")
+          EOF
+      - name: Publish
         env:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-        run: |
-          uv build
-          uv publish
+        run: uv publish
