@@ -4,7 +4,7 @@
 
 /* eslint-disable react-refresh/only-export-components -- standalone dev entry. */
 import "@mantine/core/styles.css";
-// Match the live app's base typography (loads the Inter font from index.css) so
+// Match the live app's base typography (system font stack from index.css) so
 // the playground previews fonts/shadows exactly as production does.
 import "../index.css";
 import {

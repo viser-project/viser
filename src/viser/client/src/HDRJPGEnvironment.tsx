@@ -10,8 +10,9 @@ import * as THREE from "three";
 import { HDRJPGLoader } from "@monogrid/gainmap-js";
 
 interface HDRJPGEnvironmentProps {
-  /** Path to the HDR JPEG file. */
-  files: string;
+  /** HDR JPEG image: either a URL (built-in default asset) or raw bytes
+   * received from the server. */
+  source: string | Uint8Array<ArrayBuffer>;
   /** Whether to use the HDRI as scene background. */
   background?: boolean;
   /** Blurriness of the background (0 = sharp, 1 = fully blurred). */
@@ -30,7 +31,7 @@ interface HDRJPGEnvironmentProps {
 const LOADING_OPACITY = 0.05;
 
 export function HDRJPGEnvironment({
-  files,
+  source,
   background = false,
   backgroundBlurriness = 0,
   backgroundIntensity = 1,
@@ -56,8 +57,14 @@ export function HDRJPGEnvironment({
     const loader = new HDRJPGLoader(gl);
     let disposed = false;
 
+    // Bytes from the server are loaded through a temporary object URL.
+    const url =
+      typeof source === "string"
+        ? source
+        : URL.createObjectURL(new Blob([source], { type: "image/jpeg" }));
+
     loader.load(
-      files,
+      url,
       (result) => {
         if (disposed) {
           result.renderTarget.dispose();
@@ -86,8 +93,9 @@ export function HDRJPGEnvironment({
 
     return () => {
       disposed = true;
+      if (typeof source !== "string") URL.revokeObjectURL(url);
     };
-  }, [files, gl]);
+  }, [source, gl]);
 
   // Dispose of previous texture when changed.
   useEffect(() => {

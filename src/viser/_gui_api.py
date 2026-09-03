@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import builtins
 import colorsys
 import dataclasses
 import functools
+import inspect
 import threading
 import time
 import uuid
@@ -441,7 +441,7 @@ class GuiApi:
         if client is None:
             return
         for cb in handle_state.update_cb:
-            if asyncio.iscoroutinefunction(cb):
+            if inspect.iscoroutinefunction(cb):
                 await cb(GuiEvent(client, client_id, handle))
             else:
                 self._thread_executor.submit(
@@ -471,7 +471,7 @@ class GuiApi:
 
         # Call all callbacks for this frequency.
         for cb in callbacks:
-            if asyncio.iscoroutinefunction(cb):
+            if inspect.iscoroutinefunction(cb):
                 await cb(GuiEvent(client, client_id, handle))
             else:
                 self._thread_executor.submit(
@@ -495,7 +495,7 @@ class GuiApi:
             return
 
         for cb in handle._submit_cb:
-            if asyncio.iscoroutinefunction(cb):
+            if inspect.iscoroutinefunction(cb):
                 await cb(GuiEvent(client, client_id, handle))
             else:
                 self._thread_executor.submit(
@@ -611,7 +611,7 @@ class GuiApi:
         if client is None:
             return
         for cb in handle_state.update_cb:
-            if asyncio.iscoroutinefunction(cb):
+            if inspect.iscoroutinefunction(cb):
                 self._event_loop.create_task(cb(GuiEvent(client, client_id, handle)))
             else:
                 self._thread_executor.submit(
@@ -685,7 +685,7 @@ class GuiApi:
             return
 
         for cb in handle_state.trigger_cb:
-            if asyncio.iscoroutinefunction(cb):
+            if inspect.iscoroutinefunction(cb):
                 await cb(CommandEvent(client, client_id, handle))
             else:
                 self._thread_executor.submit(

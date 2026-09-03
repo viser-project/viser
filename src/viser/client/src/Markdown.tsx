@@ -1,11 +1,8 @@
 import React from "react";
-import * as runtime from "react/jsx-runtime";
-import * as provider from "@mdx-js/react";
-import { evaluate } from "@mdx-js/mdx";
-import { type MDXComponents } from "mdx/types";
-import { ReactNode, useEffect, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeColorChips from "rehype-color-chips";
+import { rehypeRawDom } from "./rehypeRawDom";
 import {
   Anchor,
   Blockquote,
@@ -36,7 +33,7 @@ function rehypeCodeblock(): void | Transformer<Root, Root> {
   };
 }
 
-// Custom classes to pipe MDX into Mantine Components.
+// Custom classes to pipe markdown into Mantine Components.
 //
 // ``size="sm"`` (14px) on Text/Anchor/List is a compromise between
 // Mantine's default (16px, too big next to GUI inputs) and the ``xs``
@@ -45,7 +42,7 @@ function rehypeCodeblock(): void | Transformer<Root, Root> {
 // headings still read as headings.
 //
 // Some of them separate the children into a separate prop since Mantine
-// requires a child and MDX always makes children optional, so
+// requires a child and the renderer always makes children optional, so
 // destructuring props doesn't work.
 function MdxText(props: React.ComponentPropsWithoutRef<typeof Text>) {
   return <Text size="sm" {...props} />;
@@ -132,66 +129,52 @@ function MdxImage(props: React.ComponentPropsWithoutRef<typeof Image>) {
   return <Image maw={240} mx="auto" radius="md" {...props} />;
 }
 
-const components: MDXComponents = {
-  p: (props) => MdxText(props),
-  a: (props) => MdxAnchor(props),
-  h1: (props) => MdxTitle(props, 1),
-  h2: (props) => MdxTitle(props, 2),
-  h3: (props) => MdxTitle(props, 3),
-  h4: (props) => MdxTitle(props, 4),
-  h5: (props) => MdxTitle(props, 5),
-  h6: (props) => MdxTitle(props, 6),
-  ul: (props) => MdxList(props, props.children ?? "", "unordered"),
-  ol: (props) => MdxList(props, props.children ?? "", "ordered"),
-  li: (props) => MdxListItem(props, props.children ?? ""),
-  code: (props) => MdxCode(props, props.children ?? ""),
-  pre: (props) => <>{props.children}</>,
-  blockquote: (props) => MdxBlockquote(props),
-  Cite: (props) => MdxCite(props),
-  table: (props) => MdxTable(props),
-  img: (props) => MdxImage(props),
-  "*": () => <></>,
-};
-
-async function parseMarkdown(markdown: string) {
-  // @ts-ignore (necessary since JSX runtime isn't properly typed according to the internet)
-  const { default: Content } = await evaluate(markdown, {
-    ...runtime,
-    ...provider,
-    development: false,
-    remarkPlugins: [remarkGfm],
-    rehypePlugins: [rehypeCodeblock, rehypeColorChips],
-  });
-  return Content;
+// react-markdown passes the hast `node` alongside the DOM props; strip it so
+// it doesn't leak onto Mantine components / DOM elements.
+function dom<T>(props: T & { node?: unknown }): T {
+  const rest = { ...props };
+  delete (rest as { node?: unknown }).node;
+  return rest;
 }
 
+// The renderer types component props as intrinsic HTML attributes; the Mantine
+// wrappers are structurally compatible for the props markdown actually
+// produces (className, children, href, src, ...), so adapt via `any`.
+const components: Components = {
+  p: (props: any) => MdxText(dom(props)),
+  a: (props: any) => MdxAnchor(dom(props)),
+  h1: (props: any) => MdxTitle(dom(props), 1),
+  h2: (props: any) => MdxTitle(dom(props), 2),
+  h3: (props: any) => MdxTitle(dom(props), 3),
+  h4: (props: any) => MdxTitle(dom(props), 4),
+  h5: (props: any) => MdxTitle(dom(props), 5),
+  h6: (props: any) => MdxTitle(dom(props), 6),
+  ul: (props: any) => MdxList(dom(props), props.children ?? "", "unordered"),
+  ol: (props: any) => MdxList(dom(props), props.children ?? "", "ordered"),
+  li: (props: any) => MdxListItem(dom(props), props.children ?? ""),
+  code: (props: any) => MdxCode(dom(props), props.children ?? ""),
+  pre: (props: any) => <>{props.children}</>,
+  blockquote: (props: any) => MdxBlockquote(dom(props)),
+  cite: (props: any) => MdxCite(dom(props)),
+  table: (props: any) => MdxTable(dom(props)),
+  img: (props: any) => MdxImage(dom(props)),
+};
+
 /**
- * Parses and renders markdown on the client. This is generally a bad practice.
- * NOTE: Only run on markdown you trust.
- * It might be worth looking into sandboxing all markdown so that it can't run JS.
+ * Renders markdown on the client with GFM support. Unlike the previous
+ * MDX-based implementation, markdown is parsed rather than compiled and
+ * evaluated as code. Raw HTML in the markdown is still rendered without
+ * sanitization (via rehypeRawDom) -- script tags included -- so content must
+ * come from a trusted server, exactly as before.
  */
 export default function Markdown(props: { children?: string }) {
-  const [child, setChild] = useState<ReactNode>(null);
-
-  useEffect(() => {
-    // Guard against stale/after-unmount updates: parseMarkdown is async, so a
-    // slow earlier parse could otherwise resolve last and render stale content,
-    // or call setChild after unmount. The promise also rejects asynchronously,
-    // so the error fallback must live in `.catch`, not the synchronous `try`.
-    let cancelled = false;
-    parseMarkdown(props.children ?? "")
-      .then((Content) => {
-        if (cancelled) return;
-        setChild(<Content components={components} />);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setChild(<Title order={2}>Error Parsing Markdown...</Title>);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [props.children]);
-
-  return child;
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeRawDom, rehypeCodeblock, rehypeColorChips]}
+      components={components}
+    >
+      {props.children ?? ""}
+    </ReactMarkdown>
+  );
 }

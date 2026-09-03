@@ -5,16 +5,16 @@
  * owns the playback interface built on top of these.
  */
 import * as msgpack from "@msgpack/msgpack";
-import { ZSTDDecoder } from "zstddec";
+import { createZstdDecoder } from "./zstd";
 import {
   replaceBinaryPlaceholders,
   computeBinaryOffsets,
 } from "./BinaryMessageDecode";
 import { Message } from "./WebsocketMessages";
 
-// Initialize zstd decoder at module load.
-const zstdDecoder = new ZSTDDecoder();
-const zstdReady = zstdDecoder.init();
+// Initialize zstd decoder at module load. Runs on the main thread, so the
+// production build reuses the page loader's WASM module directly.
+const zstdDecoderPromise = createZstdDecoder();
 
 export interface SerializedMessages {
   durationSeconds: number;
@@ -72,8 +72,10 @@ export async function decompressAndDecodeHybridPayload<T>(
   // view avoids duplicating the whole compressed payload first.
   const compressedData = bytes.subarray(8);
 
-  await zstdReady;
-  const decompressed = zstdDecoder.decode(compressedData, decompressedSize);
+  const decompressed = (await zstdDecoderPromise).decode(
+    compressedData,
+    decompressedSize,
+  );
   return decodeHybridPayload<T>(decompressed);
 }
 

@@ -9,6 +9,7 @@ import dataclasses
 import gzip
 import hashlib
 import http
+import inspect
 import logging
 import mimetypes
 import queue
@@ -319,7 +320,7 @@ class WebsockMessageHandler:
             # (e.g. get_render's response callback), which would otherwise skip
             # the next handler in a live iteration.
             for cb in list(self._incoming_handlers[type(message)]):
-                if asyncio.iscoroutinefunction(cb):
+                if inspect.iscoroutinefunction(cb):
                     await cb(client_id, message)
                 else:
                     cb(client_id, message)
@@ -615,7 +616,7 @@ class WebsockServer(WebsockMessageHandler):
 
             # New connection callbacks.
             for cb in self._client_connect_cb:
-                if asyncio.iscoroutinefunction(cb):
+                if inspect.iscoroutinefunction(cb):
                     await cb(client_connection)
                 else:
                     cb(client_connection)
@@ -698,7 +699,7 @@ class WebsockServer(WebsockMessageHandler):
 
                 # Disconnection callbacks.
                 for cb in self._client_disconnect_cb:
-                    if asyncio.iscoroutinefunction(cb):
+                    if inspect.iscoroutinefunction(cb):
                         await cb(client_connection)
                     else:
                         cb(client_connection)

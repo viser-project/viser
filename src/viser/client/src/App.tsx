@@ -3,6 +3,9 @@ import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "./App.css";
 import "./index.css";
+// Register the Three.js JSX catalogue before anything renders: production
+// builds patch out R3F's automatic extend(THREE) for tree-shaking.
+import "./r3f-extend";
 
 import { useInView } from "react-intersection-observer";
 import { Notifications } from "@mantine/notifications";
@@ -62,37 +65,20 @@ import { BrowserWarning } from "./BrowserWarning";
 import { MacWindowWrapper } from "./MacWindowWrapper";
 import { CascadedDirectionalLight } from "./CascadedDirectionalLight";
 import { VISER_VERSION, GITHUB_CONTRIBUTORS, Contributor } from "./VersionInfo";
-import { BatchedLabelManager } from "./BatchedLabelManager";
+import { LabelRenderer } from "./label/LabelRenderer";
+import { applyReversedDepthSortFix } from "./ReversedDepthSort";
 
 // Import logo as asset for proper bundling/inlining.
 import logoSvg from "./assets/logo.svg";
 
-// Import HDRI files as assets for proper bundling/inlining.
-// These are HDR JPEG (gainmap) format files that are ~10x smaller than traditional HDR.
-import hdriApartment from "./assets/lebombo_1k.jpg";
-import hdriCity from "./assets/potsdamer_platz_1k.jpg";
-import hdriDawn from "./assets/kiara_1_dawn_1k.jpg";
-import hdriForest from "./assets/forest_slope_1k.jpg";
-import hdriLobby from "./assets/st_fagans_interior_1k.jpg";
-import hdriNight from "./assets/dikhololo_night_1k.jpg";
-import hdriPark from "./assets/rooitou_park_1k.jpg";
-import hdriStudio from "./assets/studio_small_03_1k.jpg";
-import hdriSunset from "./assets/venice_sunset_1k.jpg";
-import hdriWarehouse from "./assets/empty_warehouse_01_1k.jpg";
-
-// Map preset names to imported HDRI assets.
-const hdriPresets: Record<string, string> = {
-  apartment: hdriApartment,
-  city: hdriCity,
-  dawn: hdriDawn,
-  forest: hdriForest,
-  lobby: hdriLobby,
-  night: hdriNight,
-  park: hdriPark,
-  studio: hdriStudio,
-  sunset: hdriSunset,
-  warehouse: hdriWarehouse,
-};
+// The client only embeds one environment map: the default shown before the
+// server configures anything, used purely for lighting (the background flag
+// can only come from a server message, and every server-configured preset --
+// "city" included -- arrives as bytes in EnvironmentMapMessage). The asset
+// is imported from the Python package's preset directory so there's a single
+// copy in the repository; _client_autobuild.py treats that directory as a
+// build input. HDR JPEG (gainmap) format: ~10x smaller than traditional HDR.
+import defaultHdriUrl from "../../_assets/hdri/potsdamer_platz_1k.jpg";
 
 // ======= Utility functions =======
 
@@ -779,11 +765,11 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         <SplatRenderContext>
           <AdaptiveDpr />
           {children}
-          <BatchedLabelManager>
+          <LabelRenderer>
             <DragLayer>
               <SceneNodeThreeObject name="" />
             </DragLayer>
-          </BatchedLabelManager>
+          </LabelRenderer>
         </SplatRenderContext>
         <DefaultLights />
         <SceneFog />
@@ -798,6 +784,9 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     >
       <Canvas
         gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
+        // three flips its sorted render lists under a reversed depth buffer,
+        // which inverts `renderOrder`. See ReversedDepthSort.ts.
+        onCreated={({ gl }) => applyReversedDepthSortFix(gl)}
         // `touchAction: none` opts the canvas out of native touch actions.
         // Without it the browser can reinterpret a curved/multi-touch drag
         // (e.g. dragging the orbit gizmo's rotation ring, especially on
@@ -932,7 +921,23 @@ function DefaultLights() {
   // Calculate environment map.
   // Uses HDR JPEG (gainmap) format for smaller file sizes (~10x reduction).
   const envMapNode = useMemo(() => {
-    if (environmentMap.hdri === null) return null;
+    // `null` state = server never configured a map: show the built-in
+    // default. A message with `hdri_data: null` disables the map.
+    const config = environmentMap ?? {
+      type: "EnvironmentMapMessage" as const,
+      hdri_data: null,
+      background: false,
+      background_blurriness: 0,
+      background_intensity: 1.0,
+      background_wxyz: [1, 0, 0, 0] as [number, number, number, number],
+      environment_intensity: 1.0,
+      environment_wxyz: [1, 0, 0, 0] as [number, number, number, number],
+    };
+    const source =
+      environmentMap === null ? defaultHdriUrl : environmentMap.hdri_data;
+    // == also catches undefined: recordings from before hdri_data existed
+    // deserialize without the field, and must not reach the JPEG loader.
+    if (source == null) return null;
 
     // Calculate quaternions for world transformation.
     const Rquat_threeworld_world = new THREE.Quaternion(
@@ -946,10 +951,10 @@ function DefaultLights() {
     // Calculate background rotation.
     const backgroundRotation = new THREE.Euler().setFromQuaternion(
       new THREE.Quaternion(
-        environmentMap.background_wxyz[1],
-        environmentMap.background_wxyz[2],
-        environmentMap.background_wxyz[3],
-        environmentMap.background_wxyz[0],
+        config.background_wxyz[1],
+        config.background_wxyz[2],
+        config.background_wxyz[3],
+        config.background_wxyz[0],
       )
         .premultiply(Rquat_threeworld_world)
         .multiply(Rquat_world_threeworld),
@@ -958,10 +963,10 @@ function DefaultLights() {
     // Calculate environment rotation.
     const environmentRotation = new THREE.Euler().setFromQuaternion(
       new THREE.Quaternion(
-        environmentMap.environment_wxyz[1],
-        environmentMap.environment_wxyz[2],
-        environmentMap.environment_wxyz[3],
-        environmentMap.environment_wxyz[0],
+        config.environment_wxyz[1],
+        config.environment_wxyz[2],
+        config.environment_wxyz[3],
+        config.environment_wxyz[0],
       )
         .premultiply(Rquat_threeworld_world)
         .multiply(Rquat_world_threeworld),
@@ -969,12 +974,12 @@ function DefaultLights() {
 
     return (
       <HDRJPGEnvironment
-        files={hdriPresets[environmentMap.hdri]}
-        background={environmentMap.background}
-        backgroundBlurriness={environmentMap.background_blurriness}
-        backgroundIntensity={environmentMap.background_intensity}
+        source={source}
+        background={config.background}
+        backgroundBlurriness={config.background_blurriness}
+        backgroundIntensity={config.background_intensity}
         backgroundRotation={backgroundRotation}
-        environmentIntensity={environmentMap.environment_intensity}
+        environmentIntensity={config.environment_intensity}
         environmentRotation={environmentRotation}
       />
     );

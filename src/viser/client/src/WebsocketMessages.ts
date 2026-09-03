@@ -1374,22 +1374,16 @@ export interface FogMessage {
 }
 /** Environment Map message.
  *
+ * The environment map is sent as HDR JPEG (gainmap) bytes instead of a
+ * preset name so the client doesn't need to embed every preset in its
+ * bundle; the server reads the preset image from disk.
+ *
+ *
  * (automatically generated)
  */
 export interface EnvironmentMapMessage {
   type: "EnvironmentMapMessage";
-  hdri:
-    | "apartment"
-    | "city"
-    | "dawn"
-    | "forest"
-    | "lobby"
-    | "night"
-    | "park"
-    | "studio"
-    | "sunset"
-    | "warehouse"
-    | null;
+  hdri_data: Uint8Array<ArrayBuffer> | null;
   background: boolean;
   background_blurriness: number;
   background_intensity: number;

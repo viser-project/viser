@@ -2,13 +2,23 @@ import * as msgpack from "@msgpack/msgpack";
 import { Message } from "./WebsocketMessages";
 import AwaitLock from "await-lock";
 import { VISER_VERSION } from "./VersionInfo";
-import { ZSTDDecoder } from "zstddec";
+import { createZstdDecoder, ZstdDecoder } from "./zstd";
 
-// Initialize zstd decoder at module load.
-const zstdDecoder = new ZSTDDecoder();
-const zstdReady = zstdDecoder.init();
+// Workers can't read the main thread's globals, so in production the page
+// loader's zstd WASM module arrives via a "zstd_wasm" message (posted by
+// WebsocketInterface right after worker construction, so it is always the
+// first message). In dev, createZstdDecoder falls back to the zstddec
+// package and the message never comes.
+let resolveZstdModule: (module: WebAssembly.Module) => void;
+const zstdModulePromise = new Promise<WebAssembly.Module>((resolve) => {
+  resolveZstdModule = resolve;
+});
+const zstdDecoderPromise: Promise<ZstdDecoder> = import.meta.env.DEV
+  ? createZstdDecoder()
+  : zstdModulePromise.then(createZstdDecoder);
 
 export type WsWorkerIncoming =
+  | { type: "zstd_wasm"; module: WebAssembly.Module }
   | { type: "send"; message: Message }
   | { type: "set_server"; server: string }
   | { type: "retry" }
@@ -188,8 +198,7 @@ function decodeHybridMessage(
         // binaryType="arraybuffer" ensures event.data is an ArrayBuffer directly
         // (skips the default Blob->ArrayBuffer async conversion).
         const buffer = event.data as ArrayBuffer;
-        await zstdReady;
-        return decodeHybridMessage(buffer, zstdDecoder);
+        return decodeHybridMessage(buffer, await zstdDecoderPromise);
       })();
 
       // Try our best to handle messages in order. If this takes more than 10 seconds, we give up. :)
@@ -296,7 +305,9 @@ function decodeHybridMessage(
   self.onmessage = (e) => {
     const data: WsWorkerIncoming = e.data;
 
-    if (data.type === "send") {
+    if (data.type === "zstd_wasm") {
+      resolveZstdModule(data.module);
+    } else if (data.type === "send") {
       // The socket can be null (not yet connected) or closing/closed by the
       // time a send arrives; only send when it's actually open, otherwise drop
       // it rather than throwing in the worker.

@@ -86,7 +86,12 @@ def ensure_client_is_built() -> None:
         # We should be at least 10 seconds newer than the last build.
         # This buffer is important when we install from pip, and the src/ +
         # build/ directories have very similar timestamps.
-        _modified_time_recursive(client_dir / "src")
+        # The bundle also embeds the default environment map from ../_assets
+        # (see client/src/App.tsx), so that directory counts as a build input.
+        max(
+            _modified_time_recursive(client_dir / "src"),
+            _modified_time_recursive(client_dir.parent / "_assets"),
+        )
         > _modified_time_recursive(build_dir) + 10.0
     ):
         import rich
