@@ -53,3 +53,21 @@ Reading the table:
 - **Step 4** (native base64 loader): decode is ~25-40 ms → a few ms on desktop
   (below the resolution of the load metric here, which is dominated by scene
   construction); gzipped `index.html` shrinks by ~8 KB.
+
+## Load-phase breakdown (1000 frames, unminified build)
+
+`run_bench.py --profile-build --load-top 30 --num-frames 1000` profiles scene
+construction with real function names. Inclusive time, ~2.8 s of samples:
+
+| bucket | ms | notes |
+| --- | --- | --- |
+| React DOM (GUI: Mantine `Box`, markdown, number inputs) | ~760 | ~100 controls; render 476 + commit 363 |
+| R3F reconciler (scene nodes → three objects) | ~340 | ~0.3 ms per node, 4 three objects per frame node |
+| native `(program)` | ~630 | SwiftShader raster + shader compile |
+| first `gl.render` (program link, `onFirstUse`) | ~260 | GPU-dependent |
+| garbage collector | ~220 | allocation churn across decode/React/three |
+| bundle module evaluation | ~170 | unminified inflates this |
+| control-panel initial placement (forced layout) | ~90 | once, on mount |
+
+No single hotspot remains after the O(N²) fix; the per-node constant (React +
+R3F work per scene node) is the scalability limit for very large scenes.

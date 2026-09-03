@@ -210,8 +210,13 @@ def run_mode(pw, mode: str, args: argparse.Namespace, out_dir: Path) -> dict:
         )
         cdp = context.new_cdp_session(page)
         cdp.send("Performance.enable")
+        cdp.send("Profiler.enable")
+        cdp.send("Profiler.setSamplingInterval", {"interval": 250})
 
         # --- Load phase -------------------------------------------------
+        # Profiled too: scene construction (message decode, React commits,
+        # geometry/material creation, first renders) is what every user pays.
+        cdp.send("Profiler.start")
         t_nav = time.monotonic()
         page.goto(f"http://localhost:{port}", wait_until="domcontentloaded")
         # Wait until every scene node has a mounted three.js object.
@@ -224,8 +229,14 @@ def run_mode(pw, mode: str, args: argparse.Namespace, out_dir: Path) -> dict:
             timeout=120_000,
         )
         load_s = time.monotonic() - t_nav
+        load_profile = cdp.send("Profiler.stop")["profile"]
+        (out_dir / f"{mode}.load.cpuprofile").write_text(json.dumps(load_profile))
+        load_metrics = get_perf_metrics(cdp)
         result["load"] = {
             "nav_to_scene_mounted_s": load_s,
+            "task_duration_s": load_metrics.get("TaskDuration", 0),
+            "script_duration_s": load_metrics.get("ScriptDuration", 0),
+            "cpu_top": summarize_cpuprofile(load_profile),
             "long_tasks_during_load": page.evaluate(
                 "() => ({count: window.__bench.longTasks.length,"
                 " total_ms: window.__bench.longTasks.reduce((a, t) => a + t.duration, 0),"
@@ -240,10 +251,6 @@ def run_mode(pw, mode: str, args: argparse.Namespace, out_dir: Path) -> dict:
         page.evaluate(
             "() => { window.__bench.longTasks.length = 0; window.__bench.startRaf(); }"
         )
-        cdp.send(
-            "Profiler.enable",
-        )
-        cdp.send("Profiler.setSamplingInterval", {"interval": 250})
         m0 = get_perf_metrics(cdp)
         info0 = read_renderer_info(page)
         cdp.send("Profiler.start")
@@ -331,6 +338,18 @@ def main() -> None:
     parser.add_argument("--num-meshes", type=int, default=50)
     parser.add_argument("--num-controls", type=int, default=100)
     parser.add_argument("--build", action="store_true", help="npm run build first")
+    parser.add_argument(
+        "--profile-build",
+        action="store_true",
+        help="vite build WITHOUT minification first, so CPU profiles carry real "
+        "function names (slower to load; for attribution, not for timing)",
+    )
+    parser.add_argument(
+        "--load-top",
+        type=int,
+        default=0,
+        help="print the top-N self-time functions of the load-phase profile",
+    )
     parser.add_argument("--viewport-width", type=int, default=640)
     parser.add_argument("--viewport-height", type=int, default=400)
     args = parser.parse_args()
@@ -339,6 +358,14 @@ def main() -> None:
         print("Building client...", flush=True)
         subprocess.run(
             ["npm", "run", "build"], cwd=CLIENT_DIR, check=True, capture_output=True
+        )
+    if args.profile_build:
+        print("Building unminified client for profiling...", flush=True)
+        subprocess.run(
+            ["npx", "vite", "build", "--minify", "false"],
+            cwd=CLIENT_DIR,
+            check=True,
+            capture_output=True,
         )
 
     modes = (
@@ -358,7 +385,8 @@ def main() -> None:
             raf = s.get("raf", {})
             print(
                 f"  load: {result['load']['nav_to_scene_mounted_s']:.2f}s"
-                f" (long tasks: {result['load']['long_tasks_during_load']['total_ms']:.0f}ms)\n"
+                f" (long tasks: {result['load']['long_tasks_during_load']['total_ms']:.0f}ms,"
+                f" script: {result['load']['script_duration_s']:.2f}s)\n"
                 f"  fps: {raf.get('fps', 0):.1f}"
                 f"  interval p50/p95/p99: {raf.get('interval_ms', {}).get('p50'):.1f}"
                 f"/{raf.get('interval_ms', {}).get('p95'):.1f}"
@@ -373,6 +401,13 @@ def main() -> None:
                 f" ({s['long_tasks']['total_ms']:.0f}ms)",
                 flush=True,
             )
+            if args.load_top > 0:
+                print("  load-phase top self-time:")
+                for row in result["load"]["cpu_top"][: args.load_top]:
+                    print(
+                        f"    {row['self_ms']:8.1f}ms {row['self_pct']:5.1f}%"
+                        f"  {row['function']} ({row['url']}:{row['line']})"
+                    )
             top = result["cpu_top"][:8]
             print("  top self-time:")
             for row in top:
