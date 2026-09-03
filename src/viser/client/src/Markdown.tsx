@@ -1,5 +1,8 @@
 import React from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, {
+  defaultUrlTransform,
+  type Components,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeColorChips from "rehype-color-chips";
 import { rehypeRawDom } from "./rehypeRawDom";
@@ -167,14 +170,30 @@ const components: Components = {
  * sanitization (via rehypeRawDom) -- script tags included -- so content must
  * come from a trusted server, exactly as before.
  */
-export default function Markdown(props: { children?: string }) {
+// The server embeds image_root images as data: URIs, which react-markdown's
+// default URL transform strips (its allow-list is http/https/mailto/...).
+// Content already comes from a trusted server -- raw HTML renders
+// unsanitized above -- so pass data: through and keep the default handling
+// for every other scheme.
+function urlTransform(url: string): string {
+  return url.startsWith("data:") ? url : defaultUrlTransform(url);
+}
+
+function Markdown(props: { children?: string }) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeRawDom, rehypeCodeblock, rehypeColorChips]}
       components={components}
+      urlTransform={urlTransform}
     >
       {props.children ?? ""}
     </ReactMarkdown>
   );
 }
+
+// Memoized: parsing runs on every render otherwise, and markdown elements
+// often sit inside containers that re-render for unrelated reasons (theme
+// changes, sibling GUI updates). With a string child, shallow prop
+// comparison makes this exactly "re-parse when content changes".
+export default React.memo(Markdown);
