@@ -1,5 +1,5 @@
 import React from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { HoverableContext } from "./HoverContext";
 import { Outlines } from "./Outlines";
 import * as THREE from "three";
@@ -29,6 +29,24 @@ function OutlinesIfHoveredInner(props: {
   const [mounted, setMounted] = React.useState(true);
 
   const creaseAngle = props.enableCreaseAngle ? Math.PI : 0.0;
+
+  // Pre-compile the outline shader while the outline is still hidden. The
+  // canvas renders on demand, so nothing warms this program before the first
+  // hover frame; compiling it there stalls that frame for the whole
+  // compile+link (tens of ms on a GPU, seconds on software GL). three's
+  // compile() only sets the program up -- with parallel shader compilation
+  // the link happens off the main thread and the readiness poll below is
+  // what waits for it -- so this costs the main thread almost nothing.
+  const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
+  const camera = useThree((state) => state.camera);
+  React.useEffect(() => {
+    const group = groupRef.current;
+    if (group === null) return;
+    gl.compileAsync(group, camera, scene).catch(() => {
+      /* Best-effort warm-up; the first hover frame compiles if this fails. */
+    });
+  }, [gl, scene, camera, mounted]);
 
   useFrame(() => {
     if (hoverContext === null || !hoverContext.clickable) return;

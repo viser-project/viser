@@ -9,7 +9,7 @@ import "./r3f-extend";
 
 import { useInView } from "react-intersection-observer";
 import { Notifications } from "@mantine/notifications";
-import { PerformanceMonitor, Stats } from "@react-three/drei";
+import { Stats } from "@react-three/drei";
 import { HDRJPGEnvironment } from "./HDRJPGEnvironment";
 import * as THREE from "three";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
@@ -205,6 +205,8 @@ function ViewerRoot() {
     nodeRefFromName,
 
     // Message and rendering state.
+    requestRender: () => {},
+    drainMessageQueue: null,
     messageQueue: [],
     firstMessageBatch: true,
     getRenderRequestState: "ready",
@@ -606,10 +608,25 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     (rect: { startXy: [number, number]; endXy: [number, number] } | null) => {
       const c2d = viewer.mutable.current.canvas2d;
       if (c2d === null) return;
+      // The overlay's backing store (viewport * 4 bytes) exists only while a
+      // rectangle is being drawn: a zero-size canvas has none, and resizing
+      // to the CSS box on first use also clears it.
+      if (rect === null) {
+        if (c2d.width !== 0 || c2d.height !== 0) {
+          c2d.width = 0;
+          c2d.height = 0;
+        }
+        return;
+      }
+      const width = c2d.clientWidth;
+      const height = c2d.clientHeight;
+      if (c2d.width !== width || c2d.height !== height) {
+        c2d.width = width;
+        c2d.height = height;
+      }
       const ctx = c2d.getContext("2d");
       if (ctx === null) return;
-      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      if (rect === null) return;
+      ctx.clearRect(0, 0, width, height);
       const [sx, sy] = rect.startXy;
       const [ex, ey] = rect.endXy;
       ctx.beginPath();
@@ -689,6 +706,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     // steal the gizmo's capture -- R3F then drops it and the gizmo's pointerup
     // is missed, leaving it stuck mid-drag.
     if (viewer.mutable.current.canvas?.hasPointerCapture(e.pointerId)) return;
+    viewer.mutable.current.requestRender();
     const xy = canvasXyFromEvent(e);
     const next = interaction.scenePointer.onPointerDown({
       pointerId: e.pointerId,
@@ -713,6 +731,9 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     // focus-regain with the modifier still held without waiting for a
     // keypress.
     interaction.hover.setHeldModifier(keyModifierFromEvent(e));
+    // Hover/drag state lives in refs that per-frame hooks read; make sure a
+    // frame runs to reflect it.
+    viewer.mutable.current.requestRender();
     const xy = canvasXyFromEvent(e);
     const repaint = interaction.scenePointer.onPointerMove({
       pointerId: e.pointerId,
@@ -727,6 +748,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    viewer.mutable.current.requestRender();
     const outcome = interaction.scenePointer.onPointerUp({
       pointerId: e.pointerId,
     });
@@ -803,6 +825,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={(e) => {
+          viewer.mutable.current.requestRender();
           interaction.cancelPointer(e.pointerId);
           drawRectSelectOverlay(null);
           // drei's PivotControls disables the camera on pointerdown and only
@@ -831,6 +854,8 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         }}
         shadows="percentage"
         dpr={fixedDpr ?? undefined}
+        // On-demand rendering: see ViewerMutable.requestRender.
+        frameloop="demand"
       >
         {!inView && <DisableRender />}
         {sceneContents}
@@ -1029,10 +1054,12 @@ function SceneFog() {
     } else {
       scene.fog = null;
     }
+    viewer.mutable.current.requestRender();
     return () => {
       scene.fog = null;
+      viewer.mutable.current.requestRender();
     };
-  }, [fog, scene]);
+  }, [fog, scene, viewer]);
 
   return null;
 }
@@ -1042,27 +1069,74 @@ function SceneFog() {
  */
 function AdaptiveDpr() {
   const viewer = React.useContext(ViewerContext)!;
-  const setDpr = useThree((state) => state.setDpr);
   const fixedDpr = viewer.useDevSettings((state) => state.fixedDpr);
+  return fixedDpr !== null ? null : <AdaptiveDprMonitor />;
+}
 
-  return fixedDpr !== null ? null : (
-    <PerformanceMonitor
-      factor={1.0}
-      step={0.5}
-      bounds={(refreshrate) => {
-        const max = Math.min(refreshrate * 0.75, 85);
-        const min = Math.max(max * 0.3, 38);
-        return [min, max];
-      }}
-      onChange={({ factor, fps, refreshrate }) => {
-        const dpr = window.devicePixelRatio * (0.75 + 0.25 * factor);
-        console.log(
-          `[Performance] Setting DPR to ${dpr}; FPS=${fps}/${refreshrate}`,
-        );
-        setDpr(dpr);
-      }}
-    />
-  );
+/** Adaptive DPR that understands on-demand rendering.
+ *
+ * drei's <PerformanceMonitor> derives FPS from useFrame timestamps, which
+ * under frameloop="demand" reads an idle scene as ~1 FPS (the heartbeat) and
+ * drives DPR to its floor. This version keeps its semantics (250 ms sample
+ * windows, 10 windows per decision, factor stepped by 0.5, the same bounds)
+ * but only samples runs of CONSECUTIVE frames: a gap longer than
+ * IDLE_GAP_MS means the loop was idle, not slow, and restarts the window. */
+function AdaptiveDprMonitor() {
+  const setDpr = useThree((state) => state.setDpr);
+  const state = React.useRef({
+    windowStart: -1,
+    windowFrames: 0,
+    lastFrame: -1,
+    averages: [] as number[],
+    refreshrate: 0,
+    factor: 1.0,
+  });
+  // Gap classification: the heartbeat (1 s) and post-settle idle gaps are
+  // >= ~750 ms; a genuinely slow frame on a struggling GPU is far shorter
+  // (at 500 ms the scene is at 2 FPS and a DPR floor won't rescue it).
+  const IDLE_GAP_MS = 500;
+  const WINDOW_MS = 250;
+  const ITERATIONS = 10;
+  const THRESHOLD = 0.75;
+  const STEP = 0.5;
+
+  useFrame(() => {
+    const s = state.current;
+    const now = performance.now();
+    if (s.lastFrame < 0 || now - s.lastFrame > IDLE_GAP_MS) {
+      // Idle gap: start a fresh window from this frame.
+      s.windowStart = now;
+      s.windowFrames = 0;
+    }
+    s.lastFrame = now;
+    s.windowFrames += 1;
+    const msPassed = now - s.windowStart;
+    if (msPassed < WINDOW_MS) return;
+
+    const fps = Math.round((s.windowFrames / msPassed) * 1000);
+    s.windowStart = now;
+    s.windowFrames = 0;
+    s.refreshrate = Math.max(s.refreshrate, fps);
+    s.averages.push(fps);
+    if (s.averages.length < ITERATIONS) return;
+
+    const max = Math.min(s.refreshrate * 0.75, 85);
+    const min = Math.max(max * 0.3, 38);
+    const above = s.averages.filter((v) => v >= max).length;
+    const below = s.averages.filter((v) => v < min).length;
+    const prevFactor = s.factor;
+    if (above > ITERATIONS * THRESHOLD) s.factor = Math.min(1, s.factor + STEP);
+    if (below > ITERATIONS * THRESHOLD) s.factor = Math.max(0, s.factor - STEP);
+    s.averages = [];
+    if (s.factor !== prevFactor) {
+      const dpr = window.devicePixelRatio * (0.75 + 0.25 * s.factor);
+      console.log(
+        `[Performance] Setting DPR to ${dpr}; FPS=${fps}/${s.refreshrate}`,
+      );
+      setDpr(dpr);
+    }
+  });
+  return null;
 }
 
 /**
@@ -1070,23 +1144,12 @@ function AdaptiveDpr() {
  */
 function Viewer2DCanvas() {
   const viewer = React.useContext(ViewerContext)!;
-
-  useEffect(() => {
-    const canvas = viewer.mutable.current.canvas2d!;
-
-    // Create a resize observer to update canvas dimensions.
-    const resizeObserver = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect;
-      canvas.width = width;
-      canvas.height = height;
-    });
-
-    resizeObserver.observe(canvas);
-    return () => resizeObserver.disconnect();
-  }, []);
-
+  // Sized lazily by drawRectSelectOverlay (see there); a 0x0 canvas holds no
+  // backing store, so an idle viewer pays nothing for the overlay.
   return (
     <canvas
+      width={0}
+      height={0}
       ref={(el) => {
         viewer.mutable.current.canvas2d = el;
       }}
@@ -1224,6 +1287,11 @@ function BackgroundImage() {
 /**
  * Helper component to sync scene and camera state.
  */
+/** Frames keep flowing for this long after each requestRender(). */
+const RENDER_SETTLE_MS = 250;
+/** Idle safety-net render rate. */
+const RENDER_HEARTBEAT_MS = 1000;
+
 function SceneContextSetter() {
   const viewer = React.useContext(ViewerContext)!;
   const { mutable } = viewer;
@@ -1234,6 +1302,31 @@ function SceneContextSetter() {
 
   const gl = useThree((state) => state.gl);
   const setSize = useThree((state) => state.setSize);
+  const invalidate = useThree((state) => state.invalidate);
+
+  // Render scheduler for frameloop="demand" (see ViewerMutable.requestRender).
+  // `settleUntil` keeps frames flowing for a short window after each request:
+  // most imperative updates have async tails (texture uploads, worker
+  // replies, effects that run after the next commit) that would otherwise
+  // need their own request to become visible.
+  const settleUntilRef = React.useRef(0);
+  useEffect(() => {
+    mutable.current.requestRender = () => {
+      settleUntilRef.current = performance.now() + RENDER_SETTLE_MS;
+      invalidate();
+    };
+    mutable.current.requestRender();
+    // Heartbeat: a low-rate safety net for imperative changes that never
+    // request a frame. Cheap relative to the 60 Hz loop it replaces.
+    const heartbeat = setInterval(() => invalidate(), RENDER_HEARTBEAT_MS);
+    return () => {
+      clearInterval(heartbeat);
+      mutable.current.requestRender = () => {};
+    };
+  }, [mutable, invalidate]);
+  useFrame(() => {
+    if (performance.now() < settleUntilRef.current) invalidate();
+  });
 
   // Register a SYNCHRONOUS canvas-size sync (see ViewerMutable.syncCanvasSize).
   // R3F normally resizes the renderer from a ResizeObserver on the canvas

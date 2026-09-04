@@ -472,6 +472,7 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           // surfaces happily deliver other fingers' events through the
           // same window listener.
           if (event.pointerId !== activeDrag.pointerId) return;
+          viewerMutable.requestRender();
           if (!updateActiveDragEnd(event.clientX, event.clientY)) return;
 
           // A modifier change carried on this move ends the current

@@ -39,6 +39,21 @@ export type ViewerMutable = {
   // canvas's clientWidth here instead would lag, because the new CSS inset isn't
   // reliably reflowed yet at this point in the drag frame. Null until mount.
   syncCanvasSize: ((width: number, height: number) => void) | null;
+  // Request a frame. The R3F canvas runs with frameloop="demand": nothing
+  // renders unless something asks for it. React-driven changes (props on
+  // three objects, store writes such as resize/DPR) invalidate automatically
+  // via R3F; anything that mutates the visible scene IMPERATIVELY (message
+  // batches, pointer/hover refs, drags, worker callbacks, animations) must
+  // call this. Each request also opens a short "settle" window of continuous
+  // frames so async follow-ups (texture decodes, sort-worker replies,
+  // deferred effects) land without their own request; a 1 Hz heartbeat
+  // catches anything missed. See RenderScheduler in App.tsx.
+  requestRender: () => void;
+  // Drain the message queue now, outside the render loop. Installed by
+  // FrameSynchronizedMessageHandler; null until it mounts. Used for GUI-only
+  // batches (see WebsocketInterface.tsx) so streaming GUI updates don't
+  // force 3D frames.
+  drainMessageQueue: (() => void) | null;
 
   // DOM/Three.js references.
   canvas: HTMLCanvasElement | null;

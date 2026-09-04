@@ -6,8 +6,21 @@ import { ViewerContext } from "./ViewerContext";
 import { syncSearchParamServer } from "./SearchParamsUtils";
 import { WsWorkerIncoming, WsWorkerOutgoing } from "./WebsocketClientWorker";
 import { getLoaderZstdModule } from "./zstd";
+import { Message } from "./WebsocketMessages";
 
 /** Component for handling websocket connections. */
+/** Messages that only affect the 2D GUI (never three.js state). */
+function isGuiOnlyMessage(message: Message): boolean {
+  const type = message.type;
+  return (
+    type.startsWith("Gui") ||
+    type === "NotificationShowMessage" ||
+    type === "NotificationUpdateMessage" ||
+    type === "RemoveNotificationMessage" ||
+    type === "SetGuiPanelLabelMessage"
+  );
+}
+
 export function WebsocketMessageProducer() {
   const viewer = useContext(ViewerContext)!;
   const viewerMutable = viewer.mutable.current;
@@ -132,8 +145,30 @@ export function WebsocketMessageProducer() {
         // array as call arguments overflows the call stack on big first-scene
         // replays.
         const queue = viewerMutable.messageQueue;
+        const wasEmpty = queue.length === 0;
+        let guiOnly = true;
         for (let i = 0; i < data.messages.length; i++) {
-          queue.push(data.messages[i]);
+          const message = data.messages[i];
+          queue.push(message);
+          if (guiOnly && !isGuiOnlyMessage(message)) guiOnly = false;
+        }
+        if (
+          guiOnly &&
+          wasEmpty &&
+          !viewerMutable.firstMessageBatch &&
+          viewerMutable.getRenderRequestState === "ready" &&
+          viewerMutable.drainMessageQueue !== null
+        ) {
+          // A GUI-only batch touches no three.js state, so apply it right
+          // away rather than waking the (on-demand) render loop: otherwise
+          // every streamed slider/progress/markdown update would also
+          // re-render the 3D scene. Requires an empty queue (FIFO order) and
+          // no capture in flight; the first batch keeps the frame path so
+          // its root-orientation ordering hack still runs.
+          viewerMutable.drainMessageQueue();
+        } else {
+          // The queue drains in the render loop; wake it.
+          viewerMutable.requestRender();
         }
       }
     };
