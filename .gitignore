@@ -29,3 +29,6 @@ test-results/
 scene_verification_outputs/
 tests/e2e/test_webgl_warning.py
 .venv/
+
+# Client benchmark output (benchmarks/run_bench.py).
+benchmarks/results/
