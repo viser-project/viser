@@ -16,3 +16,9 @@
 - **Panel placement is write-only**: the server never reads layout state
   back; keep new placement features as independent per-axis
   `update_simple` messages (see spec §8).
+- **The 3D canvas renders on demand** (`frameloop="demand"`). React-driven
+  changes invalidate automatically; anything that mutates the visible scene
+  imperatively (refs read in `useFrame`, worker callbacks, animations,
+  drags) must call `viewerMutable.requestRender()`; a hook that needs the
+  *next* frame too calls it from inside `useFrame`. `benchmarks/` has a
+  headless-chromium harness (`run_bench.py`) for before/after numbers.
