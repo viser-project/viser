@@ -4,7 +4,8 @@
  * Fades in the environment map to prevent flickering on first render.
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useContext, useEffect, useState, useRef } from "react";
+import { ViewerContext } from "./ViewerContext";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { HDRJPGLoader } from "@monogrid/gainmap-js";
@@ -131,6 +132,10 @@ export function HDRJPGEnvironment({
   // Apply environment/background scene properties reactively, keyed on the
   // properties themselves, so changing intensity, rotation, blur, or the
   // background toggle takes effect without reloading the file.
+  // Imperative scene writes under on-demand rendering: request a frame so
+  // the (expensive) PMREM generation and the fade below start now, not on
+  // the next unrelated frame -- e.g. the user's first hover.
+  const viewerMutable = useContext(ViewerContext)!.mutable.current;
   useEffect(() => {
     if (!texture) return;
     scene.environment = texture;
@@ -148,7 +153,9 @@ export function HDRJPGEnvironment({
     } else {
       scene.background = null;
     }
+    viewerMutable.requestRender();
   }, [
+    viewerMutable,
     texture,
     scene,
     background,
@@ -162,6 +169,7 @@ export function HDRJPGEnvironment({
   // Animate fade-in (only runs while fading).
   useFrame(() => {
     if (!texture || fadeProgress.current >= 1.0) return;
+    viewerMutable.requestRender();
 
     // Update fade progress.
     fadeProgress.current = Math.min(1, fadeProgress.current + 1.0 / 5.0);
@@ -180,8 +188,9 @@ export function HDRJPGEnvironment({
       if (background) {
         scene.background = null;
       }
+      viewerMutable.requestRender();
     };
-  }, [gl, scene, background]);
+  }, [gl, scene, background, viewerMutable]);
 
   return null;
 }

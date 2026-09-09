@@ -1,4 +1,4 @@
-import { ViewerContext } from "./ViewerContext";
+import { ViewerContext, ViewerMutable } from "./ViewerContext";
 import {
   CameraControls,
   Grid,
@@ -168,6 +168,80 @@ function OrbitOriginTool({
   );
 }
 
+// camera-controls methods that move or reconfigure the camera. Only these are
+// wrapped by the proxy below: reads (getTarget, ...) must not request frames.
+const CAMERA_CONTROLS_MUTATORS = new Set<PropertyKey>([
+  "rotate",
+  "rotateTo",
+  "rotateAzimuthTo",
+  "rotatePolarTo",
+  "dolly",
+  "dollyTo",
+  "dollyInFixed",
+  "zoom",
+  "zoomTo",
+  "truck",
+  "forward",
+  "elevate",
+  "moveTo",
+  "lookInDirectionOf",
+  "setFocalOffset",
+  "setOrbitPoint",
+  "setBoundary",
+  "fitToBox",
+  "fitToSphere",
+  "setLookAt",
+  "lerpLookAt",
+  "setPosition",
+  "setTarget",
+  "updateCameraUp",
+  "applyCameraUp",
+  "reset",
+  "normalizeRotations",
+]);
+
+/** Wrap a camera-controls instance so that mutating method calls and property
+ * writes on it request a frame.
+ *
+ * Under frameloop="demand", drei's <CameraControls> invalidates on the
+ * library's own events -- but those fire from inside `controls.update()`,
+ * which itself only runs during a frame. A programmatic `setLookAt` /
+ * `setTarget` / `controls.distance = ...` made OUTSIDE a frame (server camera
+ * messages applied by a hidden-tab drain, dev tools, e2e tests) therefore
+ * never produced the first frame that would let the controls notice. Routing
+ * all access through this proxy makes `viewerMutable.cameraControl` request
+ * that frame by construction; the transition then self-sustains via drei's
+ * 'update' subscription. */
+function renderRequestingCameraControls(
+  controls: CameraControls,
+  viewerMutable: ViewerMutable,
+): CameraControls {
+  const wrapped = new Map<PropertyKey, (...args: unknown[]) => unknown>();
+  return new Proxy(controls, {
+    get(target, prop) {
+      // Getters run against the instance, not the proxy.
+      const value = Reflect.get(target, prop, target);
+      if (typeof value !== "function" || !CAMERA_CONTROLS_MUTATORS.has(prop))
+        return value;
+      let fn = wrapped.get(prop);
+      if (fn === undefined) {
+        fn = (...args: unknown[]) => {
+          const result = value.apply(target, args);
+          viewerMutable.requestRender();
+          return result;
+        };
+        wrapped.set(prop, fn);
+      }
+      return fn;
+    },
+    set(target, prop, value) {
+      const ok = Reflect.set(target, prop, value, target);
+      viewerMutable.requestRender();
+      return ok;
+    },
+  });
+}
+
 export function SynchronizedCameraControls() {
   const viewer = useContext(ViewerContext)!;
   const camera = useThree((state) => state.camera as PerspectiveCamera);
@@ -286,6 +360,8 @@ export function SynchronizedCameraControls() {
       // Clear animation when complete.
       if (progress >= 1) {
         cameraAnimationRef.current = null;
+      } else {
+        viewerMutable.requestRender();
       }
     }
   });
@@ -308,6 +384,7 @@ export function SynchronizedCameraControls() {
     const currentLookAt = cameraControls.getTarget(new THREE.Vector3());
 
     // Start new animation.
+    viewerMutable.requestRender();
     cameraAnimationRef.current = {
       startUp: camera.up.clone(),
       targetUp: targetUp,
@@ -615,6 +692,7 @@ export function SynchronizedCameraControls() {
       // Ignore auto-repeat: only a fresh press counts as a new hold.
       if (held.has(event.code)) return;
       held.add(event.code);
+      viewerMutable.requestRender();
       setKeyboardCrosshairCounter((count) => count + 1);
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -667,7 +745,10 @@ export function SynchronizedCameraControls() {
   // not on every commit (which an inline arrow would cause).
   const setCameraControlRef = React.useCallback(
     (controls: CameraControls | null) => {
-      viewerMutable.cameraControl = controls;
+      viewerMutable.cameraControl =
+        controls === null
+          ? null
+          : renderRequestingCameraControls(controls, viewerMutable);
       viewer.interaction.cameraLocks.apply();
     },
     [viewerMutable, viewer.interaction.cameraLocks],

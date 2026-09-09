@@ -74,7 +74,7 @@ export const Outlines = React.forwardRef<THREE.Group, OutlinesProps>(
     // detaches the ref (-> null) before passive cleanups run, so a
     // `localRef.current.children[0]` lookup there is always null and the
     // dispose would silently never happen (leaking the clone once per
-    // unmount -- every hover cycle for unmountOnHide gizmos).
+    // unmount).
     const ownedGeometryRef = React.useRef<THREE.BufferGeometry | null>(null);
     React.useLayoutEffect(() => {
       const group = localRef.current;

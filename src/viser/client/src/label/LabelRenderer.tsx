@@ -764,6 +764,8 @@ export const LabelRenderer: React.FC<{ children?: React.ReactNode }> = ({
     // continue next frame.
     if (state.dirtyGroups.size > 0) {
       rebuildDirtyGroups(performance.now() + GLYPH_BUDGET_MS);
+      // Budget-deferred groups continue next frame (on-demand loop).
+      if (state.dirtyGroups.size > 0) viewer.mutable.current.requestRender();
     }
 
     // Camera uniforms for screen-space sizing.

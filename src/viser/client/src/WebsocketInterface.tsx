@@ -6,6 +6,7 @@ import { ViewerContext } from "./ViewerContext";
 import { syncSearchParamServer } from "./SearchParamsUtils";
 import { WsWorkerIncoming, WsWorkerOutgoing } from "./WebsocketClientWorker";
 import { getLoaderZstdModule } from "./zstd";
+import { enqueueMessages } from "./messageQueue";
 
 /** Component for handling websocket connections. */
 export function WebsocketMessageProducer() {
@@ -128,13 +129,7 @@ export function WebsocketMessageProducer() {
           });
         }
       } else if (data.type === "message_batch") {
-        // Append with a loop rather than push(...spread): spreading a large
-        // array as call arguments overflows the call stack on big first-scene
-        // replays.
-        const queue = viewerMutable.messageQueue;
-        for (let i = 0; i < data.messages.length; i++) {
-          queue.push(data.messages[i]);
-        }
+        enqueueMessages(viewerMutable, data.messages);
       }
     };
     postToWorker({ type: "set_server", server });
