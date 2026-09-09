@@ -227,6 +227,10 @@ class CascadeHelper extends Group {
    * method whenever this instance is no longer used in your app.
    */
   dispose() {
+    // Object3D has its own dispose() since three r186; subclasses that
+    // override it are expected to chain to it.
+    super.dispose();
+
     const frustumLines = this.frustumLines;
     const cascadeLines = this.cascadeLines;
     const cascadePlanes = this.cascadePlanes;

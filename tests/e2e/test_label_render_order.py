@@ -2,18 +2,20 @@
 
 Labels are drawn as batched SDF text over a white background quad, with
 explicit renderOrders: background below Gaussian splats, glyphs above both.
-Under a reversed depth buffer, three r185 reverses its sorted render lists,
+Under a reversed depth buffer, three r185 reversed its sorted render lists,
 which inverted every renderOrder in the viewer: the background quad painted
 over the glyphs, washing labels out to a uniform ~217 gray (issue #767), and
-splat clouds painted over label text. The client compensates in
-ReversedDepthSort.ts; these tests pin the visible contract so a future three
-bump (or a change to the label renderOrders) that reorders the draws fails
-loudly instead of shipping washed-out labels again.
+splat clouds painted over label text. three r186 fixed the sort itself, and
+the client keeps priming each camera's reversedDepth flag ahead of the sort
+in ReversedDepthSort.ts; these tests pin the visible contract so a future
+three bump (or a change to the label renderOrders) that reorders the draws
+fails loudly instead of shipping washed-out labels again.
 
 Each test asserts on both render surfaces, because they regress
-independently: stock three r185 inverts the live viewport (get_render()'s
-fresh camera skips the flip and stays correct), while the compensating sort
-without camera priming does the reverse -- live correct, captures inverted.
+independently: the r185 bug inverted the live viewport but left get_render()
+captures correct, while a sort fix that depends on the camera's reversedDepth
+flag can do the reverse, since get_render() builds a fresh camera per
+capture.
 """
 
 from __future__ import annotations
@@ -77,8 +79,8 @@ def _assert_glyphs_dark_on_both_surfaces(
 
     The two surfaces regress independently: the live canvas inverts when the
     render-list sort mishandles renderOrder for the long-lived viewport camera
-    (issue #767), while get_render() captures invert when the compensating
-    sort is applied to a fresh camera whose reversedDepth flag is not yet set.
+    (issue #767), while get_render() captures invert when the sort depends on
+    a fresh camera's reversedDepth flag before it has been set.
 
     Label glyphs stream in over frames (LabelRenderer rasterizes them under
     a per-frame budget), so early frames can legitimately predate the glyphs;
