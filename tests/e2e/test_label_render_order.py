@@ -1,21 +1,20 @@
 """Label draw-order regressions (issue #767).
 
 Labels are drawn as batched SDF text over a white background quad, with
-explicit renderOrders: background below Gaussian splats, glyphs above both.
-Under a reversed depth buffer, three r185 reversed its sorted render lists,
-which inverted every renderOrder in the viewer: the background quad painted
-over the glyphs, washing labels out to a uniform ~217 gray (issue #767), and
-splat clouds painted over label text. three r186 fixed the sort itself, and
-the client keeps priming each camera's reversedDepth flag ahead of the sort
-in ReversedDepthSort.ts; these tests pin the visible contract so a future
-three bump (or a change to the label renderOrders) that reorders the draws
-fails loudly instead of shipping washed-out labels again.
+explicit renderOrders: Gaussian splats first, then the background, then the
+glyphs, so a whole label composites over a splat cloud. Under a reversed
+depth buffer, three r185 reversed its sorted render lists, which inverted
+every renderOrder in the viewer: the background quad painted over the
+glyphs, washing labels out to a uniform ~217 gray (issue #767), and splat
+clouds painted over label text. three r186 fixed the sort; these tests pin
+the visible contract so a future three bump (or a change to the label
+renderOrders) that reorders the draws fails loudly instead of shipping
+washed-out labels again.
 
-Each test asserts on both render surfaces, because they regress
+Each test asserts on both render surfaces, because they can regress
 independently: the r185 bug inverted the live viewport but left get_render()
-captures correct, while a sort fix that depends on the camera's reversedDepth
-flag can do the reverse, since get_render() builds a fresh camera per
-capture.
+captures correct, since a capture renders through a fresh camera that r185's
+list flip did not yet apply to.
 """
 
 from __future__ import annotations
@@ -77,10 +76,10 @@ def _assert_glyphs_dark_on_both_surfaces(
 ) -> None:
     """Assert dark glyph pixels on the live canvas AND in a capture.
 
-    The two surfaces regress independently: the live canvas inverts when the
-    render-list sort mishandles renderOrder for the long-lived viewport camera
-    (issue #767), while get_render() captures invert when the sort depends on
-    a fresh camera's reversedDepth flag before it has been set.
+    The two surfaces can regress independently: the live canvas inverts when
+    the render-list sort mishandles renderOrder for the long-lived viewport
+    camera (issue #767), while get_render() captures render through a fresh
+    camera per request and can disagree with the viewport.
 
     Label glyphs stream in over frames (LabelRenderer rasterizes them under
     a per-frame budget), so early frames can legitimately predate the glyphs;
@@ -136,7 +135,7 @@ def test_label_glyphs_render_above_splats(
     """Label text must composite over a co-located Gaussian splat cloud.
 
     Splats and label glyphs are both late-drawn transparents; their relative
-    order is pinned by renderOrder (splats 10000, label text above). If that
+    order is pinned by renderOrder (splats 10000, label layers above). If that
     ordering regresses -- an inverted sort, or a renderOrder collision decided
     by the projected-z tie again -- the cloud paints over the glyphs and the
     dark-pixel count collapses."""
@@ -162,6 +161,90 @@ def test_label_glyphs_render_above_splats(
         client.camera.look_at = (0.0, 0.0, 0.0)
         _assert_glyphs_dark_on_both_surfaces(
             client, page, "with a splat cloud at the label's position"
+        )
+    finally:
+        page.close()  # type: ignore[attr-defined]
+        context.close()  # type: ignore[attr-defined]
+
+
+def _bright_pixels(rgb: np.ndarray) -> int:
+    """Count pixels that are bright in every channel.
+
+    The label background is white at 85% alpha, so over a black splat cloud it
+    lands near 217 gray; the dense cloud core behind it is under ~40. Glyph
+    pixels are dark on both surfaces, so a bright count isolates the quad.
+    """
+    return int((rgb[..., :3].astype(np.float64).min(axis=2) > 170.0).sum())
+
+
+# A tight region around the label, sized to stay inside the dense core of the
+# splat cloud below on both surfaces, so page white never counts as "quad".
+_LIVE_CORE_CLIP = {"x": 380, "y": 260, "width": 200, "height": 100}
+
+
+def _live_bright_pixels(page) -> int:  # type: ignore[no-untyped-def]
+    import io
+
+    from PIL import Image
+
+    shot = page.screenshot(clip=_LIVE_CORE_CLIP)
+    return _bright_pixels(np.asarray(Image.open(io.BytesIO(shot)).convert("RGB")))
+
+
+def _capture_bright_pixels(client: viser.ClientHandle) -> int:
+    img = client.get_render(height=600, width=960, transport_format="png", timeout=30.0)
+    rgb = img[..., :3].astype(np.float64)
+    alpha = img[..., 3:4].astype(np.float64) / 255.0
+    composited = (rgb * alpha + 255.0 * (1.0 - alpha)).astype(np.uint8)
+    return _bright_pixels(composited[250:350, 380:580])
+
+
+def test_label_background_renders_above_splats(
+    viser_server: viser.ViserServer, browser: Browser
+) -> None:
+    """The label background quad must composite over a co-located splat cloud.
+
+    Both label layers draw above splats (background 10001, glyphs 10002 vs
+    splats 10000), so a label stays legible inside a cloud instead of the
+    cloud punching through its background. A dense black cloud makes the
+    quad the only bright thing near the label: if the background sinks back
+    below the splats, the count in the core region collapses."""
+    client, page, context = connect_client(viser_server, browser)
+    try:
+        rng = np.random.default_rng(0)
+        n = 6000
+        centers = rng.normal(0.0, 0.8, (n, 3)).astype(np.float32)
+        covariances = np.tile(np.eye(3, dtype=np.float32) * 0.02, (n, 1, 1))
+        viser_server.scene.add_gaussian_splats(
+            "/splats",
+            centers=centers,
+            covariances=covariances,
+            rgbs=np.zeros((n, 3), dtype=np.uint8),
+            opacities=np.full((n, 1), 0.9, dtype=np.float32),
+        )
+        viser_server.scene.add_label(
+            "/label", "Label", position=(0.0, 0.0, 0.0), font_screen_scale=2.0
+        )
+        client.camera.position = (0.0, -4.0, 0.0)
+        client.camera.look_at = (0.0, 0.0, 0.0)
+
+        import time
+
+        live, captured = 0, 0
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            live = _live_bright_pixels(page)
+            captured = _capture_bright_pixels(client)
+            if live > 300 and captured > 300:
+                return
+            time.sleep(0.25)
+        assert live > 300, (
+            f"only {live} bright pixels around the label on the live canvas -- "
+            "the label background is drawn below the splat cloud"
+        )
+        assert captured > 300, (
+            f"only {captured} bright pixels around the label in a get_render() "
+            "capture -- the label background is drawn below the splat cloud"
         )
     finally:
         page.close()  # type: ignore[attr-defined]
