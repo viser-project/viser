@@ -18,6 +18,7 @@ from typing import (
     Generic,
     Iterable,
     Literal,
+    Sequence,
     Tuple,
     TypeVar,
     Union,
@@ -63,6 +64,7 @@ from ._messages import (
     GuiSetPanelWidthMessage,
     GuiSliderProps,
     GuiTabGroupProps,
+    GuiTableDataProps,
     GuiTextProps,
     GuiUpdateMessage,
     GuiUploadButtonProps,
@@ -814,6 +816,146 @@ class _TabContainerMixin:
             None if h._icon is None else svg_from_icon(h._icon)
             for h in self._tab_handles
         )
+
+
+TableData = Tuple[Tuple[Union[str, float, int], ...], ...]
+
+
+class GuiTableDataHandle(GuiInputHandle[TableData], GuiTableDataProps):
+    """Handle for table data component.
+
+    The table stores data as rows and columns. Cells can be strings or numbers
+    depending on column configuration.
+
+    .. attribute:: value
+       :type: Tuple[Tuple[Union[str, float, int], ...], ...]
+
+       Current table data as tuple of rows. Each row is a tuple of cell values.
+       Synchronized automatically when assigned.
+
+    Example:
+        >>> # Access current data
+        >>> current_data = table.value
+        >>>
+        >>> # Replace entire table
+        >>> table.value = (("A", 1), ("B", 2))
+    """
+
+    def clear_rows(self) -> None:
+        """Remove all rows from the table, keeping column structure."""
+        self.value = ()
+
+    def append_row(self, row: Sequence[str | float | int]) -> None:
+        """Append a new row to the end of the table.
+
+        Args:
+            row: Sequence of cell values matching column count and types.
+
+        Raises:
+            ValueError: If row length doesn't match column count or types are invalid.
+        """
+        row_tuple = tuple(row)
+
+        # Validate row
+        if len(row_tuple) != len(self.columns):
+            raise ValueError(
+                f"Row has {len(row_tuple)} cells but table has {len(self.columns)} columns"
+            )
+
+        for col_idx, (cell, col_def) in enumerate(zip(row_tuple, self.columns)):
+            if col_def.cell_type == "number" and not isinstance(cell, (int, float)):
+                raise ValueError(
+                    f"Cell at column {col_idx} ('{col_def.title}') must be numeric, got {type(cell).__name__}"
+                )
+
+        # Append to current data
+        self.value = self.value + (row_tuple,)
+
+    def set_cell(self, row: int, col: int, value: str | float | int) -> None:
+        """Update a single cell value.
+
+        Args:
+            row: Row index (0-based).
+            col: Column index (0-based).
+            value: New cell value.
+
+        Raises:
+            IndexError: If row or column index is out of bounds.
+            ValueError: If value type doesn't match column type.
+        """
+        if row < 0 or row >= len(self.value):
+            raise IndexError(
+                f"Row index {row} out of bounds (table has {len(self.value)} rows)"
+            )
+        if col < 0 or col >= len(self.columns):
+            raise IndexError(
+                f"Column index {col} out of bounds (table has {len(self.columns)} columns)"
+            )
+
+        col_def = self.columns[col]
+        if col_def.cell_type == "number" and not isinstance(value, (int, float)):
+            raise ValueError(
+                f"Column {col} ('{col_def.title}') requires numeric value, got {type(value).__name__}"
+            )
+
+        # Create new data structure with updated cell
+        new_rows = list(self.value)
+        row_list = list(new_rows[row])
+        row_list[col] = value
+        new_rows[row] = tuple(row_list)
+        self.value = tuple(new_rows)
+
+    def delete_row(self, row: int) -> None:
+        """Delete a row from the table.
+
+        Args:
+            row: Row index (0-based) to delete.
+
+        Raises:
+            IndexError: If row index is out of bounds.
+        """
+        if row < 0 or row >= len(self.value):
+            raise IndexError(
+                f"Row index {row} out of bounds (table has {len(self.value)} rows)"
+            )
+
+        new_rows = list(self.value)
+        del new_rows[row]
+        self.value = tuple(new_rows)
+
+    def on_select_row(
+        self: TGuiHandle, func: Callable[[GuiEvent[TGuiHandle]], NoneOrCoroutine]
+    ) -> Callable[[GuiEvent[TGuiHandle]], NoneOrCoroutine]:
+        """Attach a callback for when a user selects a table row.
+
+        The selected row index is available via `event.target.selected_row`.
+        When a row is deselected, the value will be -1.
+
+        Note:
+            - If `func` is a regular function (defined with `def`), it will be executed in a thread pool.
+            - If `func` is an async function (defined with `async def`), it will be executed in the event loop.
+
+        Using async functions can be useful for reducing race conditions.
+
+        Example:
+            >>> @table.on_select_row
+            >>> def handle_selection(event):
+            >>>     row_idx = event.target.selected_row
+            >>>     if row_idx >= 0:
+            >>>         row_data = event.target.value[row_idx]
+            >>>         print(f"Selected row {row_idx}: {row_data}")
+        """
+        self._impl.update_cb.append(func)
+        return func
+
+    @property
+    def selected_row(self) -> int:
+        """Index of currently selected row, or -1 if no row is selected.
+
+        Only meaningful when selection_mode is 'single'.
+        """
+        # This will be stored as an internal property updated by frontend
+        return getattr(self._impl, "_selected_row", -1)
 
 
 class GuiTabGroupHandle(_TabContainerMixin, _GuiHandle[None], GuiTabGroupProps):
