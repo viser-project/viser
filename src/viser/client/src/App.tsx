@@ -66,7 +66,6 @@ import { MacWindowWrapper } from "./MacWindowWrapper";
 import { CascadedDirectionalLight } from "./CascadedDirectionalLight";
 import { VISER_VERSION, GITHUB_CONTRIBUTORS, Contributor } from "./VersionInfo";
 import { LabelRenderer } from "./label/LabelRenderer";
-import { applyReversedDepthCameraPriming } from "./ReversedDepthSort";
 
 // Import logo as asset for proper bundling/inlining.
 import logoSvg from "./assets/logo.svg";
@@ -784,9 +783,6 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     >
       <Canvas
         gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
-        // three initializes `camera.reversedDepth` lazily, after it has
-        // already sorted the render lists. See ReversedDepthSort.ts.
-        onCreated={({ gl }) => applyReversedDepthCameraPriming(gl)}
         // `touchAction: none` opts the canvas out of native touch actions.
         // Without it the browser can reinterpret a curved/multi-touch drag
         // (e.g. dragging the orbit gizmo's rotation ring, especially on
