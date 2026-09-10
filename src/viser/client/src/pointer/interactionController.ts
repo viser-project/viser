@@ -17,10 +17,13 @@ export class InteractionController {
   constructor(args: {
     getCameraControl: () => CameraControls | null;
     getCanvas: () => HTMLCanvasElement | null;
+    requestRender: () => void;
   }) {
     this.cameraLocks = new CameraLockManager(args.getCameraControl);
-    this.hover = new HoverCursorManager(args.getCanvas, (eventType) =>
-      this.scenePointer.getFilter(eventType),
+    this.hover = new HoverCursorManager(
+      args.getCanvas,
+      (eventType) => this.scenePointer.getFilter(eventType),
+      args.requestRender,
     );
     this.scenePointer = new ScenePointerController(
       this.cameraLocks,

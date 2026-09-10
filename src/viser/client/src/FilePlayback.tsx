@@ -14,6 +14,8 @@ import {
   useState,
 } from "react";
 import { ViewerContext } from "./ViewerContext";
+import { Message } from "./WebsocketMessages";
+import { enqueueMessages } from "./messageQueue";
 import { defaultEnvironmentState } from "./EnvironmentState";
 import { isFormElement } from "./utils/isFormElement";
 import { PlaybackScenePanel } from "./PlaybackScenePanel";
@@ -164,15 +166,16 @@ function PlaybackInterface({
       // Reset the scene if sending the first message.
       resetScene();
     }
+    const batch: Message[] = [];
     for (
       ;
       mutable.currentIndex < recording.messages.length &&
       recording.messages[mutable.currentIndex][0] <= mutable.currentTime;
       mutable.currentIndex++
     ) {
-      const message = recording.messages[mutable.currentIndex][1];
-      viewerMutable.messageQueue.push(message);
+      batch.push(recording.messages[mutable.currentIndex][1]);
     }
+    if (batch.length > 0) enqueueMessages(viewerMutable, batch);
 
     // Don't loop for static scenes (durationSeconds === 0).
     if (

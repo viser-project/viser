@@ -8,7 +8,9 @@ export default function ProgressBarComponent({
 }: GuiProgressBarMessage) {
   if (!visible) return null;
   return (
-    <Box pb="xs" px="xs">
+    // The fill is a width change per update; containment keeps that layout
+    // local instead of dirtying the panel (streamed progress = many updates).
+    <Box pb="xs" px="xs" style={{ contain: "layout paint" }}>
       <Progress
         radius="xs"
         color={toMantineColor(color)}

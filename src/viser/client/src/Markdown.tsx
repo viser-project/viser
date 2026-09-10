@@ -179,11 +179,15 @@ function urlTransform(url: string): string {
   return url.startsWith("data:") ? url : defaultUrlTransform(url);
 }
 
+// Hoisted: fresh array literals per render would defeat the memo below.
+const remarkPlugins = [remarkGfm];
+const rehypePlugins = [rehypeRawDom, rehypeCodeblock, rehypeColorChips];
+
 function Markdown(props: { children?: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRawDom, rehypeCodeblock, rehypeColorChips]}
+      remarkPlugins={remarkPlugins}
+      rehypePlugins={rehypePlugins}
       components={components}
       urlTransform={urlTransform}
     >

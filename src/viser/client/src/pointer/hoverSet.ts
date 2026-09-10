@@ -19,13 +19,19 @@ export class HoverCursorManager {
     private readonly getScenePointerFilter: (
       eventType: ScenePointerEventType,
     ) => readonly (KeyModifier | null)[] | undefined,
+    // Hover outlines read hover state from refs inside useFrame, so a hover
+    // change needs a frame under the on-demand render loop.
+    private readonly requestRender: () => void,
   ) {}
 
   /** Mark a clickable node hovered or unhovered. Idempotent. */
   setHovered(key: string, on: boolean): void {
     const changed = on ? !this.hovered.has(key) : this.hovered.delete(key);
     if (on) this.hovered.add(key);
-    if (changed) this.apply();
+    if (changed) {
+      this.apply();
+      this.requestRender();
+    }
   }
 
   refresh(): void {

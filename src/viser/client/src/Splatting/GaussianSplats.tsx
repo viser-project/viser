@@ -234,6 +234,7 @@ function SplatRendererImpl() {
         if (sortedIndices.length === meshPropsRef.current.numGaussians) {
           meshPropsRef.current.sortedIndexAttribute.set(sortedIndices);
           meshPropsRef.current.sortedIndexAttribute.needsUpdate = true;
+          viewer.mutable.current.requestRender();
         }
       }
     };
@@ -604,6 +605,8 @@ function SplatRendererImpl() {
       uniforms.transitionInState.value + delta * 2.0,
       1.0,
     );
+    if (uniforms.transitionInState.value < 1.0)
+      viewer.mutable.current.requestRender();
 
     updateCamera(
       state.camera as THREE.PerspectiveCamera,

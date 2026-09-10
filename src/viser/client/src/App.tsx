@@ -9,7 +9,7 @@ import "./r3f-extend";
 
 import { useInView } from "react-intersection-observer";
 import { Notifications } from "@mantine/notifications";
-import { PerformanceMonitor, Stats } from "@react-three/drei";
+import { Stats } from "@react-three/drei";
 import { HDRJPGEnvironment } from "./HDRJPGEnvironment";
 import * as THREE from "three";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
@@ -204,6 +204,8 @@ function ViewerRoot() {
     nodeRefFromName,
 
     // Message and rendering state.
+    requestRender: () => {},
+    drainMessageQueue: null,
     messageQueue: [],
     firstMessageBatch: true,
     getRenderRequestState: "ready",
@@ -222,6 +224,7 @@ function ViewerRoot() {
       new InteractionController({
         getCameraControl: () => mutable.current.cameraControl,
         getCanvas: () => mutable.current.canvas,
+        requestRender: () => mutable.current.requestRender(),
       }),
     [],
   );
@@ -605,10 +608,23 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     (rect: { startXy: [number, number]; endXy: [number, number] } | null) => {
       const c2d = viewer.mutable.current.canvas2d;
       if (c2d === null) return;
+      // The overlay's backing store (viewport * 4 bytes) exists only while a
+      // rectangle is being drawn: a zero-size canvas has none, and resizing
+      // to the CSS box on first use also clears it.
+      if (rect === null) {
+        c2d.width = 0;
+        c2d.height = 0;
+        return;
+      }
+      const width = c2d.clientWidth;
+      const height = c2d.clientHeight;
+      if (c2d.width !== width || c2d.height !== height) {
+        c2d.width = width;
+        c2d.height = height;
+      }
       const ctx = c2d.getContext("2d");
       if (ctx === null) return;
-      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      if (rect === null) return;
+      ctx.clearRect(0, 0, width, height);
       const [sx, sy] = rect.startXy;
       const [ex, ey] = rect.endXy;
       ctx.beginPath();
@@ -827,6 +843,8 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         }}
         shadows="percentage"
         dpr={fixedDpr ?? undefined}
+        // On-demand rendering: see ViewerMutable.requestRender.
+        frameloop="demand"
       >
         {!inView && <DisableRender />}
         {sceneContents}
@@ -1009,11 +1027,11 @@ function DefaultLights() {
 function SceneFog() {
   const viewer = React.useContext(ViewerContext)!;
   const fog = viewer.useEnvironment((state) => state.fog);
-  const scene = useThree((state) => state.scene);
-
-  React.useEffect(() => {
-    if (fog.enabled) {
-      scene.fog = new THREE.Fog(
+  if (!fog.enabled) return null;
+  return (
+    <fog
+      attach="fog"
+      args={[
         new THREE.Color(
           fog.color[0] / 255,
           fog.color[1] / 255,
@@ -1021,16 +1039,9 @@ function SceneFog() {
         ),
         fog.near,
         fog.far,
-      );
-    } else {
-      scene.fog = null;
-    }
-    return () => {
-      scene.fog = null;
-    };
-  }, [fog, scene]);
-
-  return null;
+      ]}
+    />
+  );
 }
 
 /**
@@ -1038,27 +1049,77 @@ function SceneFog() {
  */
 function AdaptiveDpr() {
   const viewer = React.useContext(ViewerContext)!;
-  const setDpr = useThree((state) => state.setDpr);
   const fixedDpr = viewer.useDevSettings((state) => state.fixedDpr);
+  return fixedDpr !== null ? null : <AdaptiveDprMonitor />;
+}
 
-  return fixedDpr !== null ? null : (
-    <PerformanceMonitor
-      factor={1.0}
-      step={0.5}
-      bounds={(refreshrate) => {
-        const max = Math.min(refreshrate * 0.75, 85);
-        const min = Math.max(max * 0.3, 38);
-        return [min, max];
-      }}
-      onChange={({ factor, fps, refreshrate }) => {
-        const dpr = window.devicePixelRatio * (0.75 + 0.25 * factor);
-        console.log(
-          `[Performance] Setting DPR to ${dpr}; FPS=${fps}/${refreshrate}`,
-        );
-        setDpr(dpr);
-      }}
-    />
-  );
+/** Adaptive DPR that understands on-demand rendering.
+ *
+ * drei's <PerformanceMonitor> derives FPS from useFrame timestamps, which
+ * under frameloop="demand" reads an idle scene as ~1 FPS (the heartbeat) and
+ * drives DPR to its floor. This version keeps its semantics (250 ms sample
+ * windows, 10 windows per decision, factor stepped by 0.5, the same bounds)
+ * but only samples runs of CONSECUTIVE frames: a gap longer than
+ * IDLE_GAP_MS means the loop was idle, not slow, and restarts the window. */
+// Gap classification: the heartbeat (1 s) and post-settle idle gaps are
+// >= ~750 ms; a genuinely slow frame on a struggling GPU is far shorter (at
+// 500 ms the scene is at 2 FPS and a DPR floor won't rescue it).
+const DPR_IDLE_GAP_MS = 500;
+const DPR_WINDOW_MS = 250;
+const DPR_ITERATIONS = 10;
+const DPR_THRESHOLD = 0.75;
+const DPR_STEP = 0.5;
+
+function AdaptiveDprMonitor() {
+  const setDpr = useThree((state) => state.setDpr);
+  const state = React.useRef({
+    windowStart: -Infinity,
+    windowFrames: 0,
+    lastFrame: -Infinity,
+    averages: [] as number[],
+    refreshrate: 0,
+    factor: 1.0,
+  });
+
+  useFrame(() => {
+    const s = state.current;
+    const now = performance.now();
+    if (now - s.lastFrame > DPR_IDLE_GAP_MS) {
+      // Idle gap: start a fresh window from this frame.
+      s.windowStart = now;
+      s.windowFrames = 0;
+    }
+    s.lastFrame = now;
+    s.windowFrames += 1;
+    const msPassed = now - s.windowStart;
+    if (msPassed < DPR_WINDOW_MS) return;
+
+    const fps = Math.round((s.windowFrames / msPassed) * 1000);
+    s.windowStart = now;
+    s.windowFrames = 0;
+    s.refreshrate = Math.max(s.refreshrate, fps);
+    s.averages.push(fps);
+    if (s.averages.length < DPR_ITERATIONS) return;
+
+    const max = Math.min(s.refreshrate * 0.75, 85);
+    const min = Math.max(max * 0.3, 38);
+    const above = s.averages.filter((v) => v >= max).length;
+    const below = s.averages.filter((v) => v < min).length;
+    const prevFactor = s.factor;
+    if (above > DPR_ITERATIONS * DPR_THRESHOLD)
+      s.factor = Math.min(1, s.factor + DPR_STEP);
+    if (below > DPR_ITERATIONS * DPR_THRESHOLD)
+      s.factor = Math.max(0, s.factor - DPR_STEP);
+    s.averages = [];
+    if (s.factor !== prevFactor) {
+      const dpr = window.devicePixelRatio * (0.75 + 0.25 * s.factor);
+      console.log(
+        `[Performance] Setting DPR to ${dpr}; FPS=${fps}/${s.refreshrate}`,
+      );
+      setDpr(dpr);
+    }
+  });
+  return null;
 }
 
 /**
@@ -1066,23 +1127,12 @@ function AdaptiveDpr() {
  */
 function Viewer2DCanvas() {
   const viewer = React.useContext(ViewerContext)!;
-
-  useEffect(() => {
-    const canvas = viewer.mutable.current.canvas2d!;
-
-    // Create a resize observer to update canvas dimensions.
-    const resizeObserver = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect;
-      canvas.width = width;
-      canvas.height = height;
-    });
-
-    resizeObserver.observe(canvas);
-    return () => resizeObserver.disconnect();
-  }, []);
-
+  // Sized lazily by drawRectSelectOverlay (see there); a 0x0 canvas holds no
+  // backing store, so an idle viewer pays nothing for the overlay.
   return (
     <canvas
+      width={0}
+      height={0}
       ref={(el) => {
         viewer.mutable.current.canvas2d = el;
       }}
@@ -1217,6 +1267,14 @@ function BackgroundImage() {
   );
 }
 
+/** Frames keep flowing for this long after each requestRender(). A time
+ * window rather than a frame count: the async tails it covers finish in
+ * wall-clock time, and on slow (software) GL a frame count would mean seconds
+ * of extra rendering per request. */
+const RENDER_SETTLE_MS = 250;
+/** Idle safety-net render rate. */
+const RENDER_HEARTBEAT_MS = 1000;
+
 /**
  * Helper component to sync scene and camera state.
  */
@@ -1230,6 +1288,31 @@ function SceneContextSetter() {
 
   const gl = useThree((state) => state.gl);
   const setSize = useThree((state) => state.setSize);
+  const invalidate = useThree((state) => state.invalidate);
+
+  // Render scheduler for frameloop="demand" (see ViewerMutable.requestRender).
+  // Each request opens a short settle window of continuous frames rather
+  // than one frame: most imperative updates have async tails (texture
+  // uploads, worker replies, effects that run after the next commit) that
+  // would otherwise need their own request to become visible.
+  const settleUntilRef = React.useRef(0);
+  useEffect(() => {
+    mutable.current.requestRender = () => {
+      settleUntilRef.current = performance.now() + RENDER_SETTLE_MS;
+      invalidate();
+    };
+    mutable.current.requestRender();
+    // Heartbeat: a low-rate safety net for imperative changes that never
+    // request a frame. Cheap relative to the 60 Hz loop it replaces.
+    const heartbeat = setInterval(() => invalidate(), RENDER_HEARTBEAT_MS);
+    return () => {
+      clearInterval(heartbeat);
+      mutable.current.requestRender = () => {};
+    };
+  }, [mutable, invalidate]);
+  useFrame(() => {
+    if (performance.now() < settleUntilRef.current) invalidate();
+  });
 
   // Register a SYNCHRONOUS canvas-size sync (see ViewerMutable.syncCanvasSize).
   // R3F normally resizes the renderer from a ResizeObserver on the canvas
