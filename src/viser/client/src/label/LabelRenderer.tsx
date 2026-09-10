@@ -17,14 +17,19 @@
  * derived from its own configuration (screen-space labels have a constant
  * on-screen size of 12 * fontScreenScale CSS px) and the device pixel ratio.
  *
- * Draw order follows ReversedDepthSort.ts / issue #767 conventions:
- * backgrounds (9999) below Gaussian splats (10000), glyphs (10001) above.
+ * Draw order: both label layers sit above Gaussian splats, background first
+ * and glyphs on top, so a label always composites over a splat cloud. The
+ * tiers live in renderOrders.ts.
  */
 import React from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ViewerContext } from "../ViewerContext";
 import { GlyphAtlas } from "./GlyphAtlas";
+import {
+  LABEL_BACKGROUND_RENDER_ORDER,
+  LABEL_TEXT_RENDER_ORDER,
+} from "../renderOrders";
 import { parseAnchor, segmentGraphemes } from "./labelLayout";
 import {
   buildInstanceBuffers,
@@ -184,12 +189,6 @@ const MAX_LABELS = 4096;
  * practice, stays under a third of a 60 Hz frame, and keeps the deferred
  * window (the subtlest state in this file) short. */
 const GLYPH_BUDGET_MS = 5;
-
-/** Draw order (see ReversedDepthSort.ts and issue #767): backgrounds below
- * Gaussian splats (10000, GaussianSplats.tsx), glyphs strictly above them --
- * labels are annotations, so their text always composites over splats. */
-const LABEL_BACKGROUND_RENDER_ORDER = 9_999;
-const LABEL_TEXT_RENDER_ORDER = 10_001;
 
 interface LabelEntry {
   config: LabelConfig;

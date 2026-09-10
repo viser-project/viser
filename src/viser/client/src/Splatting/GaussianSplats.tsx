@@ -45,6 +45,7 @@ import {
   type GaussianMeshProps,
 } from "./GaussianSplatsHelpers";
 import { ViewerContext } from "../ViewerContext";
+import { SPLAT_RENDER_ORDER } from "../renderOrders";
 
 /**Provider for creating splat rendering context.*/
 export function SplatRenderContext({
@@ -618,7 +619,7 @@ function SplatRendererImpl() {
       ref={meshRef}
       geometry={meshProps.geometry}
       material={meshProps.material}
-      renderOrder={10000.0 /*Generally, we want to render last.*/}
+      renderOrder={SPLAT_RENDER_ORDER}
     />
   );
 }

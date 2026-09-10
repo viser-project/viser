@@ -66,7 +66,6 @@ import { MacWindowWrapper } from "./MacWindowWrapper";
 import { CascadedDirectionalLight } from "./CascadedDirectionalLight";
 import { VISER_VERSION, GITHUB_CONTRIBUTORS, Contributor } from "./VersionInfo";
 import { LabelRenderer } from "./label/LabelRenderer";
-import { applyReversedDepthSortFix } from "./ReversedDepthSort";
 
 // Import logo as asset for proper bundling/inlining.
 import logoSvg from "./assets/logo.svg";
@@ -784,9 +783,6 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
     >
       <Canvas
         gl={{ preserveDrawingBuffer: true, reversedDepthBuffer: true }}
-        // three flips its sorted render lists under a reversed depth buffer,
-        // which inverts `renderOrder`. See ReversedDepthSort.ts.
-        onCreated={({ gl }) => applyReversedDepthSortFix(gl)}
         // `touchAction: none` opts the canvas out of native touch actions.
         // Without it the browser can reinterpret a curved/multi-touch drag
         // (e.g. dragging the orbit gizmo's rotation ring, especially on
