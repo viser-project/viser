@@ -174,6 +174,16 @@ def _assert_on_both_surfaces(
     )
 
 
+def _live_dark_pixels(page: Page) -> int:
+    """Near-black pixel count in the live canvas around the label."""
+    return _dark_pixels(_live_rgb(page, _LABEL_REGION))
+
+
+def _capture_dark_pixels(client: viser.ClientHandle, page: Page) -> int:
+    """Near-black pixel count in a whole get_render() capture, over white."""
+    return _dark_pixels(_capture_rgb(client, page))
+
+
 def _assert_glyphs_dark_on_both_surfaces(
     client: viser.ClientHandle, page: Page, context_msg: str
 ) -> None:
@@ -187,8 +197,8 @@ def _assert_glyphs_dark_on_both_surfaces(
     _assert_on_both_surfaces(
         client,
         page,
-        live=lambda page: _dark_pixels(_live_rgb(page, _LABEL_REGION)),
-        capture=lambda client: _dark_pixels(_capture_rgb(client, page)),
+        live=_live_dark_pixels,
+        capture=lambda client: _capture_dark_pixels(client, page),
         threshold=20,
         pixels=f"near-black pixels {context_msg}",
         symptom="label glyphs are washed out (issue #767)",
