@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { createSceneTreeActions, SceneNode } from "./SceneTreeState";
 import { createKeyedStore } from "./store";
@@ -26,7 +26,7 @@ function makeFrameMessage(
   };
 }
 
-function setup() {
+function setup(requestRender: () => void = () => {}) {
   const store = createKeyedStore<SceneNode>({
     "": {
       message: makeFrameMessage(""),
@@ -37,9 +37,40 @@ function setup() {
   });
   const nodeRefFromName: { [name: string]: undefined | THREE.Object3D } = {};
   const nodePoseData: NodePoseDataMap = {};
-  const actions = createSceneTreeActions(store, nodeRefFromName, nodePoseData);
+  const actions = createSceneTreeActions(
+    store,
+    nodeRefFromName,
+    nodePoseData,
+    requestRender,
+  );
   return { store, nodeRefFromName, nodePoseData, actions };
 }
+
+describe("requestRender on visibility changes", () => {
+  // Effective visibility is applied to three.js objects inside useFrame, so
+  // under frameloop="demand" every recompute must request a frame.
+  it("requests a frame when a visibility override changes", () => {
+    const requestRender = vi.fn();
+    const { actions } = setup(requestRender);
+    actions.addSceneNode(makeFrameMessage("/a"));
+    requestRender.mockClear();
+
+    actions.updateNodeAttributes("/a", { overrideVisibility: false });
+    expect(requestRender).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not request a frame for an unchanged value or a non-visibility attribute", () => {
+    const requestRender = vi.fn();
+    const { actions } = setup(requestRender);
+    actions.addSceneNode(makeFrameMessage("/a"));
+    actions.updateNodeAttributes("/a", { overrideVisibility: false });
+    requestRender.mockClear();
+
+    actions.updateNodeAttributes("/a", { overrideVisibility: false });
+    actions.updateNodeAttributes("/a", { labelVisible: true });
+    expect(requestRender).not.toHaveBeenCalled();
+  });
+});
 
 describe("addSceneNode ref handling", () => {
   it("keeps the node ref when re-adding the identical message object", () => {

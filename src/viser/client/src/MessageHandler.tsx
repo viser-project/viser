@@ -62,6 +62,7 @@ function loadBackgroundTexture(
   data: Uint8Array<ArrayBuffer>,
   format: string,
   uniform: THREE.IUniform,
+  onInstalled: () => void,
 ) {
   const seq = bumpBackgroundTextureSeq(uniform);
   const url = URL.createObjectURL(
@@ -77,6 +78,9 @@ function loadBackgroundTexture(
         return;
       }
       swapBackgroundTexture(uniform, texture);
+      // Decode is async and can outlast the settle window opened by the
+      // message; the installed texture needs its own frame.
+      onInstalled();
     },
     undefined,
     () => URL.revokeObjectURL(url),
@@ -780,6 +784,7 @@ function useMessageHandler() {
             message.rgb_data,
             message.format,
             viewerMutable.backgroundMaterial!.uniforms.colorMap,
+            () => viewerMutable.requestRender(),
           );
           viewerMutable.backgroundMaterial!.uniforms.enabled.value = true;
         } else {
@@ -805,6 +810,7 @@ function useMessageHandler() {
             message.depth_data,
             message.format,
             viewerMutable.backgroundMaterial!.uniforms.depthMap,
+            () => viewerMutable.requestRender(),
           );
         } else {
           // No depth in this message: free any existing depth texture so it
