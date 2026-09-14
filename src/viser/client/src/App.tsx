@@ -233,6 +233,8 @@ function ViewerRoot() {
   const sceneTreeState = useSceneTreeState(
     mutable.current.nodeRefFromName,
     mutable.current.nodePoseData,
+    // Deferred: requestRender is installed once the canvas mounts.
+    () => mutable.current.requestRender(),
   );
 
   // Create the environment state and extract store and actions.

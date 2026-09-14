@@ -37,7 +37,12 @@ function setup() {
   });
   const nodeRefFromName: { [name: string]: undefined | THREE.Object3D } = {};
   const nodePoseData: NodePoseDataMap = {};
-  const actions = createSceneTreeActions(store, nodeRefFromName, nodePoseData);
+  const actions = createSceneTreeActions(
+    store,
+    nodeRefFromName,
+    nodePoseData,
+    () => {},
+  );
   return { store, nodeRefFromName, nodePoseData, actions };
 }
 

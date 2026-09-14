@@ -379,6 +379,9 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       activeDrag.cleanup();
       activeDragRef.current = null;
       dragArrow.visible = false;
+      // Imperative hide; don't rely on the camera-lock release below to
+      // request the frame (it only does when the last lease drops).
+      viewerMutable.requestRender();
       // Drop the camera-control lock. `cameraLock` reapplies to the
       // current instance, which handles a mid-drag camera-type swap
       // (the old instance was re-enabled at swap time; the new one's
@@ -387,7 +390,13 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
         activeDrag.releaseCameraLock();
       }
     },
-    [dragArrow, flushDragsThrottled, sendDragMessage, updateActiveDragEnd],
+    [
+      dragArrow,
+      flushDragsThrottled,
+      sendDragMessage,
+      updateActiveDragEnd,
+      viewerMutable,
+    ],
   );
 
   const api = React.useMemo<DragLayerApi>(
