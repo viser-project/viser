@@ -136,6 +136,7 @@ export function createSceneTreeActions(
   store: KeyedStore<SceneNode>,
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
   nodePoseData: NodePoseDataMap,
+  requestRender: () => void,
 ) {
   /** Pre-order names of `name`'s subtree, collected BEFORE any removal:
    * children lists die with their nodes. Shared by variant-subtree and
@@ -572,6 +573,10 @@ export function createSceneTreeActions(
       }
       updateChildren(name, effective);
       store.set(updates);
+      // Effective visibility is applied to three.js objects inside useFrame,
+      // so under frameloop="demand" the change needs a frame. Requested here
+      // rather than per caller so no recompute path can miss it.
+      requestRender();
     },
   };
 
@@ -583,6 +588,7 @@ effort into avoiding a global state! */
 export function useSceneTreeState(
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
   nodePoseData: NodePoseDataMap,
+  requestRender: () => void,
 ) {
   return React.useState(() => {
     const store = createKeyedStore<SceneNode>(makeDefaultSceneTreeState());
@@ -591,6 +597,7 @@ export function useSceneTreeState(
       store,
       nodeRefFromName,
       nodePoseData,
+      requestRender,
     );
 
     // Establish the default state up front via the same path used on
