@@ -45,7 +45,7 @@ That's it! To learn more, we recommend looking at the examples in the [documenta
 To cite Viser in your work, you can use the BibTeX for our [RSS 2026 paper](https://arxiv.org/abs/2507.22885):
 
 ```
-@INPROCEEDINGS{yi2026viser,
+@inproceedings{yi2026viser,
     AUTHOR    = {Brent Yi AND Chung Min Kim AND Justin Kerr AND Gina Wu AND Rebecca Feng AND Anthony Zhang AND Jonas Kulhanek AND Hongsuk Choi AND Yi Ma AND Matthew Tancik AND Angjoo Kanazawa},
     TITLE     = {{Viser: Imperative, Web-based 3D Visualization for Python}},
     BOOKTITLE = {Proceedings of Robotics: Science and Systems},
