@@ -42,7 +42,7 @@ That's it! To learn more, we recommend looking at the examples in the [documenta
 
 ## Citation
 
-To cite Viser in your work, you can use the BibTeX for our [RSS 2026 paper](https://doi.org/10.15607/RSS.2026.XXII.175) ([arXiv](https://arxiv.org/abs/2507.22885)):
+To cite Viser in your work, you can use the BibTeX for our [RSS 2026 paper](https://arxiv.org/abs/2507.22885):
 
 ```
 @INPROCEEDINGS{yi2026viser,

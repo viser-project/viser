@@ -28,7 +28,7 @@ Demo reel:
 
    <video src="https://brentyi.github.io/viser-example-assets/viser_demos.mp4" controls playsinline width="100%"></video><section id="examples">
 
-To cite Viser, you can use the BibTeX entry for our `RSS 2026 paper <https://doi.org/10.15607/RSS.2026.XXII.175>`_ (`arXiv <https://arxiv.org/abs/2507.22885>`_):
+To cite Viser, you can use the BibTeX entry for our `RSS 2026 paper <https://arxiv.org/abs/2507.22885>`_:
 
 .. code:: bibtex
 

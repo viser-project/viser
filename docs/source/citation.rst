@@ -1,7 +1,7 @@
 Citation
 ===========
 
-To cite Viser in your work, you can use the BibTeX entry for our `RSS 2026 paper <https://doi.org/10.15607/RSS.2026.XXII.175>`_ (`arXiv <https://arxiv.org/abs/2507.22885>`_):
+To cite Viser in your work, you can use the BibTeX entry for our `RSS 2026 paper <https://arxiv.org/abs/2507.22885>`_:
 
 .. code:: bibtex
 
