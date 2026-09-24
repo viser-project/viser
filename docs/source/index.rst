@@ -33,13 +33,13 @@ To cite Viser, you can use the BibTeX entry for our `RSS 2026 paper <https://arx
 .. code:: bibtex
 
     @inproceedings{yi2026viser,
-        AUTHOR    = {Brent Yi AND Chung Min Kim AND Justin Kerr AND Gina Wu AND Rebecca Feng AND Anthony Zhang AND Jonas Kulhanek AND Hongsuk Choi AND Yi Ma AND Matthew Tancik AND Angjoo Kanazawa},
-        TITLE     = {{Viser: Imperative, Web-based 3D Visualization for Python}},
-        BOOKTITLE = {Proceedings of Robotics: Science and Systems},
-        YEAR      = {2026},
-        ADDRESS   = {Sydney, Australia},
-        MONTH     = {July},
-        DOI       = {10.15607/RSS.2026.XXII.175}
+        author    = {Brent Yi and Chung Min Kim and Justin Kerr and Gina Wu and Rebecca Feng and Anthony Zhang and Jonas Kulhanek and Hongsuk Choi and Yi Ma and Matthew Tancik and Angjoo Kanazawa},
+        title     = {{Viser: Imperative, Web-based 3D Visualization for Python}},
+        booktitle = {Proceedings of Robotics: Science and Systems},
+        year      = {2026},
+        address   = {Sydney, Australia},
+        month     = {July},
+        doi       = {10.15607/RSS.2026.XXII.175}
     }
 
 Examples
