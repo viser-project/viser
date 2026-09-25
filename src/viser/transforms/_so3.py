@@ -156,7 +156,9 @@ class SO3(
         """
         # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion
         q0, q1, q2, q3 = onp.moveaxis(self.wxyz, -1, 0)
-        return onp.arcsin(2 * (q0 * q2 - q3 * q1))
+        # Clip: rounding can push the argument slightly past +/-1 near gimbal
+        # lock (pitch = +/-pi/2), where arcsin would return NaN.
+        return onp.arcsin(onp.clip(2 * (q0 * q2 - q3 * q1), -1.0, 1.0))
 
     def compute_yaw_radians(self) -> onpt.NDArray[onp.floating]:
         """Compute yaw angle. Uses the ZYX mobile robot convention.
