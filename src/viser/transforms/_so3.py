@@ -156,7 +156,9 @@ class SO3(
         """
         # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion
         q0, q1, q2, q3 = onp.moveaxis(self.wxyz, -1, 0)
-        return onp.arcsin(2 * (q0 * q2 - q3 * q1))
+        # Clip: rounding can push the argument slightly past +/-1 near gimbal
+        # lock (pitch = +/-pi/2), where arcsin would return NaN.
+        return onp.arcsin(onp.clip(2 * (q0 * q2 - q3 * q1), -1.0, 1.0))
 
     def compute_yaw_radians(self) -> onpt.NDArray[onp.floating]:
         """Compute yaw angle. Uses the ZYX mobile robot convention.
@@ -395,12 +397,23 @@ class SO3(
             onp.where(w < 0, -norm_safe, norm_safe),
             onp.abs(w),
         )
+
+        # Near theta=pi, +pi and -pi about the same axis are the same rotation
+        # and the sign of w is just rounding noise (e.g. cos(float32(pi) / 2)
+        # < 0). Pick the sign from the axis instead, so that log(exp(t)) == t:
+        # the largest-magnitude tangent component is made positive.
+        xyz = self.wxyz[..., 1:]
+        largest_component = onp.take_along_axis(
+            xyz, onp.argmax(onp.abs(xyz), axis=-1)[..., None], axis=-1
+        )[..., 0]
+        near_pi_sign = onp.where(largest_component >= 0, 1.0, -1.0).astype(w.dtype)
+
         atan_factor = onp.where(
             use_taylor,
             2.0 / w_safe - 2.0 / 3.0 * norm_sq / w_safe**3,
             onp.where(
                 onp.abs(w) < get_epsilon(w.dtype),
-                onp.where(w > 0, 1.0, -1.0).astype(dtype=w.dtype) * onp.pi / norm_safe,
+                near_pi_sign * onp.pi / norm_safe,
                 2.0 * atan_n_over_w / norm_safe,
             ),
         )
