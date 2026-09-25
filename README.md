@@ -42,14 +42,17 @@ That's it! To learn more, we recommend looking at the examples in the [documenta
 
 ## Citation
 
-To cite Viser in your work, you can use the BibTeX for our [technical report](https://arxiv.org/abs/2507.22885):
+To cite Viser in your work, you can use the BibTeX for our [RSS 2026 paper](https://arxiv.org/abs/2507.22885):
 
 ```
-@article{yi2025viser,
-  title={Viser: Imperative, web-based 3d visualization in python},
-  author={Yi, Brent and Kim, Chung Min and Kerr, Justin and Wu, Gina and Feng, Rebecca and Zhang, Anthony and Kulhanek, Jonas and Choi, Hongsuk and Ma, Yi and Tancik, Matthew and Kanazawa, Angjoo},
-  journal={arXiv preprint arXiv:2507.22885},
-  year={2025}
+@inproceedings{yi2026viser,
+    author    = {Brent Yi and Chung Min Kim and Justin Kerr and Gina Wu and Rebecca Feng and Anthony Zhang and Jonas Kulhanek and Hongsuk Choi and Yi Ma and Matthew Tancik and Angjoo Kanazawa},
+    title     = {{Viser: Imperative, Web-based 3D Visualization for Python}},
+    booktitle = {Proceedings of Robotics: Science and Systems},
+    year      = {2026},
+    address   = {Sydney, Australia},
+    month     = {July},
+    doi       = {10.15607/RSS.2026.XXII.175}
 }
 ```
 
