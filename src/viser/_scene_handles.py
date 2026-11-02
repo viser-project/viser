@@ -51,8 +51,8 @@ def _set_pose_vector(
 ) -> None:
     """Shared write path for the scene-node and skinned-bone pose setters.
 
-    Casts and validates ``value``, no-ops if it is numerically unchanged from
-    ``current``, and otherwise writes it into ``current`` in place and queues the
+    Casts and validates ``value``, no-ops if it is exactly equal to ``current``,
+    and otherwise writes it into ``current`` in place and queues the
     message built from the cast value (via ``queue``, typically the owning
     SceneApi's owner-stamping ``_queue_scene_message``). Keeping this in one
     place stops the four near-identical wxyz/position setters from drifting
@@ -62,7 +62,9 @@ def _set_pose_vector(
 
     value_cast: _PoseTupleT = cast_vector(value, length)
     value_arr = np.asarray(value_cast)
-    if np.allclose(value_arr, current):
+    # Exact, not approximate: a tolerance would drop small real motions, and the
+    # skipped poses would accumulate as lag behind the caller's state.
+    if np.array_equal(value_arr, current):
         return
     current[:] = value_arr
     queue(make_message(value_cast))
