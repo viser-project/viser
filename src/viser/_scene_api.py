@@ -269,66 +269,6 @@ def _validate_batched_transforms(
     return batched_wxyzs, batched_positions, batched_scales, count
 
 
-#: Alpha value for a fully opaque uint8 color channel.
-_OPAQUE_ALPHA = 255
-
-
-def _trimesh_with_transparency(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
-    """Return a mesh whose GLB export preserves RGBA transparency.
-
-    trimesh's GLB exporter only populates the ``materials`` field when the
-    mesh uses texture visuals. Meshes colored with ``ColorVisuals`` (vertex or
-    face colors) export without a material, so the three.js loader falls back
-    to a standard material and renders them fully opaque, discarding the alpha
-    channel. (Upstream: https://github.com/mikedh/trimesh/issues/2436.)
-
-    When the mesh actually contains semi-transparent colors, this returns a
-    copy converted to texture visuals with a PBR ``BLEND`` material, so the
-    alpha channel survives the export. The input mesh is never mutated.
-    Fully opaque meshes are returned as-is, keeping the export byte-identical.
-    """
-    try:
-        from trimesh.visual import ColorVisuals
-        from trimesh.visual.material import PBRMaterial
-    except ImportError:
-        # trimesh predates the PBR material API; keep the legacy export path.
-        return mesh
-
-    visual = mesh.visual
-    if not isinstance(visual, ColorVisuals):
-        return mesh
-    vertex_colors = visual.vertex_colors
-    if vertex_colors is None:
-        return mesh
-    colors = np.asanyarray(vertex_colors)
-    if colors.shape[1] < 4 or bool((colors[:, 3] == _OPAQUE_ALPHA).all()):
-        return mesh
-    try:
-        texture_visual = visual.to_texture()
-    except ImportError:
-        # ``to_texture()`` needs Pillow; fall back to the legacy opaque export.
-        warnings.warn(
-            "Mesh has semi-transparent vertex/face colors, but Pillow is not"
-            " installed, so transparency will be ignored. Install Pillow to"
-            " render it transparently.",
-            stacklevel=3,
-        )
-        return mesh
-    material = texture_visual.material
-    if not isinstance(material, PBRMaterial):
-        if not hasattr(material, "to_pbr"):
-            return mesh
-        material = material.to_pbr()
-        if not isinstance(material, PBRMaterial):
-            return mesh
-        # ``to_pbr()`` returns a new material; link it back onto the visual.
-        texture_visual.material = material
-    material.alphaMode = "BLEND"
-    converted = mesh.copy()
-    converted.visual = texture_visual
-    return converted
-
-
 MISSING_SENTINEL = "MISSING"
 MISSING_SENTINEL_TYPE = Literal["MISSING"]
 
@@ -2452,9 +2392,10 @@ class SceneApi:
     ) -> GlbHandle:
         """Add a trimesh mesh to the scene. Internally calls `self.add_glb()`.
 
-        Transparency from RGBA vertex/face colors is preserved: meshes with
-        semi-transparent colors are exported with a transparent PBR material.
-        The input mesh is not modified.
+        RGBA vertex or face colors are exported as glTF vertex colors; an alpha
+        channel below 255 renders the mesh translucent. (Face colors are
+        averaged at shared vertices by trimesh's exporter; call
+        ``mesh.unmerge_vertices()`` first to keep them per-face.)
 
         Args:
             name: A scene tree name. Names in the format of /parent/child can be used to
@@ -2476,7 +2417,7 @@ class SceneApi:
         """
 
         with io.BytesIO() as data_buffer:
-            _trimesh_with_transparency(mesh).export(data_buffer, file_type="glb")
+            mesh.export(data_buffer, file_type="glb")
             glb_data = data_buffer.getvalue()
             return self.add_glb(
                 name,
@@ -2652,7 +2593,7 @@ class SceneApi:
         )
 
         with io.BytesIO() as data_buffer:
-            _trimesh_with_transparency(mesh).export(data_buffer, file_type="glb")
+            mesh.export(data_buffer, file_type="glb")
             glb_data = data_buffer.getvalue()
             message = _messages.BatchedGlbMessage(
                 name=name,

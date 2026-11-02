@@ -10,6 +10,25 @@ dracoLoader.setDecoderPath("https://www.gstatic.com/draco/v1/decoders/");
 /**
  * Dispose a 3D object and its resources
  */
+/**
+ * True if the geometry has an RGBA vertex color attribute with any alpha below
+ * 1. glTF COLOR_0 may be VEC4, and three.js does blend that alpha into the
+ * fragment color (USE_COLOR_ALPHA) -- but GLTFLoader never flags the material
+ * as transparent for it, so without this the mesh renders opaque. trimesh
+ * exports RGBA vertex/face colors this way (#525).
+ */
+export function hasTranslucentVertexColors(
+  geometry: THREE.BufferGeometry,
+): boolean {
+  const color = geometry.getAttribute("color");
+  if (color === undefined || color.itemSize !== 4) return false;
+  for (let i = 0; i < color.count; i++) {
+    // getW() denormalizes UNSIGNED_BYTE colors to [0, 1].
+    if (color.getW(i) < 1.0) return true;
+  }
+  return false;
+}
+
 export function disposeNode(node: any) {
   if (node instanceof THREE.Mesh) {
     if (node.geometry) {
@@ -107,6 +126,14 @@ export function useGlbLoader(glb_data: Uint8Array) {
           if (obj instanceof THREE.Mesh) {
             obj.geometry.computeVertexNormals();
             obj.geometry.computeBoundingSphere();
+            if (hasTranslucentVertexColors(obj.geometry)) {
+              const materials = Array.isArray(obj.material)
+                ? obj.material
+                : [obj.material];
+              materials.forEach((material) => {
+                material.transparent = true;
+              });
+            }
             meshes.push(obj);
             meshMatrices.push(
               new THREE.Matrix4().multiplyMatrices(
