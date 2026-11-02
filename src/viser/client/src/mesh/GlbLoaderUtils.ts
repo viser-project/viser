@@ -127,12 +127,16 @@ export function useGlbLoader(glb_data: Uint8Array) {
             obj.geometry.computeVertexNormals();
             obj.geometry.computeBoundingSphere();
             if (hasTranslucentVertexColors(obj.geometry)) {
-              const materials = Array.isArray(obj.material)
-                ? obj.material
-                : [obj.material];
-              materials.forEach((material) => {
-                material.transparent = true;
-              });
+              // Material-less primitives with vertex colors share one cached
+              // material, so mark a copy rather than the shared instance.
+              const markTransparent = (material: THREE.Material) => {
+                const copy = material.clone();
+                copy.transparent = true;
+                return copy;
+              };
+              obj.material = Array.isArray(obj.material)
+                ? obj.material.map(markTransparent)
+                : markTransparent(obj.material);
             }
             meshes.push(obj);
             meshMatrices.push(

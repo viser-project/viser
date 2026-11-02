@@ -131,3 +131,24 @@ def test_translucent_mesh_renders_blended(
     assert opaque[0] > opaque[1] + 40 and opaque[0] > opaque[2] + 40, opaque
     assert opaque[3] > 250, opaque
     assert 40 < translucent[3] < 120, (opaque, translucent)
+
+
+def test_mixed_glb_keeps_opaque_materials_opaque(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """A translucent primitive must not flip materials shared with opaque ones.
+
+    glTF primitives that carry COLOR_0 but no material share one material
+    instance in the loader's cache, so a transparency flag set for one
+    primitive reaches every other material-less mesh in the same GLB.
+    """
+    opaque = trimesh.creation.box(extents=(0.5, 0.5, 0.5))
+    opaque.visual.face_colors = [0, 0, 255, 255]
+    translucent = trimesh.creation.cylinder(radius=0.3, height=1.0, sections=16)
+    translucent.visual.face_colors = [255, 0, 0, 76]
+
+    glb = trimesh.Scene([opaque, translucent]).export(file_type="glb")
+    viser_server.scene.add_glb("/mixed", glb)
+
+    info = _wait_for_mesh_info(viser_page, "/mixed")
+    assert sorted(info) == [[False, 4], [True, 4]], info
