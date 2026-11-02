@@ -2907,6 +2907,11 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">GlbHandle</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Add a trimesh mesh to the scene. Internally calls `self.add_glb()`.</span>
 
+<span class="sd">        RGBA vertex or face colors are exported as glTF vertex colors; an alpha</span>
+<span class="sd">        channel below 255 renders the mesh translucent. (Face colors are</span>
+<span class="sd">        averaged at shared vertices by trimesh's exporter; call</span>
+<span class="sd">        ``mesh.unmerge_vertices()`` first to keep them per-face.)</span>
+
 <span class="sd">        Args:</span>
 <span class="sd">            name: A scene tree name. Names in the format of /parent/child can be used to</span>
 <span class="sd">              define a kinematic tree.</span>
