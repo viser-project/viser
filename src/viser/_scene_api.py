@@ -2398,6 +2398,11 @@ class SceneApi:
     ) -> GlbHandle:
         """Add a trimesh mesh to the scene. Internally calls `self.add_glb()`.
 
+        RGBA vertex or face colors are exported as glTF vertex colors; an alpha
+        channel below 255 renders the mesh translucent. (Face colors are
+        averaged at shared vertices by trimesh's exporter; call
+        ``mesh.unmerge_vertices()`` first to keep them per-face.)
+
         Args:
             name: A scene tree name. Names in the format of /parent/child can be used to
               define a kinematic tree.
