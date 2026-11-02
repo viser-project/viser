@@ -56,6 +56,11 @@ export function useDragArrow(
   useFrame(() => {
     const activeDrag = activeDragRef.current;
     if (activeDrag === null) return;
+    // Suppressed by the owning binding (``on_drag(..., show_arrow=False)``).
+    if (!activeDrag.showArrow) {
+      dragArrow.visible = false;
+      return;
+    }
     const tailWorld = computeStartWorld(activeDrag, tailScratch);
     // Hide the arrow if the live grab point is unavailable (node
     // removed, batched index out of bounds, etc.) -- otherwise the

@@ -195,6 +195,7 @@ class _DragCallbackEntry:
     ]
     button: _messages.DragButton
     modifier: _messages.KeyModifier | None
+    show_arrow: bool = True
 
 
 @dataclasses.dataclass
@@ -654,18 +655,22 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
     def _sync_drag_bindings(self) -> None:
         """Recompute the union of registered (button, modifiers) and
         push it to the client as a full binding set."""
-        seen: set[Tuple[_messages.DragButton, _messages.KeyModifier | None]] = set()
-        bindings: list[_messages.DragBinding] = []
+        # (button, modifier) -> show_arrow, in first-registration order. The
+        # arrow is shown for a combo if any of its callbacks requests it.
+        show_arrow_from_key: dict[
+            Tuple[_messages.DragButton, _messages.KeyModifier | None], bool
+        ] = {}
         for entry in self._impl.drag_cb:
             key = (entry.button, entry.modifier)
-            if key in seen:
-                continue
-            seen.add(key)
-            bindings.append(
-                _messages.DragBinding(button=entry.button, modifier=entry.modifier)
+            show_arrow_from_key[key] = (
+                show_arrow_from_key.get(key, False) or entry.show_arrow
             )
+        bindings = tuple(
+            _messages.DragBinding(button=button, modifier=modifier, show_arrow=show)
+            for (button, modifier), show in show_arrow_from_key.items()
+        )
         self._impl.api._queue_scene_message(
-            _messages.SetSceneNodeDragBindingsMessage(self._impl.name, tuple(bindings))
+            _messages.SetSceneNodeDragBindingsMessage(self._impl.name, bindings)
         )
 
     def _has_any_drag_callbacks(self) -> bool:
@@ -699,6 +704,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         self: Self,
         button: _messages.DragButton,
         modifier: _messages.KeyModifier | None = None,
+        show_arrow: bool = True,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -720,6 +726,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 ),
                 button=button,
                 modifier=normalized,
+                show_arrow=show_arrow,
             )
             # Atomic vs remove()/supersede from other threads, and
             # re-checked: the decorator can be applied long after the eager
@@ -727,9 +734,21 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
             with self._impl.api._node_lifecycle_lock:
                 self._ensure_not_removed()
                 # Skip duplicate registration -- without this, the same
-                # callback fires twice per matching event. Equality is by
-                # tuple/dataclass value.
-                if entry not in self._impl.drag_cb:
+                # callback fires twice per matching event. Identity is
+                # (callback, button, modifier); re-registering with a
+                # different ``show_arrow`` updates the existing entry
+                # instead of adding a second one.
+                for i, existing in enumerate(self._impl.drag_cb):
+                    if (
+                        existing.callback == entry.callback
+                        and existing.button == entry.button
+                        and existing.modifier == entry.modifier
+                    ):
+                        if existing.show_arrow != entry.show_arrow:
+                            self._impl.drag_cb[i] = entry
+                            self._sync_drag_bindings()
+                        break
+                else:
                     self._impl.drag_cb.append(entry)
                     self._sync_drag_bindings()
             return func
@@ -748,6 +767,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         button: _messages.DragButton = ...,
         *,
         modifier: _messages.KeyModifier | None = ...,
+        show_arrow: bool = ...,
     ) -> Callable[
         [Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine]],
         Callable[[SceneNodeDragEvent[Self]], NoneOrCoroutine],
@@ -758,6 +778,7 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         button: Union[_messages.DragButton, Callable[..., Any]] = "left",
         *,
         modifier: _messages.KeyModifier | None = None,
+        show_arrow: bool = True,
     ) -> Any:
         """Attach a callback for the full drag lifecycle.
 
@@ -805,6 +826,12 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
                 engaged and released. Left-drag on this node intercepts
                 the gesture -- the camera only orbits on empty-space
                 drags.
+            show_arrow: Whether the client draws its built-in arrow from
+                the grab point to the pointer while this binding owns the
+                drag. Set to ``False`` when drawing your own drag
+                visualization. If several callbacks share a
+                ``(button, modifier)`` combo, the arrow is shown if any of
+                them requests it.
 
         Note on ordering: synchronous (``def``) callbacks are submitted
         to a thread pool fire-and-forget and can run out of order -- an
@@ -818,10 +845,10 @@ class _RaycastSupportedSceneNodeHandle(SceneNodeHandle):
         if callable(button):
             # Bare-decorator form: @handle.on_drag -- defaults to
             # button="left" and no modifiers.
-            return self._register_drag_callback("left", modifier)(
+            return self._register_drag_callback("left", modifier, show_arrow)(
                 button  # type: ignore[arg-type]
             )
-        return self._register_drag_callback(button, modifier)
+        return self._register_drag_callback(button, modifier, show_arrow)
 
     def remove_drag_callback(self, callback: Literal["all"] | Callable = "all") -> None:
         """Remove drag callbacks from the scene node.

@@ -4,39 +4,26 @@ import {
   SpotlightActionGroupData,
 } from "@mantine/spotlight";
 import "@mantine/spotlight/styles.css";
-import { useHotkeys } from "@mantine/hooks";
 import Fuse, { FuseResult, IFuseOptions } from "fuse.js";
-import React, { useCallback, useContext, useMemo, useRef } from "react";
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { ViewerContext } from "./ViewerContext";
 import { RegisterCommandMessage } from "./WebsocketMessages";
 import { KeyModifier } from "./dragUtils";
+import { HotkeyKey, eventMatchesHotkey } from "./hotkeys";
+import { isFormElement } from "./utils/isFormElement";
 import { isMac } from "./utils/platform";
 
 type SpotlightItems = SpotlightActionData | SpotlightActionGroupData;
-type HotkeyKey = NonNullable<RegisterCommandMessage["props"]["hotkey"]>;
 
 /** Atomic modifier + key parts for a hotkey, ordered for "+"-joining. */
 function hotkeyParts(key: HotkeyKey, modifier: KeyModifier | null): string[] {
   return modifier ? [...modifier.split("+"), key] : [key];
-}
-
-/** Convert a hotkey to Mantine hotkey strings (e.g. "ctrl+shift+R").
- *
- * ``"cmd/ctrl"`` is OR semantics (either Ctrl or Meta counts), so we emit
- * *both* a ``"ctrl+..."`` and ``"meta+..."`` variant -- on any platform,
- * pressing either modifier triggers the hotkey. */
-function hotkeyToStrings(
-  key: HotkeyKey,
-  modifier: KeyModifier | null,
-): string[] {
-  const parts = hotkeyParts(key, modifier);
-  if (!parts.includes("cmd/ctrl")) {
-    return [parts.join("+")];
-  }
-  return [
-    parts.map((p) => (p === "cmd/ctrl" ? "ctrl" : p)).join("+"),
-    parts.map((p) => (p === "cmd/ctrl" ? "meta" : p)).join("+"),
-  ];
 }
 
 /** Format a hotkey for display (e.g. "R" + "cmd/ctrl+shift" -> "Cmd+Shift+R" or "Ctrl+Shift+R"). */
@@ -146,23 +133,39 @@ export function CommandPalette() {
   const spotlightActions = useSpotlightActions(commands, handleTrigger);
   const fuseFilter = useFuseFilter();
 
-  // Register per-command hotkeys. Each viser hotkey can expand to multiple
-  // Mantine entries (e.g. "cmd/ctrl" -> both "ctrl+K" and "meta+K") so that
-  // either modifier matches on any platform -- same OR semantics as drag
-  // bindings.
-  const hotkeyItems = useMemo(
+  // Per-command hotkeys. A single document-level listener matches each
+  // keydown against every enabled command (see ``hotkeys.ts`` for how keys
+  // resolve: letters by typed character, digits/punctuation by physical
+  // key). Registered on ``documentElement`` so it runs before the
+  // document-level camera-movement listener, which skips events we
+  // ``preventDefault`` -- a bound hotkey never also drives the camera.
+  const hotkeyCommands = useMemo(
     () =>
-      Object.values(commands)
-        .filter((c) => c.props.hotkey != null && !c.props.disabled)
-        .flatMap((c) => {
-          const trigger = () => handleTrigger(c.uuid);
-          return hotkeyToStrings(c.props.hotkey!, c.props.modifier).map(
-            (key) => [key, trigger] as [string, (event: KeyboardEvent) => void],
-          );
-        }),
-    [commands, handleTrigger],
+      Object.values(commands).filter(
+        (c) => c.props.hotkey != null && !c.props.disabled,
+      ),
+    [commands],
   );
-  useHotkeys(hotkeyItems);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || isFormElement(event.target)) return;
+      for (const command of hotkeyCommands) {
+        if (
+          eventMatchesHotkey(
+            event,
+            command.props.hotkey!,
+            command.props.modifier,
+          )
+        ) {
+          event.preventDefault();
+          handleTrigger(command.uuid);
+        }
+      }
+    };
+    const root = document.documentElement;
+    root.addEventListener("keydown", onKeyDown);
+    return () => root.removeEventListener("keydown", onKeyDown);
+  }, [hotkeyCommands, handleTrigger]);
 
   if (spotlightActions.length === 0) return null;
 

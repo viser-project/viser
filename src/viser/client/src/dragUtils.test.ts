@@ -5,6 +5,7 @@ import {
   matchesModifierFilter,
   matchesDragBinding,
   anyBindingMatches,
+  dragArrowEnabledFor,
   hasCmdCtrl,
   motionExceedsThreshold,
   planDragStart,
@@ -81,6 +82,31 @@ describe("matchesDragBinding / anyBindingMatches", () => {
     expect(
       anyBindingMatches(bindings, { button: "middle", modifier: null }),
     ).toBe(false);
+  });
+});
+
+describe("dragArrowEnabledFor", () => {
+  const bindings = [
+    { button: "left" as const, modifier: null, show_arrow: false },
+    { button: "left" as const, modifier: "shift" as const, show_arrow: true },
+    // Absent ``show_arrow`` reads as true.
+    { button: "right" as const, modifier: null },
+  ];
+  it("returns the matching binding's show_arrow", () => {
+    expect(
+      dragArrowEnabledFor(bindings, { button: "left", modifier: null }),
+    ).toBe(false);
+    expect(
+      dragArrowEnabledFor(bindings, { button: "left", modifier: "shift" }),
+    ).toBe(true);
+    expect(
+      dragArrowEnabledFor(bindings, { button: "right", modifier: null }),
+    ).toBe(true);
+  });
+  it("returns null for an unbound (dormant) combo", () => {
+    expect(
+      dragArrowEnabledFor(bindings, { button: "left", modifier: "alt" }),
+    ).toBeNull();
   });
 });
 

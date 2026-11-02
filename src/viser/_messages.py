@@ -124,8 +124,40 @@ HotkeyKey = Literal[
     "arrowdown",
     "arrowleft",
     "arrowright",
+    # Function keys.
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+    # Punctuation (US-layout physical keys).
+    "[",
+    "]",
+    "-",
+    "=",
+    ",",
+    ".",
+    "/",
+    ";",
+    "'",
+    "`",
+    "\\",
 ]
-"""A key for hotkey bindings."""
+"""A key for hotkey bindings.
+
+Letters match the typed character, so they follow the user's keyboard
+layout. Digits and punctuation match the *physical* key at that position on
+a US layout (``KeyboardEvent.code``), so ``modifier="shift"`` with ``"1"``
+fires on Shift+1 even though the browser reports ``"!"``. Letters fall back
+to physical matching when the typed character isn't a plain letter (e.g.
+Option+A on macOS types ``"å"``, or a non-Latin layout is active)."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -889,6 +921,16 @@ class EnvironmentMapMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
+class SetKeyboardCameraControlsMessage(Message, include_in_scene_serialization=False):
+    """Enable or disable the built-in WASDQE / arrow-key camera controls.
+
+    Excluded from scene serialization: the setting exists to free keys for
+    server-side commands, which don't exist in static/playback mode."""
+
+    enabled: bool
+
+
+@dataclasses.dataclass
 class EnableLightsMessage(Message, include_in_scene_serialization=True):
     """Default light message."""
 
@@ -1458,6 +1500,9 @@ class DragBinding:
 
     button: DragButton
     modifier: Optional[KeyModifier]
+    show_arrow: bool = True
+    """Whether the client draws its built-in drag arrow while this binding
+    owns the drag. Ignored for click bindings."""
 
 
 @dataclasses.dataclass
