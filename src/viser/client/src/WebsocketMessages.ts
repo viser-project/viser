@@ -284,7 +284,7 @@ export interface MeshMessage {
     opacity: number | null;
     flat_shading: boolean;
     side: "front" | "back" | "double";
-    material: "standard" | "toon3" | "toon5";
+    material: "standard" | "toon3" | "toon5" | "unlit";
     scale: number | [number, number, number];
     cast_shadow: boolean;
     receive_shadow: boolean | number;
@@ -306,7 +306,7 @@ export interface BoxMessage {
     opacity: number | null;
     flat_shading: boolean;
     side: "front" | "back" | "double";
-    material: "standard" | "toon3" | "toon5";
+    material: "standard" | "toon3" | "toon5" | "unlit";
     cast_shadow: boolean;
     receive_shadow: boolean | number;
     scale: number | [number, number, number];
@@ -329,7 +329,7 @@ export interface IcosphereMessage {
     opacity: number | null;
     flat_shading: boolean;
     side: "front" | "back" | "double";
-    material: "standard" | "toon3" | "toon5";
+    material: "standard" | "toon3" | "toon5" | "unlit";
     cast_shadow: boolean;
     receive_shadow: boolean | number;
     scale: number | [number, number, number];
@@ -353,7 +353,7 @@ export interface CylinderMessage {
     opacity: number | null;
     flat_shading: boolean;
     side: "front" | "back" | "double";
-    material: "standard" | "toon3" | "toon5";
+    material: "standard" | "toon3" | "toon5" | "unlit";
     cast_shadow: boolean;
     receive_shadow: boolean | number;
     scale: number | [number, number, number];
@@ -376,7 +376,7 @@ export interface SkinnedMeshMessage {
     opacity: number | null;
     flat_shading: boolean;
     side: "front" | "back" | "double";
-    material: "standard" | "toon3" | "toon5";
+    material: "standard" | "toon3" | "toon5" | "unlit";
     scale: number | [number, number, number];
     cast_shadow: boolean;
     receive_shadow: boolean | number;
@@ -407,7 +407,7 @@ export interface BatchedMeshesMessage {
     opacity: number | null;
     flat_shading: boolean;
     side: "front" | "back" | "double";
-    material: "standard" | "toon3" | "toon5";
+    material: "standard" | "toon3" | "toon5" | "unlit";
     cast_shadow: boolean;
     receive_shadow: boolean;
     batched_opacities: Float32Array | null;
@@ -2831,8 +2831,8 @@ export const SceneNodePropsSchema: {
     },
     material: {
       kind: "stringLiteral",
-      tsType: "'standard' | 'toon3' | 'toon5'",
-      options: ["standard", "toon3", "toon5"],
+      tsType: "'standard' | 'toon3' | 'toon5' | 'unlit'",
+      options: ["standard", "toon3", "toon5", "unlit"],
     },
     scale: {
       kind: "default",
@@ -2875,8 +2875,8 @@ export const SceneNodePropsSchema: {
     },
     material: {
       kind: "stringLiteral",
-      tsType: "'standard' | 'toon3' | 'toon5'",
-      options: ["standard", "toon3", "toon5"],
+      tsType: "'standard' | 'toon3' | 'toon5' | 'unlit'",
+      options: ["standard", "toon3", "toon5", "unlit"],
     },
     cast_shadow: {
       kind: "boolean",
@@ -2923,8 +2923,8 @@ export const SceneNodePropsSchema: {
     },
     material: {
       kind: "stringLiteral",
-      tsType: "'standard' | 'toon3' | 'toon5'",
-      options: ["standard", "toon3", "toon5"],
+      tsType: "'standard' | 'toon3' | 'toon5' | 'unlit'",
+      options: ["standard", "toon3", "toon5", "unlit"],
     },
     cast_shadow: {
       kind: "boolean",
@@ -2975,8 +2975,8 @@ export const SceneNodePropsSchema: {
     },
     material: {
       kind: "stringLiteral",
-      tsType: "'standard' | 'toon3' | 'toon5'",
-      options: ["standard", "toon3", "toon5"],
+      tsType: "'standard' | 'toon3' | 'toon5' | 'unlit'",
+      options: ["standard", "toon3", "toon5", "unlit"],
     },
     cast_shadow: {
       kind: "boolean",
@@ -3023,8 +3023,8 @@ export const SceneNodePropsSchema: {
     },
     material: {
       kind: "stringLiteral",
-      tsType: "'standard' | 'toon3' | 'toon5'",
-      options: ["standard", "toon3", "toon5"],
+      tsType: "'standard' | 'toon3' | 'toon5' | 'unlit'",
+      options: ["standard", "toon3", "toon5", "unlit"],
     },
     scale: {
       kind: "default",
@@ -3103,8 +3103,8 @@ export const SceneNodePropsSchema: {
     },
     material: {
       kind: "stringLiteral",
-      tsType: "'standard' | 'toon3' | 'toon5'",
-      options: ["standard", "toon3", "toon5"],
+      tsType: "'standard' | 'toon3' | 'toon5' | 'unlit'",
+      options: ["standard", "toon3", "toon5", "unlit"],
     },
     cast_shadow: {
       kind: "boolean",

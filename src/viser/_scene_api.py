@@ -2181,7 +2181,7 @@ class SceneApi:
         color: RgbTupleOrArray = (90, 200, 255),
         wireframe: bool = False,
         opacity: float | None = None,
-        material: Literal["standard", "toon3", "toon5"] = "standard",
+        material: Literal["standard", "toon3", "toon5", "unlit"] = "standard",
         flat_shading: bool = False,
         side: Literal["front", "back", "double"] = "front",
         scale: float | tuple[float, float, float] = 1.0,
@@ -2208,8 +2208,11 @@ class SceneApi:
             color: Color of the mesh as an RGB tuple.
             wireframe: Boolean indicating if the mesh should be rendered as a wireframe.
             opacity: Opacity of the mesh. None means opaque.
-            material: Material type of the mesh ('standard', 'toon3', 'toon5').
-                This argument is ignored when wireframe=True.
+            material: Material type of the mesh ('standard', 'toon3', 'toon5',
+                'unlit'). 'unlit' ignores lighting: the color is drawn flat,
+                without shading, and receive_shadow=True has no effect (a float
+                receive_shadow still draws shadows). This argument is ignored
+                when wireframe=True.
             flat_shading: Whether to do flat shading. This argument is ignored
                 when wireframe=True.
             side: Side of the surface to render ('front', 'back', 'double').
@@ -2318,7 +2321,7 @@ class SceneApi:
         color: RgbTupleOrArray = (90, 200, 255),
         wireframe: bool = False,
         opacity: float | None = None,
-        material: Literal["standard", "toon3", "toon5"] = "standard",
+        material: Literal["standard", "toon3", "toon5", "unlit"] = "standard",
         flat_shading: bool = False,
         side: Literal["front", "back", "double"] = "front",
         scale: float | tuple[float, float, float] = 1.0,
@@ -2339,8 +2342,11 @@ class SceneApi:
             color: Color of the mesh as an RGB tuple.
             wireframe: Boolean indicating if the mesh should be rendered as a wireframe.
             opacity: Opacity of the mesh. None means opaque.
-            material: Material type of the mesh ('standard', 'toon3', 'toon5').
-                This argument is ignored when wireframe=True.
+            material: Material type of the mesh ('standard', 'toon3', 'toon5',
+                'unlit'). 'unlit' ignores lighting: the color is drawn flat,
+                without shading, and receive_shadow=True has no effect (a float
+                receive_shadow still draws shadows). This argument is ignored
+                when wireframe=True.
             flat_shading: Whether to do flat shading. This argument is ignored
                 when wireframe=True.
             side: Side of the surface to render ('front', 'back', 'double').
@@ -2440,7 +2446,7 @@ class SceneApi:
         lod: Literal["auto", "off"] | tuple[tuple[float, float], ...] = "auto",
         wireframe: bool = False,
         opacity: float | None = None,
-        material: Literal["standard", "toon3", "toon5"] = "standard",
+        material: Literal["standard", "toon3", "toon5", "unlit"] = "standard",
         flat_shading: bool = False,
         side: Literal["front", "back", "double"] = "front",
         cast_shadow: bool = True,
@@ -2474,8 +2480,10 @@ class SceneApi:
             lod: LOD settings, either "off", "auto", or a tuple of (distance, ratio) pairs.
             wireframe: Boolean indicating if the meshes should be rendered as wireframes.
             opacity: Opacity of the meshes. None means opaque.
-            material: Material type of the meshes ('standard', 'toon3', 'toon5').
-                This argument is ignored when wireframe=True.
+            material: Material type of the meshes ('standard', 'toon3', 'toon5',
+                'unlit'). 'unlit' ignores lighting: the color is drawn flat,
+                without shading, and receive_shadow has no effect. This argument
+                is ignored when wireframe=True.
             flat_shading: Whether to do flat shading. This argument is ignored
                 when wireframe=True.
             side: Side of the surface to render ('front', 'back', 'double').
@@ -2758,7 +2766,7 @@ class SceneApi:
         *,
         wireframe: bool = False,
         opacity: float | None = None,
-        material: Literal["standard", "toon3", "toon5"] = "standard",
+        material: Literal["standard", "toon3", "toon5", "unlit"] = "standard",
         flat_shading: bool = True,
         side: Literal["front", "back", "double"] = "front",
         cast_shadow: bool = True,
@@ -2777,7 +2785,10 @@ class SceneApi:
             dimensions: Dimensions of the box (x, y, z).
             wireframe: Boolean indicating if the box should be rendered as a wireframe.
             opacity: Opacity of the box. None means opaque.
-            material: Material type of the box ('standard', 'toon3', 'toon5').
+            material: Material type of the box ('standard', 'toon3', 'toon5',
+                'unlit'). 'unlit' ignores lighting: the color is drawn flat,
+                without shading, and receive_shadow=True has no effect (a float
+                receive_shadow still draws shadows).
             flat_shading: Whether to do flat shading.
             side: Side of the surface to render ('front', 'back', 'double').
             cast_shadow: Whether this box should cast shadows.
@@ -2829,7 +2840,7 @@ class SceneApi:
         scale: float | tuple[float, float, float] = 1.0,
         wireframe: bool = False,
         opacity: float | None = None,
-        material: Literal["standard", "toon3", "toon5"] = "standard",
+        material: Literal["standard", "toon3", "toon5", "unlit"] = "standard",
         flat_shading: bool = False,
         side: Literal["front", "back", "double"] = "front",
         cast_shadow: bool = True,
@@ -2850,7 +2861,10 @@ class SceneApi:
             scale: Scale of the icosphere. A single float for uniform scaling
                 or a tuple of (x, y, z) for per-axis scaling.
             opacity: Opacity of the icosphere. None means opaque.
-            material: Material type of the icosphere ('standard', 'toon3', 'toon5').
+            material: Material type of the icosphere ('standard', 'toon3', 'toon5',
+                'unlit'). 'unlit' ignores lighting: the color is drawn flat,
+                without shading, and receive_shadow=True has no effect (a float
+                receive_shadow still draws shadows).
             flat_shading: Whether to do flat shading.
             side: Side of the surface to render ('front', 'back', 'double').
             cast_shadow: Whether this icosphere should cast shadows.
@@ -2894,7 +2908,7 @@ class SceneApi:
         radial_segments: int = 32,
         wireframe: bool = False,
         opacity: float | None = None,
-        material: Literal["standard", "toon3", "toon5"] = "standard",
+        material: Literal["standard", "toon3", "toon5", "unlit"] = "standard",
         flat_shading: bool = False,
         side: Literal["front", "back", "double"] = "front",
         cast_shadow: bool = True,
@@ -2915,7 +2929,10 @@ class SceneApi:
             radial_segments: Number of segmented faces around the circumference of the cylinder.
             wireframe: Boolean indicating if the cylinder should be rendered as a wireframe.
             opacity: Opacity of the cylinder. None means opaque.
-            material: Material type of the cylinder ('standard', 'toon3', 'toon5').
+            material: Material type of the cylinder ('standard', 'toon3', 'toon5',
+                'unlit'). 'unlit' ignores lighting: the color is drawn flat,
+                without shading, and receive_shadow=True has no effect (a float
+                receive_shadow still draws shadows).
             flat_shading: Whether to do flat shading.
             side: Side of the surface to render ('front', 'back', 'double').
             cast_shadow: Whether this cylinder should cast shadows.
