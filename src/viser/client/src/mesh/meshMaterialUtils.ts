@@ -105,9 +105,9 @@ export const sideMap = {
   double: THREE.DoubleSide,
 } as const;
 
-/** Props for configuring a standard/toon mesh material. */
+/** Props for configuring a standard/toon/unlit mesh material. */
 export interface StandardMaterialProps {
-  material: "standard" | "toon3" | "toon5";
+  material: "standard" | "toon3" | "toon5" | "unlit";
   color?: [number, number, number];
   wireframe: boolean;
   opacity: number | null;
@@ -116,7 +116,7 @@ export interface StandardMaterialProps {
 }
 
 /**
- * Create a standard/toon material imperatively.
+ * Create a standard/toon/unlit material imperatively.
  * Prefer ViserStandardMeshMaterial for declarative (R3F-managed) usage.
  */
 export function createStandardMaterial(
@@ -145,6 +145,9 @@ export function createStandardMaterial(
       gradientMap: GRADIENT_MAP_5,
       ...standardArgs,
     });
+  } else if (props.material == "unlit") {
+    // Skip tone mapping so unlit colors render exactly, like point clouds.
+    return new THREE.MeshBasicMaterial({ toneMapped: false, ...standardArgs });
   } else {
     return assertUnreachable(props.material);
   }

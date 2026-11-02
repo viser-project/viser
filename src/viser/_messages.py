@@ -945,7 +945,7 @@ class MeshProps:
     """Whether to do flat shading."""
     side: Literal["front", "back", "double"]
     """Side of the surface to render."""
-    material: Literal["standard", "toon3", "toon5"]
+    material: Literal["standard", "toon3", "toon5", "unlit"]
     """Material type of the mesh."""
     scale: Union[float, Tuple[float, float, float]]
     """Scale of the mesh. A single float for uniform scaling or a tuple of
@@ -978,7 +978,7 @@ class BoxProps:
     """Whether to do flat shading."""
     side: Literal["front", "back", "double"]
     """Side of the surface to render."""
-    material: Literal["standard", "toon3", "toon5"]
+    material: Literal["standard", "toon3", "toon5", "unlit"]
     """Material type of the box."""
     cast_shadow: bool
     """Whether or not to cast shadows."""
@@ -1008,7 +1008,7 @@ class IcosphereProps:
     """Whether to do flat shading."""
     side: Literal["front", "back", "double"]
     """Side of the surface to render."""
-    material: Literal["standard", "toon3", "toon5"]
+    material: Literal["standard", "toon3", "toon5", "unlit"]
     """Material type of the icosphere."""
     cast_shadow: bool
     """Whether or not to cast shadows."""
@@ -1039,7 +1039,7 @@ class CylinderProps:
     """Whether to do flat shading."""
     side: Literal["front", "back", "double"]
     """Side of the surface to render."""
-    material: Literal["standard", "toon3", "toon5"]
+    material: Literal["standard", "toon3", "toon5", "unlit"]
     """Material type of the cylinder."""
     cast_shadow: bool
     """Whether or not to cast shadows."""
@@ -1145,7 +1145,7 @@ class BatchedMeshesProps(_BatchedMeshExtraProps):
     """Whether to do flat shading."""
     side: Literal["front", "back", "double"]
     """Side of the surface to render."""
-    material: Literal["standard", "toon3", "toon5"]
+    material: Literal["standard", "toon3", "toon5", "unlit"]
     """Material type of the mesh."""
     cast_shadow: bool
     """Whether or not to cast shadows."""
