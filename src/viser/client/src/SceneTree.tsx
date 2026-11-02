@@ -811,9 +811,22 @@ export function SceneNodeThreeObject(props: { name: string }) {
   const viewerMutable = viewer.mutable.current;
   const objNode = React.useMemo(() => {
     if (makeObject === undefined) return null;
-    return makeObject((ref: THREE.Object3D) => {
+    return makeObject((ref: THREE.Object3D | null) => {
+      if (ref === null) {
+        // React detaches a ref with null: on unmount, or when an
+        // unmountWhenInvisible node hides. nodeRefFromName is typed as
+        // Object3D | undefined, so drop the entry rather than store the null
+        // (readers that only check `!== undefined` would crash on it, see
+        // #788). Only drop it if it is still ours: a successor mounted under
+        // the same name has already registered by the time we detach.
+        if (viewerMutable.nodeRefFromName[props.name] === objRef.current) {
+          delete viewerMutable.nodeRefFromName[props.name];
+        }
+        objRef.current = null;
+        return;
+      }
       objRef.current = ref;
-      viewerMutable.nodeRefFromName[props.name] = objRef.current;
+      viewerMutable.nodeRefFromName[props.name] = ref;
     }, children);
   }, [makeObject, children]);
 
