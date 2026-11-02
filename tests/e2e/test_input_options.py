@@ -60,6 +60,32 @@ def _sync(page: Page, server: viser.ViserServer, tag: str) -> None:
     expect(page.get_by_text(f"sync-{tag}")).to_be_visible(timeout=5_000)
 
 
+def _wait_until_still(page: Page) -> list[float]:
+    """Wait for camera motion (e.g. smoothed rotation easing out) to settle,
+    then return the position. Exact-zero drift assertions are only valid
+    from a resting camera."""
+    page.wait_for_function(
+        """() => new Promise((resolve) => {
+            const pos = () => window.__viserMutable.camera.position.toArray();
+            const a = pos();
+            setTimeout(() => {
+                const b = pos();
+                resolve(a.every((v, i) => v === b[i]));
+            }, 250);
+        })""",
+        timeout=10_000,
+        polling=100,
+    )
+    return page.evaluate(JS_CAMERA_POSITION)
+
+
+# "The camera moved" threshold. Disabled/bound cases assert exactly zero
+# drift, so any clearly non-zero motion distinguishes them; magnitude
+# depends on frame rate under load (0.4 s of W moved ~0.05 on a starved
+# runner vs ~0.8 normally), so don't assert speed.
+MOVED = 1e-3
+
+
 def _moved(a: list[float], b: list[float]) -> float:
     return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
 
@@ -83,7 +109,7 @@ def test_keyboard_camera_controls_enabled_by_default(
     before = _wait_for_camera(viser_page)
     _hold(viser_page, "w", 0.4)
     after = viser_page.evaluate(JS_CAMERA_POSITION)
-    assert _moved(before, after) > 0.1, (before, after)
+    assert _moved(before, after) > MOVED, (before, after)
 
 
 def test_keyboard_camera_controls_can_be_disabled(
@@ -93,7 +119,7 @@ def test_keyboard_camera_controls_can_be_disabled(
     viser_server.scene.configure_keyboard_camera_controls(False)
     _sync(viser_page, viser_server, "disabled")
     # Confirm none of the movement keys drift.
-    before = viser_page.evaluate(JS_CAMERA_POSITION)
+    before = _wait_until_still(viser_page)
     for key in ["w", "a", "s", "d", "q", "e", "ArrowLeft", "ArrowUp"]:
         _hold(viser_page, key, 0.15)
     after = viser_page.evaluate(JS_CAMERA_POSITION)
@@ -104,7 +130,7 @@ def test_keyboard_camera_controls_can_be_disabled(
     _sync(viser_page, viser_server, "enabled")
     _hold(viser_page, "w", 0.4)
     final = viser_page.evaluate(JS_CAMERA_POSITION)
-    assert _moved(after, final) > 0.1, (after, final)
+    assert _moved(after, final) > MOVED, (after, final)
 
 
 def test_bound_hotkey_does_not_move_camera(
@@ -116,9 +142,14 @@ def test_bound_hotkey_does_not_move_camera(
     fired = threading.Event()
     handle = viser_server.gui.add_command("Step", hotkey="arrowright")
     handle.on_trigger(lambda _: fired.set())
-    assert _press_until(viser_page, "ArrowRight", fired)
+    # The command must be bound client-side before the first press: an
+    # unbound ArrowRight rotates the camera (correctly), and the smoothed
+    # rotation would still be easing out when ``before`` is sampled.
+    _sync(viser_page, viser_server, "bound")
+    viser_page.keyboard.press("ArrowRight")
+    assert fired.wait(timeout=5.0), "bound hotkey did not fire"
 
-    before = viser_page.evaluate(JS_CAMERA_POSITION)
+    before = _wait_until_still(viser_page)
     _hold(viser_page, "ArrowRight", 0.4)
     after = viser_page.evaluate(JS_CAMERA_POSITION)
     assert _moved(before, after) < 1e-6, (before, after)
@@ -188,8 +219,9 @@ def _drag_box(page: Page, server: viser.ViserServer, show_arrow: bool) -> bool:
     box.on_drag("left", show_arrow=show_arrow)(on_drag)
 
     wait_for_connection(page, server.get_port())
-    wait_for_scene_node(page, "/drag_box")
-    wait_for_mesh_children(page, "/drag_box")
+    # Generous: scene load is slow with many parallel software-GL browsers.
+    wait_for_scene_node(page, "/drag_box", timeout=30_000)
+    wait_for_mesh_children(page, "/drag_box", timeout=30_000)
     canvas_box = page.locator("canvas").first.bounding_box()
     assert canvas_box is not None
     cx = canvas_box["x"] + canvas_box["width"] / 2
