@@ -54,6 +54,9 @@ class SO3(
         Returns:
             Output.
         """
+        theta = onp.asarray(
+            theta, dtype=onp.result_type(onp.asarray(theta).dtype, onp.float32)
+        )
         zeros = onp.zeros_like(theta)
         return SO3.exp(onp.stack([theta, zeros, zeros], axis=-1))
 
@@ -67,6 +70,9 @@ class SO3(
         Returns:
             Output.
         """
+        theta = onp.asarray(
+            theta, dtype=onp.result_type(onp.asarray(theta).dtype, onp.float32)
+        )
         zeros = onp.zeros_like(theta)
         return SO3.exp(onp.stack([zeros, theta, zeros], axis=-1))
 
@@ -80,6 +86,9 @@ class SO3(
         Returns:
             Output.
         """
+        theta = onp.asarray(
+            theta, dtype=onp.result_type(onp.asarray(theta).dtype, onp.float32)
+        )
         zeros = onp.zeros_like(theta)
         return SO3.exp(onp.stack([zeros, zeros, theta], axis=-1))
 
