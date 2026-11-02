@@ -123,15 +123,28 @@ function transformScales(scales: GuiUplotMessage["props"]["scales"]): {
 // assert the chart was not torn down and rebuilt across resize / data
 // pushes — silent destroy/create would lose the user's zoom.
 type UplotTestpoint = { chart: uPlot; createCount: number };
+// Counts live outside the registry entry: uplot-react runs onDelete (which
+// unregisters) before onCreate on a rebuild, so a count stored on the entry
+// would restart at 1 and never show the destroy/create it exists to catch.
+const uplotCreateCounts = new Map<string, number>();
 function registerUplotTestpoint(uuid: string, chart: uPlot): void {
   const w = window as unknown as {
     __viserTestpoints?: { uplots?: Record<string, UplotTestpoint> };
   };
   const tp = (w.__viserTestpoints ??= {});
   const reg = (tp.uplots ??= {});
-  const prev = reg[uuid];
-  reg[uuid] = { chart, createCount: (prev?.createCount ?? 0) + 1 };
+  const createCount = (uplotCreateCounts.get(uuid) ?? 0) + 1;
+  uplotCreateCounts.set(uuid, createCount);
+  reg[uuid] = { chart, createCount };
 }
+
+// Fallbacks for options uplot-react compares by identity (`Object.is`) to
+// decide between `setSize()` and a full destroy/create. A fresh literal
+// inside the width-dependent `plotOptions` memo would read as a changed
+// option on every container resize, rebuilding the chart and dropping the
+// user's zoom. Hoisted so their identity is stable.
+const DEFAULT_PADDING: [number, number, number, number] = [0, 24, 0, 0];
+const EMPTY_SERIES: never[] = [];
 function unregisterUplotTestpoint(uuid: string): void {
   const reg = (
     window as unknown as {
@@ -232,7 +245,7 @@ function PlotComponent({
       height: (props.height ?? containerWidth / props.aspect) as any,
       title: props.title || undefined,
       mode: props.mode || undefined,
-      series: (props.series as any) || [],
+      series: (props.series as any) || EMPTY_SERIES,
       cursor: mergedCursor,
       bands: props.bands || undefined,
       scales: processedScales,
@@ -241,7 +254,7 @@ function PlotComponent({
       legend: (props.legend as any) || undefined,
       focus: props.focus || undefined,
       // Set tighter default padding [top, right, bottom, left].
-      padding: (props.padding ?? [0, 24, 0, 0]) as [
+      padding: (props.padding ?? DEFAULT_PADDING) as [
         number,
         number,
         number,

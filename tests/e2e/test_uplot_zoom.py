@@ -60,10 +60,17 @@ def uplot_render_sync(viser_page: Page) -> Generator[Page, None, None]:
 
 
 def _wait_for_chart(page: Page, uuid: str) -> None:
+    """Wait for the chart to exist *and* have its container width.
+
+    uplot-react constructs the chart before `useElementSize` reports a
+    width, then resizes it. Acting on the width-0 instance races that
+    settle, which is also the window where a rebuild (if one happens)
+    would silently replace the chart under the test."""
     page.wait_for_function(
         """(uuid) => {
             const tp = window.__viserTestpoints;
-            return tp && tp.uplots && tp.uplots[uuid] && tp.uplots[uuid].chart;
+            const entry = tp && tp.uplots && tp.uplots[uuid];
+            return !!(entry && entry.chart && entry.chart.width > 0);
         }""",
         arg=uuid,
         timeout=10_000,
@@ -184,10 +191,23 @@ def test_x_zoom_survives_viewport_resize(
 
     assert _set_x_scale(viser_page, uuid, -75.0, -25.0) == [-75.0, -25.0]
 
-    viser_page.set_viewport_size({"width": 1024, "height": 768})
-    viser_page.wait_for_timeout(150)
-    viser_page.set_viewport_size({"width": 1400, "height": 900})
-    viser_page.wait_for_timeout(150)
+    # The panel's width only follows the viewport once the viewport is
+    # narrow; 1024 -> 1400 leaves the chart at the same width and exercises
+    # nothing. 700 changes it, so uplot-react must choose setSize() (zoom
+    # kept) over destroy/create (zoom lost).
+    width_before = _eval_uplot(viser_page, uuid, "ch.width")
+    viser_page.set_viewport_size({"width": 700, "height": 600})
+    viser_page.wait_for_function(
+        "([uuid, w]) => window.__viserTestpoints.uplots[uuid].chart.width !== w",
+        arg=[uuid, width_before],
+        timeout=10_000,
+    )
+    viser_page.set_viewport_size({"width": 1280, "height": 720})
+    viser_page.wait_for_function(
+        "([uuid, w]) => window.__viserTestpoints.uplots[uuid].chart.width === w",
+        arg=[uuid, width_before],
+        timeout=10_000,
+    )
 
     after = _read_x_scale(viser_page, uuid)
     after_count = _eval_uplot(viser_page, uuid, "entry.createCount")
