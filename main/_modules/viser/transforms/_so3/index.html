@@ -485,6 +485,9 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Output.</span>
 <span class="sd">        """</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+            <span class="n">theta</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">onp</span><span class="o">.</span><span class="n">result_type</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">onp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="p">)</span>
         <span class="n">zeros</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">theta</span><span class="p">,</span> <span class="n">zeros</span><span class="p">,</span> <span class="n">zeros</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span></div>
 
@@ -501,6 +504,9 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Output.</span>
 <span class="sd">        """</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+            <span class="n">theta</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">onp</span><span class="o">.</span><span class="n">result_type</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">onp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="p">)</span>
         <span class="n">zeros</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">zeros</span><span class="p">,</span> <span class="n">theta</span><span class="p">,</span> <span class="n">zeros</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span></div>
 
@@ -517,6 +523,9 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            Output.</span>
 <span class="sd">        """</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+            <span class="n">theta</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">onp</span><span class="o">.</span><span class="n">result_type</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">onp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="p">)</span>
         <span class="n">zeros</span> <span class="o">=</span> <span class="n">onp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">SO3</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">onp</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">zeros</span><span class="p">,</span> <span class="n">zeros</span><span class="p">,</span> <span class="n">theta</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span></div>
 

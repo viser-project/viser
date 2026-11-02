@@ -2684,7 +2684,7 @@
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">90</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
         <span class="n">wireframe</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">opacity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
+        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">,</span> <span class="s2">"unlit"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
         <span class="n">flat_shading</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">side</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"front"</span><span class="p">,</span> <span class="s2">"back"</span><span class="p">,</span> <span class="s2">"double"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"front"</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -2711,8 +2711,11 @@
 <span class="sd">            color: Color of the mesh as an RGB tuple.</span>
 <span class="sd">            wireframe: Boolean indicating if the mesh should be rendered as a wireframe.</span>
 <span class="sd">            opacity: Opacity of the mesh. None means opaque.</span>
-<span class="sd">            material: Material type of the mesh ('standard', 'toon3', 'toon5').</span>
-<span class="sd">                This argument is ignored when wireframe=True.</span>
+<span class="sd">            material: Material type of the mesh ('standard', 'toon3', 'toon5',</span>
+<span class="sd">                'unlit'). 'unlit' ignores lighting: the color is drawn flat,</span>
+<span class="sd">                without shading, and receive_shadow=True has no effect (a float</span>
+<span class="sd">                receive_shadow still draws shadows). This argument is ignored</span>
+<span class="sd">                when wireframe=True.</span>
 <span class="sd">            flat_shading: Whether to do flat shading. This argument is ignored</span>
 <span class="sd">                when wireframe=True.</span>
 <span class="sd">            side: Side of the surface to render ('front', 'back', 'double').</span>
@@ -2824,7 +2827,7 @@
         <span class="n">color</span><span class="p">:</span> <span class="n">RgbTupleOrArray</span> <span class="o">=</span> <span class="p">(</span><span class="mi">90</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">255</span><span class="p">),</span>
         <span class="n">wireframe</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">opacity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
+        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">,</span> <span class="s2">"unlit"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
         <span class="n">flat_shading</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">side</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"front"</span><span class="p">,</span> <span class="s2">"back"</span><span class="p">,</span> <span class="s2">"double"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"front"</span><span class="p">,</span>
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
@@ -2845,8 +2848,11 @@
 <span class="sd">            color: Color of the mesh as an RGB tuple.</span>
 <span class="sd">            wireframe: Boolean indicating if the mesh should be rendered as a wireframe.</span>
 <span class="sd">            opacity: Opacity of the mesh. None means opaque.</span>
-<span class="sd">            material: Material type of the mesh ('standard', 'toon3', 'toon5').</span>
-<span class="sd">                This argument is ignored when wireframe=True.</span>
+<span class="sd">            material: Material type of the mesh ('standard', 'toon3', 'toon5',</span>
+<span class="sd">                'unlit'). 'unlit' ignores lighting: the color is drawn flat,</span>
+<span class="sd">                without shading, and receive_shadow=True has no effect (a float</span>
+<span class="sd">                receive_shadow still draws shadows). This argument is ignored</span>
+<span class="sd">                when wireframe=True.</span>
 <span class="sd">            flat_shading: Whether to do flat shading. This argument is ignored</span>
 <span class="sd">                when wireframe=True.</span>
 <span class="sd">            side: Side of the surface to render ('front', 'back', 'double').</span>
@@ -2952,7 +2958,7 @@
         <span class="n">lod</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"auto"</span><span class="p">,</span> <span class="s2">"off"</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"auto"</span><span class="p">,</span>
         <span class="n">wireframe</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">opacity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
+        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">,</span> <span class="s2">"unlit"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
         <span class="n">flat_shading</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">side</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"front"</span><span class="p">,</span> <span class="s2">"back"</span><span class="p">,</span> <span class="s2">"double"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"front"</span><span class="p">,</span>
         <span class="n">cast_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -2986,8 +2992,10 @@
 <span class="sd">            lod: LOD settings, either "off", "auto", or a tuple of (distance, ratio) pairs.</span>
 <span class="sd">            wireframe: Boolean indicating if the meshes should be rendered as wireframes.</span>
 <span class="sd">            opacity: Opacity of the meshes. None means opaque.</span>
-<span class="sd">            material: Material type of the meshes ('standard', 'toon3', 'toon5').</span>
-<span class="sd">                This argument is ignored when wireframe=True.</span>
+<span class="sd">            material: Material type of the meshes ('standard', 'toon3', 'toon5',</span>
+<span class="sd">                'unlit'). 'unlit' ignores lighting: the color is drawn flat,</span>
+<span class="sd">                without shading, and receive_shadow has no effect. This argument</span>
+<span class="sd">                is ignored when wireframe=True.</span>
 <span class="sd">            flat_shading: Whether to do flat shading. This argument is ignored</span>
 <span class="sd">                when wireframe=True.</span>
 <span class="sd">            side: Side of the surface to render ('front', 'back', 'double').</span>
@@ -3282,7 +3290,7 @@
         <span class="o">*</span><span class="p">,</span>
         <span class="n">wireframe</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">opacity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
+        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">,</span> <span class="s2">"unlit"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
         <span class="n">flat_shading</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">side</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"front"</span><span class="p">,</span> <span class="s2">"back"</span><span class="p">,</span> <span class="s2">"double"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"front"</span><span class="p">,</span>
         <span class="n">cast_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -3301,7 +3309,10 @@
 <span class="sd">            dimensions: Dimensions of the box (x, y, z).</span>
 <span class="sd">            wireframe: Boolean indicating if the box should be rendered as a wireframe.</span>
 <span class="sd">            opacity: Opacity of the box. None means opaque.</span>
-<span class="sd">            material: Material type of the box ('standard', 'toon3', 'toon5').</span>
+<span class="sd">            material: Material type of the box ('standard', 'toon3', 'toon5',</span>
+<span class="sd">                'unlit'). 'unlit' ignores lighting: the color is drawn flat,</span>
+<span class="sd">                without shading, and receive_shadow=True has no effect (a float</span>
+<span class="sd">                receive_shadow still draws shadows).</span>
 <span class="sd">            flat_shading: Whether to do flat shading.</span>
 <span class="sd">            side: Side of the surface to render ('front', 'back', 'double').</span>
 <span class="sd">            cast_shadow: Whether this box should cast shadows.</span>
@@ -3356,7 +3367,7 @@
         <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
         <span class="n">wireframe</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">opacity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
+        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">,</span> <span class="s2">"unlit"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
         <span class="n">flat_shading</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">side</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"front"</span><span class="p">,</span> <span class="s2">"back"</span><span class="p">,</span> <span class="s2">"double"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"front"</span><span class="p">,</span>
         <span class="n">cast_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -3377,7 +3388,10 @@
 <span class="sd">            scale: Scale of the icosphere. A single float for uniform scaling</span>
 <span class="sd">                or a tuple of (x, y, z) for per-axis scaling.</span>
 <span class="sd">            opacity: Opacity of the icosphere. None means opaque.</span>
-<span class="sd">            material: Material type of the icosphere ('standard', 'toon3', 'toon5').</span>
+<span class="sd">            material: Material type of the icosphere ('standard', 'toon3', 'toon5',</span>
+<span class="sd">                'unlit'). 'unlit' ignores lighting: the color is drawn flat,</span>
+<span class="sd">                without shading, and receive_shadow=True has no effect (a float</span>
+<span class="sd">                receive_shadow still draws shadows).</span>
 <span class="sd">            flat_shading: Whether to do flat shading.</span>
 <span class="sd">            side: Side of the surface to render ('front', 'back', 'double').</span>
 <span class="sd">            cast_shadow: Whether this icosphere should cast shadows.</span>
@@ -3424,7 +3438,7 @@
         <span class="n">radial_segments</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
         <span class="n">wireframe</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">opacity</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
+        <span class="n">material</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"standard"</span><span class="p">,</span> <span class="s2">"toon3"</span><span class="p">,</span> <span class="s2">"toon5"</span><span class="p">,</span> <span class="s2">"unlit"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"standard"</span><span class="p">,</span>
         <span class="n">flat_shading</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">side</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"front"</span><span class="p">,</span> <span class="s2">"back"</span><span class="p">,</span> <span class="s2">"double"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"front"</span><span class="p">,</span>
         <span class="n">cast_shadow</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -3445,7 +3459,10 @@
 <span class="sd">            radial_segments: Number of segmented faces around the circumference of the cylinder.</span>
 <span class="sd">            wireframe: Boolean indicating if the cylinder should be rendered as a wireframe.</span>
 <span class="sd">            opacity: Opacity of the cylinder. None means opaque.</span>
-<span class="sd">            material: Material type of the cylinder ('standard', 'toon3', 'toon5').</span>
+<span class="sd">            material: Material type of the cylinder ('standard', 'toon3', 'toon5',</span>
+<span class="sd">                'unlit'). 'unlit' ignores lighting: the color is drawn flat,</span>
+<span class="sd">                without shading, and receive_shadow=True has no effect (a float</span>
+<span class="sd">                receive_shadow still draws shadows).</span>
 <span class="sd">            flat_shading: Whether to do flat shading.</span>
 <span class="sd">            side: Side of the surface to render ('front', 'back', 'double').</span>
 <span class="sd">            cast_shadow: Whether this cylinder should cast shadows.</span>
