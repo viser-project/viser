@@ -17,7 +17,7 @@ export type { StandardMaterialProps } from "./meshMaterialUtils";
  */
 export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
   const color = props.color === undefined ? 0xffffff : rgbToInt(props.color);
-  const transparent = props.opacity !== null;
+  const transparent = props.opacity !== null && props.opacity < 1.0;
   const opacity = props.opacity ?? 1.0;
   const side = sideMap[props.side];
 
