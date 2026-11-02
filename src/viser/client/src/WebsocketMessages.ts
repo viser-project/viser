@@ -1391,6 +1391,17 @@ export interface EnvironmentMapMessage {
   environment_intensity: number;
   environment_wxyz: [number, number, number, number];
 }
+/** Enable or disable the built-in WASDQE / arrow-key camera controls.
+ *
+ * Excluded from scene serialization: the setting exists to free keys for
+ * server-side commands, which don't exist in static/playback mode.
+ *
+ * (automatically generated)
+ */
+export interface SetKeyboardCameraControlsMessage {
+  type: "SetKeyboardCameraControlsMessage";
+  enabled: boolean;
+}
 /** Default light message.
  *
  * (automatically generated)
@@ -1605,6 +1616,7 @@ export interface SetSceneNodeDragBindingsMessage {
       | "alt+shift"
       | "cmd/ctrl+alt+shift"
       | null;
+    show_arrow: boolean;
   }[];
   owner: string;
 }
@@ -1635,6 +1647,7 @@ export interface SetSceneNodeClickBindingsMessage {
       | "alt+shift"
       | "cmd/ctrl+alt+shift"
       | null;
+    show_arrow: boolean;
   }[];
   owner: string;
 }
@@ -2078,6 +2091,29 @@ export interface RegisterCommandMessage {
       | "arrowdown"
       | "arrowleft"
       | "arrowright"
+      | "F1"
+      | "F2"
+      | "F3"
+      | "F4"
+      | "F5"
+      | "F6"
+      | "F7"
+      | "F8"
+      | "F9"
+      | "F10"
+      | "F11"
+      | "F12"
+      | "["
+      | "]"
+      | "-"
+      | "="
+      | ","
+      | "."
+      | "/"
+      | ";"
+      | "'"
+      | "`"
+      | "\\"
       | null;
     modifier:
       | "cmd/ctrl"
@@ -2224,6 +2260,7 @@ export type Message =
   | ScenePointerEnableMessage
   | FogMessage
   | EnvironmentMapMessage
+  | SetKeyboardCameraControlsMessage
   | EnableLightsMessage
   | SetBoneOrientationMessage
   | SetBonePositionMessage

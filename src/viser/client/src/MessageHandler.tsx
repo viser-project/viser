@@ -466,6 +466,11 @@ function useMessageHandler() {
       }
 
       // Disable/enable default lighting.
+      case "SetKeyboardCameraControlsMessage": {
+        viewer.useGui.set({ keyboardCameraControls: message.enabled });
+        return;
+      }
+
       case "EnableLightsMessage": {
         viewer.useEnvironment.set({
           enableDefaultLights: message.enabled,

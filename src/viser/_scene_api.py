@@ -1022,6 +1022,25 @@ class SceneApi:
             _messages.EnableLightsMessage(enabled, cast_shadow)
         )
 
+    def set_keyboard_camera_controls(self, enabled: bool) -> None:
+        """Enable or disable the built-in keyboard camera controls.
+
+        By default, WASD/QE move the camera and the arrow keys rotate it.
+        Disabling these frees the keys for command hotkeys (see
+        :meth:`GuiApi.add_command`). Mouse/touch camera controls are
+        unaffected.
+
+        Scope follows the owner of this :class:`SceneApi`:
+        ``server.scene`` applies to every connected client (and any that
+        connect later), while ``client.scene`` applies only to that client.
+
+        Args:
+            enabled: Whether keyboard camera controls are enabled.
+        """
+        self._websock_interface.queue_message(
+            _messages.SetKeyboardCameraControlsMessage(enabled)
+        )
+
     if not TYPE_CHECKING:
 
         def enable_default_lights(self, *args, **kwargs) -> None:

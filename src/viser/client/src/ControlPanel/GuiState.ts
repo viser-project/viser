@@ -88,6 +88,10 @@ export interface GuiState {
   websocketState: "connected" | "reconnecting" | "inactive";
   backgroundAvailable: boolean;
   showOrbitOriginTool: boolean;
+  /** WASDQE / arrow-key camera movement. Server-configured via
+   * `SetKeyboardCameraControlsMessage`; reset to enabled on (re)connect so a
+   * restarted server that never disables it gets the default back. */
+  keyboardCameraControls: boolean;
   guiUuidSetFromContainerUuid: {
     [containerUuid: string]: { [uuid: string]: true } | undefined;
   };
@@ -237,6 +241,7 @@ const cleanGuiState: GuiState = {
   websocketState: "inactive",
   backgroundAvailable: false,
   showOrbitOriginTool: false,
+  keyboardCameraControls: true,
   guiUuidSetFromContainerUuid: { root: {} },
   modals: [],
   panels: {},
@@ -462,6 +467,7 @@ export function useGuiState(initialServer: string) {
           uploadsInProgress: cleanGuiState.uploadsInProgress,
           commands: cleanGuiState.commands,
           panelPlacement: cleanGuiState.panelPlacement,
+          keyboardCameraControls: cleanGuiState.keyboardCameraControls,
           // The (re)connect replay is now in flight. Reconnect-sensitive
           // consumers (the dock's pane registry, the main-panel width effect)
           // hold their teardown/apply until `replayDone` -- the store being

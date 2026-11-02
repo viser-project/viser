@@ -35,6 +35,7 @@ import {
   KeyModifier,
   anyBindingMatches,
   computeInstanceWorldMatrix,
+  dragArrowEnabledFor,
   isInstancedMesh2VendoredMessage,
   keyModifierFromEvent,
   motionExceedsThreshold,
@@ -322,6 +323,15 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
       // start message carries the new modifier. ``button`` is unchanged.
       activeDrag.input = { ...activeDrag.input, modifier: nextModifier };
       activeDrag.segmentActive = false;
+      const nextShowArrow =
+        dragArrowEnabledFor(liveBindings, activeDrag.input) ??
+        activeDrag.showArrow;
+      if (nextShowArrow !== activeDrag.showArrow) {
+        activeDrag.showArrow = nextShowArrow;
+        // The arrow is updated in useFrame; the switch itself may not
+        // coincide with pointer motion, so request the frame explicitly.
+        viewer.mutable.current.requestRender();
+      }
       if (plan.emitStart) {
         activeDrag.pendingStart = {
           switchPointerXy: [
@@ -596,6 +606,12 @@ function DragLayerActive({ children }: { children?: React.ReactNode }) {
           // still fail if the live grab point is unavailable, so we
           // trust its return value rather than assuming ``true``.
           segmentActive: false,
+          // A dormant opening (unbound promotion-time combo) falls back
+          // to the pointerdown binding, which matched by construction.
+          showArrow:
+            dragArrowEnabledFor(liveBindings, opening.input) ??
+            dragArrowEnabledFor(bindings, input) ??
+            true,
           // The OPENING segment is never deferred -- crossing the
           // motion threshold at promotion is already its confirmation.
           pendingStart: null,
