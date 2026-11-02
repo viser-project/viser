@@ -48,7 +48,9 @@ class SE2(
         """
         cos = np.cos(theta)
         sin = np.sin(theta)
-        return SE2(unit_complex_xy=np.stack([cos, sin, x, y], axis=-1))
+        return SE2(
+            unit_complex_xy=np.stack(np.broadcast_arrays(cos, sin, x, y), axis=-1)
+        )
 
     # SE-specific.
 
