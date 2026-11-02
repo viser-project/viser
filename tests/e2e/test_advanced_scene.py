@@ -427,6 +427,32 @@ JS_NODE_CHILD_COUNT = """
 """
 
 
+def test_skinned_mesh_remove_keeps_client_connected(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+) -> None:
+    """Removing a skinned mesh must tolerate its already-detached scene ref."""
+    errors: list[str] = []
+    viser_page.on("pageerror", lambda error: errors.append(str(error)))
+    mesh = viser_server.scene.add_mesh_skinned(
+        "/removable_skin",
+        vertices=np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], np.float32),
+        faces=np.array([[0, 1, 2]], np.uint32),
+        bone_wxyzs=np.array([[1, 0, 0, 0]], np.float32),
+        bone_positions=np.zeros((1, 3), np.float32),
+        skin_weights=np.ones((3, 1), np.float32),
+    )
+    wait_for_mesh_children(viser_page, "/removable_skin")
+    mesh.remove()
+    wait_for_scene_node_removed(viser_page, "/removable_skin")
+    assert errors == []
+
+    # A later scene update must still reach a live renderer after cleanup.
+    viser_server.scene.add_box("/after_skin_removal")
+    wait_for_mesh_children(viser_page, "/after_skin_removal")
+    assert errors == []
+
+
 def test_skinned_mesh_readd_does_not_leak_bones(
     viser_server: viser.ViserServer,
     viser_page: Page,

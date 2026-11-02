@@ -1324,11 +1324,10 @@ export function FrameSynchronizedMessageHandler() {
           if (pose === undefined || pose.poseUpdateState !== "needsUpdate")
             continue;
           const obj = viewerMutable.nodeRefFromName[name];
-          // == null: the map's type says undefined, but React ref callbacks
-          // write null on detach (e.g. unmountWhenInvisible nodes that are
-          // currently hidden), and a TypeError here would fail the whole
-          // capture with the pose still pending.
-          if (obj == null) continue;
+          // Absent while detached (e.g. unmountWhenInvisible nodes that are
+          // currently hidden); a TypeError here would fail the whole capture
+          // with the pose still pending.
+          if (obj === undefined) continue;
           pose.poseUpdateState = "updated";
           if (viewer.useSceneTree.get(name)?.message.type !== "LabelMessage") {
             obj.quaternion.set(
