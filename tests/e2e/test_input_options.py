@@ -13,7 +13,7 @@ import threading
 import time
 
 import pytest
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
 
 import viser
 
@@ -52,6 +52,14 @@ def _hold(page: Page, key: str, seconds: float) -> None:
     page.keyboard.up(key)
 
 
+def _sync(page: Page, server: viser.ViserServer, tag: str) -> None:
+    """Block until every message queued so far has reached the client:
+    messages are delivered in order, so once a GUI element queued *after*
+    them renders, they have been applied."""
+    server.gui.add_markdown(f"sync-{tag}")
+    expect(page.get_by_text(f"sync-{tag}")).to_be_visible(timeout=5_000)
+
+
 def _moved(a: list[float], b: list[float]) -> float:
     return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
 
@@ -83,8 +91,8 @@ def test_keyboard_camera_controls_can_be_disabled(
 ) -> None:
     _wait_for_camera(viser_page)
     viser_server.scene.set_keyboard_camera_controls(False)
-    # Let the message land; then confirm none of the movement keys drift.
-    viser_page.wait_for_timeout(300)
+    _sync(viser_page, viser_server, "disabled")
+    # Confirm none of the movement keys drift.
     before = viser_page.evaluate(JS_CAMERA_POSITION)
     for key in ["w", "a", "s", "d", "q", "e", "ArrowLeft", "ArrowUp"]:
         _hold(viser_page, key, 0.15)
@@ -93,7 +101,7 @@ def test_keyboard_camera_controls_can_be_disabled(
 
     # Re-enabling restores movement.
     viser_server.scene.set_keyboard_camera_controls(True)
-    viser_page.wait_for_timeout(300)
+    _sync(viser_page, viser_server, "enabled")
     _hold(viser_page, "w", 0.4)
     final = viser_page.evaluate(JS_CAMERA_POSITION)
     assert _moved(after, final) > 0.1, (after, final)

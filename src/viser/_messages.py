@@ -157,7 +157,9 @@ layout. Digits and punctuation match the *physical* key at that position on
 a US layout (``KeyboardEvent.code``), so ``modifier="shift"`` with ``"1"``
 fires on Shift+1 even though the browser reports ``"!"``. Letters fall back
 to physical matching when the typed character isn't a plain letter (e.g.
-Option+A on macOS types ``"å"``, or a non-Latin layout is active)."""
+Option+A on macOS types ``"å"``, or a non-Latin layout is active), unless
+the key types ASCII punctuation (AZERTY's US-"M" position types ``","``), so
+no letter is ever bound to two keys."""
 
 
 @dataclasses.dataclass(frozen=True)

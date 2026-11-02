@@ -465,12 +465,13 @@ function useMessageHandler() {
         return;
       }
 
-      // Disable/enable default lighting.
+      // Disable/enable WASDQE / arrow-key camera movement.
       case "SetKeyboardCameraControlsMessage": {
         viewer.useGui.set({ keyboardCameraControls: message.enabled });
         return;
       }
 
+      // Disable/enable default lighting.
       case "EnableLightsMessage": {
         viewer.useEnvironment.set({
           enableDefaultLights: message.enabled,
