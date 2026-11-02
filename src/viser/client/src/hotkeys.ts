@@ -8,7 +8,8 @@
  *
  * - **Letters** match the *typed* character, so they follow the user's
  *   layout (``"W"`` is the key labeled W on AZERTY/Dvorak too).
- * - **Named keys** (arrows, Enter, F1-F12, ...) match ``event.key``.
+ * - **Named keys** (arrows, Enter, F1-F12 as ``"f1"``-``"f12"``, ...) match
+ *   ``event.key``.
  * - Everything else -- **digits and punctuation** -- matches the
  *   *physical* key (``event.code``) at that position on a US layout. The
  *   typed character for these depends on held modifiers (Shift+1 types
@@ -41,18 +42,18 @@ const NAMED_KEYS: { [key: string]: HotkeyKey } = {
   ArrowDown: "arrowdown",
   ArrowLeft: "arrowleft",
   ArrowRight: "arrowright",
-  F1: "F1",
-  F2: "F2",
-  F3: "F3",
-  F4: "F4",
-  F5: "F5",
-  F6: "F6",
-  F7: "F7",
-  F8: "F8",
-  F9: "F9",
-  F10: "F10",
-  F11: "F11",
-  F12: "F12",
+  F1: "f1",
+  F2: "f2",
+  F3: "f3",
+  F4: "f4",
+  F5: "f5",
+  F6: "f6",
+  F7: "f7",
+  F8: "f8",
+  F9: "f9",
+  F10: "f10",
+  F11: "f11",
+  F12: "f12",
 };
 
 const PHYSICAL_KEYS: { [code: string]: HotkeyKey } = {

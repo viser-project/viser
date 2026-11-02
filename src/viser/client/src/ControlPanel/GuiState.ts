@@ -89,7 +89,7 @@ export interface GuiState {
   backgroundAvailable: boolean;
   showOrbitOriginTool: boolean;
   /** WASDQE / arrow-key camera movement. Server-configured via
-   * `SetKeyboardCameraControlsMessage`; reset to enabled on (re)connect so a
+   * `KeyboardCameraControlsMessage`; reset to enabled on (re)connect so a
    * restarted server that never disables it gets the default back. */
   keyboardCameraControls: boolean;
   guiUuidSetFromContainerUuid: {

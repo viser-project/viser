@@ -682,7 +682,7 @@ export function SynchronizedCameraControls() {
   // Keyboard controls. The document/window listeners only track which keys are
   // currently held; movement is applied per frame in the `useFrame` below. The
   // listeners are attached while keyboard controls are enabled
-  // (`server.scene.set_keyboard_camera_controls()`); disabling them mid-hold
+  // (`server.scene.configure_keyboard_camera_controls()`); disabling them mid-hold
   // runs the cleanup, which drops every held key.
   const keyboardCameraControls = viewer.useGui(
     (state) => state.keyboardCameraControls,

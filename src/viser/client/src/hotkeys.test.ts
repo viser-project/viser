@@ -67,8 +67,8 @@ describe("hotkeyFromEvent", () => {
   });
 
   it("resolves named keys and function keys", () => {
-    expect(hotkeyFromEvent(ev("F6", "F6"))).toBe("F6");
-    expect(hotkeyFromEvent(ev("F12", "F12"))).toBe("F12");
+    expect(hotkeyFromEvent(ev("F6", "F6"))).toBe("f6");
+    expect(hotkeyFromEvent(ev("F12", "F12"))).toBe("f12");
     expect(hotkeyFromEvent(ev("ArrowLeft", "ArrowLeft"))).toBe("arrowleft");
     expect(hotkeyFromEvent(ev(" ", "Space"))).toBe("space");
     expect(hotkeyFromEvent(ev("Enter", "NumpadEnter"))).toBe("enter");

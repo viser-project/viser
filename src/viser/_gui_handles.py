@@ -28,6 +28,7 @@ from typing import (
 import numpy as np
 from typing_extensions import Protocol, Self, TypeAlias, override
 
+from . import _messages
 from ._assignable_props_api import AssignablePropsBase
 from ._icons import svg_from_icon
 from ._icons_enum import IconName
@@ -1808,6 +1809,16 @@ class CommandHandle(AssignablePropsBase[_CommandHandleState], CommandProps):
         self._impl.icon = icon
         self._impl.props._icon_html = None if icon is None else svg_from_icon(icon)
         self._queue_update("_icon_html", self._impl.props._icon_html)
+
+    def _normalize_prop_assignment(self, name: str, value: Any) -> Any:
+        # Same validation/canonicalization as ``add_command``: the client
+        # matches canonical spellings exactly, so e.g. ``"a"`` or
+        # ``"shift+cmd/ctrl"`` must be canonicalized here or never fire.
+        if name == "hotkey":
+            return _messages._normalize_hotkey(value)
+        if name == "modifier":
+            return _messages._normalize_key_modifier(value)
+        return value
 
     def _queue_update(self, name: str, value: Any) -> None:
         self._impl.gui_api._websock_interface.queue_message(

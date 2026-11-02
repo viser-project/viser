@@ -1022,7 +1022,7 @@ class SceneApi:
             _messages.EnableLightsMessage(enabled, cast_shadow)
         )
 
-    def set_keyboard_camera_controls(self, enabled: bool) -> None:
+    def configure_keyboard_camera_controls(self, enabled: bool = True) -> None:
         """Enable or disable the built-in keyboard camera controls.
 
         By default, WASD/QE move the camera and the arrow keys rotate it.
@@ -1038,7 +1038,7 @@ class SceneApi:
             enabled: Whether keyboard camera controls are enabled.
         """
         self._websock_interface.queue_message(
-            _messages.SetKeyboardCameraControlsMessage(enabled)
+            _messages.KeyboardCameraControlsMessage(enabled)
         )
 
     if not TYPE_CHECKING:

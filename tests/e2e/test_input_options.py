@@ -1,7 +1,7 @@
 """E2E tests for input options used by apps that bring their own keyboard /
 drag handling (e.g. MuJoCo viewers):
 
-- ``server.scene.set_keyboard_camera_controls(False)`` frees WASDQE/arrows.
+- ``server.scene.configure_keyboard_camera_controls(False)`` frees WASDQE/arrows.
 - A bound command hotkey takes precedence over keyboard camera movement.
 - Physical-key hotkey matching (Shift+digit, punctuation, F-keys).
 - ``on_drag(..., show_arrow=False)`` suppresses the built-in drag arrow.
@@ -90,7 +90,7 @@ def test_keyboard_camera_controls_can_be_disabled(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
     _wait_for_camera(viser_page)
-    viser_server.scene.set_keyboard_camera_controls(False)
+    viser_server.scene.configure_keyboard_camera_controls(False)
     _sync(viser_page, viser_server, "disabled")
     # Confirm none of the movement keys drift.
     before = viser_page.evaluate(JS_CAMERA_POSITION)
@@ -100,7 +100,7 @@ def test_keyboard_camera_controls_can_be_disabled(
     assert _moved(before, after) < 1e-6, (before, after)
 
     # Re-enabling restores movement.
-    viser_server.scene.set_keyboard_camera_controls(True)
+    viser_server.scene.configure_keyboard_camera_controls(True)
     _sync(viser_page, viser_server, "enabled")
     _hold(viser_page, "w", 0.4)
     final = viser_page.evaluate(JS_CAMERA_POSITION)
@@ -136,8 +136,8 @@ def test_bound_hotkey_does_not_move_camera(
         ("Equal", "=", None),
         # Shift+= types "+".
         ("Shift+Equal", "=", "shift"),
-        ("F6", "F6", None),
-        ("F7", "F7", None),
+        ("F6", "f6", None),
+        ("F7", "f7", None),
         # Option/Alt+letter (types "å" etc. on macOS).
         ("Alt+KeyA", "A", "alt"),
     ],

@@ -466,7 +466,7 @@ function useMessageHandler() {
       }
 
       // Disable/enable WASDQE / arrow-key camera movement.
-      case "SetKeyboardCameraControlsMessage": {
+      case "KeyboardCameraControlsMessage": {
         viewer.useGui.set({ keyboardCameraControls: message.enabled });
         return;
       }

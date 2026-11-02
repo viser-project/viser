@@ -34,6 +34,8 @@ function formatHotkey(key: HotkeyKey, modifier: KeyModifier | null): string {
       if (lower === "cmd/ctrl") return isMac ? "⌘" : "Ctrl+";
       if (lower === "shift") return isMac ? "⇧" : "Shift+";
       if (lower === "alt") return isMac ? "⌥" : "Alt+";
+      // Function keys are spelled "f6" on the wire; display as "F6".
+      if (/^f\d+$/.test(part)) return part.toUpperCase();
       return part;
     })
     .join("");
