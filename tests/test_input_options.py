@@ -18,6 +18,12 @@ import viser
 import viser._client_autobuild
 from viser import _messages
 
+from .infra_utils import (
+    broadcast_messages,
+    client_buffer_messages,
+    make_synthetic_client,
+)
+
 
 @pytest.fixture
 def server() -> Generator[viser.ViserServer, None, None]:
@@ -202,3 +208,36 @@ def test_modifier_assignment_is_canonicalized(server: viser.ViserServer) -> None
     with pytest.raises(ValueError, match="Unknown modifier"):
         handle.modifier = "hyper"  # type: ignore[assignment]
     assert handle.modifier == "cmd/ctrl+shift"
+
+
+def test_keyboard_camera_controls_client_scope(server: viser.ViserServer) -> None:
+    """``client.scene`` targets only that client's connection; nothing reaches
+    the broadcast buffer (which other and future clients replay)."""
+    client = make_synthetic_client(server, 1)
+    other = make_synthetic_client(server, 2)
+    client.scene.configure_keyboard_camera_controls(False)
+
+    def kb(messages: list[Any]) -> list[Any]:
+        return [
+            m
+            for m in messages
+            if isinstance(m, _messages.KeyboardCameraControlsMessage)
+        ]
+
+    assert [m.enabled for m in kb(client_buffer_messages(client))] == [False]
+    assert kb(client_buffer_messages(other)) == []
+    assert kb(broadcast_messages(server)) == []
+
+
+@pytest.mark.parametrize("bad", [1, 0, 1.5])
+def test_non_string_hotkey_raises_type_error(
+    server: viser.ViserServer, bad: Any
+) -> None:
+    """``hotkey=1`` is an easy slip for ``hotkey="1"``; it must fail clearly
+    rather than with an AttributeError from deep inside normalization."""
+    with pytest.raises(TypeError, match="hotkey must be a string"):
+        server.gui.add_command("Cmd", hotkey=bad)
+    handle = server.gui.add_command("Cmd", hotkey="K")
+    with pytest.raises(TypeError, match="hotkey must be a string"):
+        handle.hotkey = bad
+    assert handle.hotkey == "K"

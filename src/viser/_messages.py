@@ -193,6 +193,12 @@ def _normalize_hotkey(hotkey: Optional[str]) -> Optional[HotkeyKey]:
     instead of registering a hotkey that can never fire."""
     if hotkey is None:
         return None
+    if not isinstance(hotkey, str):
+        # Common slip for digit keys: ``hotkey=1`` instead of ``"1"``.
+        raise TypeError(
+            f"hotkey must be a string (e.g. {str(hotkey)!r}), got "
+            f"{type(hotkey).__name__} {hotkey!r}."
+        )
     canonical = _HOTKEY_FROM_LOWER.get(hotkey.lower())
     if canonical is None:
         raise ValueError(
