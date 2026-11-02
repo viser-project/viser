@@ -134,8 +134,10 @@ export const SkinnedMesh = React.forwardRef<
     // old bones into the parent (its child count grows by numBones each update).
     const addedBones = bonesRef.current;
     return () => {
+      // The parent's ref callback drops this entry when React detaches it,
+      // which can happen before this cleanup runs (#788).
       const parentNode = viewerMutable.nodeRefFromName[message.name];
-      if (parentNode != null && addedBones !== undefined) {
+      if (parentNode !== undefined && addedBones !== undefined) {
         addedBones.forEach((bone) => parentNode.remove(bone));
       }
       // Release the claim so a successor (this instance's own next effect
