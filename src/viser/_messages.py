@@ -5,7 +5,18 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
-from typing import Any, ClassVar, Dict, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+    get_args,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -124,8 +135,78 @@ HotkeyKey = Literal[
     "arrowdown",
     "arrowleft",
     "arrowright",
+    # Function keys.
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "f10",
+    "f11",
+    "f12",
+    # Punctuation (US-layout physical keys).
+    "[",
+    "]",
+    "-",
+    "=",
+    ",",
+    ".",
+    "/",
+    ";",
+    "'",
+    "`",
+    "\\",
 ]
-"""A key for hotkey bindings."""
+"""A key for hotkey bindings. Letters are uppercase; named keys (``"space"``,
+``"arrowup"``, ``"f6"``, ...) are lowercase. Type annotations only allow
+this canonical spelling; the runtime accepts any casing and canonicalizes it
+(see :func:`_normalize_hotkey`).
+
+Letters match the typed character, so they follow the user's keyboard
+layout. Digits and punctuation match the *physical* key at that position on
+a US layout (``KeyboardEvent.code``), so ``modifier="shift"`` with ``"1"``
+fires on Shift+1 even though the browser reports ``"!"``. Letters fall back
+to physical matching when the typed character isn't a plain letter (e.g.
+Option+A on macOS types ``"å"``, or a non-Latin layout is active), unless
+the key types ASCII punctuation (AZERTY's US-"M" position types ``","``), so
+no letter is ever bound to two keys."""
+
+
+_HOTKEY_FROM_LOWER: Dict[str, HotkeyKey] = {k.lower(): k for k in get_args(HotkeyKey)}
+_NAMED_HOTKEYS: Tuple[str, ...] = tuple(
+    k
+    for k in get_args(HotkeyKey)
+    if len(k) > 1 and not (k[0] == "f" and k[1:].isdigit())
+)
+
+
+def _normalize_hotkey(hotkey: Optional[str]) -> Optional[HotkeyKey]:
+    """Validate a :data:`HotkeyKey` and return its canonical spelling.
+
+    Matching is case-insensitive (``"a"`` -> ``"A"``, ``"F6"`` -> ``"f6"``,
+    ``"Space"`` -> ``"space"``), mirroring the lenient runtime handling of
+    :func:`_normalize_key_modifier`. Unknown names raise ``ValueError``
+    instead of registering a hotkey that can never fire."""
+    if hotkey is None:
+        return None
+    if not isinstance(hotkey, str):
+        # Common slip for digit keys: ``hotkey=1`` instead of ``"1"``.
+        raise TypeError(
+            f"hotkey must be a string (e.g. {str(hotkey)!r}), got "
+            f"{type(hotkey).__name__} {hotkey!r}."
+        )
+    canonical = _HOTKEY_FROM_LOWER.get(hotkey.lower())
+    if canonical is None:
+        raise ValueError(
+            f"Unknown hotkey {hotkey!r}. Valid hotkeys: letters A-Z, digits 0-9, "
+            "f1-f12, punctuation ([ ] - = , . / ; ' ` \\), and "
+            f"{_NAMED_HOTKEYS!r}."
+        )
+    return canonical
 
 
 @dataclasses.dataclass(frozen=True)
@@ -889,6 +970,16 @@ class EnvironmentMapMessage(Message, include_in_scene_serialization=True):
 
 
 @dataclasses.dataclass
+class KeyboardCameraControlsMessage(Message, include_in_scene_serialization=False):
+    """Enable or disable the built-in WASDQE / arrow-key camera controls.
+
+    Excluded from scene serialization: the setting exists to free keys for
+    server-side commands, which don't exist in static/playback mode."""
+
+    enabled: bool
+
+
+@dataclasses.dataclass
 class EnableLightsMessage(Message, include_in_scene_serialization=True):
     """Default light message."""
 
@@ -1458,6 +1549,9 @@ class DragBinding:
 
     button: DragButton
     modifier: Optional[KeyModifier]
+    show_arrow: bool = True
+    """Whether the client draws its built-in drag arrow while this binding
+    owns the drag. Ignored for click bindings."""
 
 
 @dataclasses.dataclass

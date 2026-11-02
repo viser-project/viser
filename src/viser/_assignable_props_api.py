@@ -84,6 +84,12 @@ class AssignablePropsBase(Generic[TImpl]):
     def _queue_update(self, name: str, value: Any) -> None:
         """Queue an update message with the property change."""
 
+    def _normalize_prop_assignment(self, name: str, value: Any) -> Any:
+        """Hook called before a props field is assigned. Subclasses can
+        override to validate or canonicalize a value (raising leaves the
+        stored value and the client untouched). Identity by default."""
+        return value
+
     def _on_prop_assigned(self, name: str) -> None:
         """Hook called after a props field is assigned and its update is queued.
         Subclasses can override to enforce cross-field invariants (e.g. keeping
@@ -117,6 +123,7 @@ def props_setattr(self, name: str, value: Any) -> None:
 
     # Try to handle as a props field.
     if is_prop_hint:
+        value = self._normalize_prop_assignment(name, value)
         # Handle type casting (arrays, tuples of arrays, etc.).
         value = self._cast_value_recursive(self._prop_hints[name], value, name)
         current_value = getattr(self._impl.props, name)

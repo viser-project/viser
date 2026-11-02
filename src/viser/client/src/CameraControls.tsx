@@ -681,14 +681,22 @@ export function SynchronizedCameraControls() {
 
   // Keyboard controls. The document/window listeners only track which keys are
   // currently held; movement is applied per frame in the `useFrame` below. The
-  // effect has no dependencies, so the listeners are attached once and removed
-  // on unmount.
+  // listeners are attached while keyboard controls are enabled
+  // (`server.scene.configure_keyboard_camera_controls()`); disabling them mid-hold
+  // runs the cleanup, which drops every held key.
+  const keyboardCameraControls = viewer.useGui(
+    (state) => state.keyboardCameraControls,
+  );
   const heldKeysRef = useRef<Set<string>>(new Set());
   React.useEffect(() => {
+    if (!keyboardCameraControls) return;
     const held = heldKeysRef.current;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!CAMERA_MOVEMENT_KEYS.has(event.code)) return;
       if (isFormElement(event.target)) return;
+      // A command hotkey consumed this key (the command palette's listener
+      // on `documentElement` runs first and calls `preventDefault`).
+      if (event.defaultPrevented) return;
       // Ignore auto-repeat: only a fresh press counts as a new hold.
       if (held.has(event.code)) return;
       held.add(event.code);
@@ -713,8 +721,9 @@ export function SynchronizedCameraControls() {
       document.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
       held.clear();
+      setKeyboardCrosshairCounter(0);
     };
-  }, []);
+  }, [keyboardCameraControls]);
 
   // Apply held-key camera movement each frame. Rates: linear 2.0/s, rotation
   // 50 deg/s (`delta` is in seconds).

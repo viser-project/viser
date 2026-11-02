@@ -30,6 +30,9 @@ export type KeyModifier =
 export type DragBinding = {
   button: "left" | "middle" | "right";
   modifier: KeyModifier | null;
+  /** Draw the built-in drag arrow while this binding owns the drag.
+   * Absent reads as ``true``. Ignored for click bindings. */
+  show_arrow?: boolean;
 };
 
 export type PointerButton = "left" | "middle" | "right";
@@ -95,6 +98,20 @@ export function anyBindingMatches(
   input: DragInput,
 ): boolean {
   return bindings.some((b) => matchesDragBinding(b, input));
+}
+
+/** Whether the built-in drag arrow should be drawn while ``input`` owns
+ * the drag: the matching binding's ``show_arrow`` (absent = ``true``).
+ * Returns ``null`` when no binding matches (a dormant segment), so the
+ * caller can keep the previous segment's setting instead of flickering
+ * the arrow on for an unbound combo. */
+export function dragArrowEnabledFor(
+  bindings: DragBinding[],
+  input: DragInput,
+): boolean | null {
+  const binding = bindings.find((b) => matchesDragBinding(b, input));
+  if (binding === undefined) return null;
+  return binding.show_arrow ?? true;
 }
 
 /** Plan emitted by :func:`planModifierTransition`: which lifecycle
@@ -260,6 +277,11 @@ export type ActiveDragState = {
    * no messages are sent -- and while a switch-created ``start`` is
    * still pending confirmation (see ``pendingStart``). */
   segmentActive: boolean;
+  /** Whether the built-in drag arrow is drawn. Taken from the binding
+   * that owns the current segment (``show_arrow``); unchanged while
+   * dormant, so an unbound mid-drag combo inherits the last segment's
+   * setting. */
+  showArrow: boolean;
   /** A switch-created segment whose ``start`` has not been sent yet
    * (see :data:`SWITCH_START_DELAY_MS`). Confirmed -- and the ``start``
    * sent -- by the timer or by pointer motion past the threshold from

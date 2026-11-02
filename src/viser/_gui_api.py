@@ -1074,8 +1074,11 @@ class GuiApi:
         Args:
             label: Label displayed in the command palette.
             description: Optional description displayed below the label.
-            hotkey: Optional hotkey key, e.g. ``"K"`` or ``"R"``. ``None``
-                disables the hotkey.
+            hotkey: Optional hotkey key, e.g. ``"K"``, ``"1"``, ``"["``, or
+                ``"f6"`` (see :data:`HotkeyKey`). ``None`` disables the
+                hotkey. Case-insensitive at runtime; unknown keys raise
+                ``ValueError``. Digits and punctuation match the physical
+                key, so ``hotkey="1", modifier="shift"`` fires on Shift+1.
             modifier: Modifier-combo to require with the hotkey, as a
                 canonically ordered ``"+"``-separated string like
                 ``"cmd/ctrl"``, ``"shift"``, or ``"cmd/ctrl+shift"``.
@@ -1095,13 +1098,14 @@ class GuiApi:
             raise ValueError(
                 "add_command(modifier=...) requires hotkey= to also be set."
             )
-        # Validate + canonicalize the modifier string. Raises on bad input.
+        # Validate + canonicalize. Raises on bad input.
+        normalized_hotkey = _messages._normalize_hotkey(hotkey)
         normalized_modifier = _messages._normalize_key_modifier(modifier)
         command_uuid = _make_uuid()
         props = _messages.CommandProps(
             label=label,
             description=description,
-            hotkey=hotkey,
+            hotkey=normalized_hotkey,
             modifier=normalized_modifier,
             disabled=disabled,
             _icon_html=None if icon is None else svg_from_icon(icon),
