@@ -12,12 +12,12 @@ import type { StandardMaterialProps } from "./meshMaterialUtils";
 export type { StandardMaterialProps } from "./meshMaterialUtils";
 
 /**
- * Declarative material component for standard/toon materials.
+ * Declarative material component for standard/toon/unlit materials.
  * R3F manages lifecycle -- no manual disposal needed.
  */
 export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
   const color = props.color === undefined ? 0xffffff : rgbToInt(props.color);
-  const transparent = props.opacity !== null;
+  const transparent = props.opacity !== null && props.opacity < 1.0;
   const opacity = props.opacity ?? 1.0;
   const side = sideMap[props.side];
 
@@ -61,6 +61,19 @@ export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
         transparent={transparent}
         opacity={opacity}
         side={side}
+      />
+    );
+  } else if (props.material === "unlit") {
+    // Skip tone mapping so unlit colors render exactly, like point clouds.
+    return (
+      <meshBasicMaterial
+        key={materialKey}
+        color={color}
+        wireframe={props.wireframe}
+        transparent={transparent}
+        opacity={opacity}
+        side={side}
+        toneMapped={false}
       />
     );
   } else {

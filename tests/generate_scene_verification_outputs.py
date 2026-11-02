@@ -231,7 +231,7 @@ def primitives_opacity(server: viser.ViserServer) -> None:
 @test_case(
     category="Primitives",
     title="Materials",
-    description="Standard, toon3, and toon5 materials on icospheres.",
+    description="Standard, toon3, toon5, and unlit materials on icospheres.",
     camera_position=(3.0, 2.0, 2.5),
 )
 def primitives_materials(server: viser.ViserServer) -> None:
@@ -240,25 +240,33 @@ def primitives_materials(server: viser.ViserServer) -> None:
         radius=0.4,
         color=(200, 80, 80),
         material="standard",
-        position=(-1.5, 0, 0.4),
+        position=(-2.25, 0, 0.4),
     )
     server.scene.add_icosphere(
         "/toon3",
         radius=0.4,
         color=(200, 80, 80),
         material="toon3",
-        position=(0, 0, 0.4),
+        position=(-0.75, 0, 0.4),
     )
     server.scene.add_icosphere(
         "/toon5",
         radius=0.4,
         color=(200, 80, 80),
         material="toon5",
-        position=(1.5, 0, 0.4),
+        position=(0.75, 0, 0.4),
     )
-    server.scene.add_label("/label_standard", "standard", position=(-1.5, 0, 1.0))
-    server.scene.add_label("/label_toon3", "toon3", position=(0, 0, 1.0))
-    server.scene.add_label("/label_toon5", "toon5", position=(1.5, 0, 1.0))
+    server.scene.add_icosphere(
+        "/unlit",
+        radius=0.4,
+        color=(200, 80, 80),
+        material="unlit",
+        position=(2.25, 0, 0.4),
+    )
+    server.scene.add_label("/label_standard", "standard", position=(-2.25, 0, 1.0))
+    server.scene.add_label("/label_toon3", "toon3", position=(-0.75, 0, 1.0))
+    server.scene.add_label("/label_toon5", "toon5", position=(0.75, 0, 1.0))
+    server.scene.add_label("/label_unlit", "unlit", position=(2.25, 0, 1.0))
     server.scene.add_grid("/grid", width=6, height=6, plane="xy")
 
 
