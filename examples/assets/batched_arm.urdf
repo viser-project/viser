@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!-- Tiny, self-contained batch example; distances are in meters. -->
+<robot name="batched_arm">
+  <material name="blue"><color rgba="0.15 0.45 0.85 1"/></material>
+  <material name="orange"><color rgba="0.95 0.5 0.15 1"/></material>
+  <material name="gray"><color rgba="0.25 0.3 0.35 1"/></material>
+  <link name="base">
+    <visual name="base_body"><origin xyz="0 0 0.08"/><geometry><box size="0.4 0.32 0.16"/></geometry><material name="gray"/></visual>
+    <visual name="base_cap"><origin xyz="0 0 0.2" rpy="0.1 0 0"/><geometry><cylinder radius="0.12" length="0.08"/></geometry><material name="blue"/></visual>
+  </link>
+  <link name="arm">
+    <visual name="arm_body"><origin xyz="0 0 0.25"/><geometry><box size="0.12 0.12 0.5"/></geometry><material name="blue"/></visual>
+  </link>
+  <joint name="shoulder" type="revolute"><parent link="base"/><child link="arm"/><origin xyz="0 0 0.24"/><axis xyz="0 1 0"/><limit lower="-1.2" upper="1.2" effort="10" velocity="1"/></joint>
+  <link name="slider">
+    <visual name="slider_body"><origin xyz="0.12 0 0" rpy="0 0 0.1"/><geometry><box size="0.24 0.1 0.1"/></geometry><material name="orange"/></visual>
+  </link>
+  <joint name="extension" type="prismatic"><parent link="arm"/><child link="slider"/><origin xyz="0 0 0.5" rpy="0 0.15 0"/><axis xyz="1 0 0"/><limit lower="0" upper="0.3" effort="10" velocity="1"/></joint>
+  <link name="tip">
+    <visual name="tip_body"><origin xyz="0.04 0 0.015" rpy="0.1 0.2 0.3"/><geometry><box size="0.08 0.16 0.08"/></geometry><material name="gray"/></visual>
+  </link>
+  <joint name="fixed_tip" type="fixed"><parent link="slider"/><child link="tip"/><origin xyz="0.24 0 0" rpy="0 0 0.2"/></joint>
+  <link name="finger">
+    <visual name="finger_body"><origin xyz="0.08 0 0"/><geometry><box size="0.16 0.04 0.04"/></geometry><material name="orange"/></visual>
+  </link>
+  <joint name="mimic_finger" type="revolute"><parent link="tip"/><child link="finger"/><origin xyz="0.06 0.07 0"/><axis xyz="0 0 1"/><limit lower="-1.2" upper="1.2" effort="1" velocity="1"/><mimic joint="shoulder" multiplier="-0.5" offset="0.1"/></joint>
+</robot>
