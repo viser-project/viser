@@ -1,9 +1,10 @@
 """Tests for general operation definitions."""
 
-from typing import Tuple, Type
+from typing import List, Tuple, Type
 
 import numpy as np
 import numpy.typing as onpt
+import pytest
 
 import viser.transforms as vtf
 
@@ -57,6 +58,36 @@ def test_matrix_bijective(
     """Check that we can convert to and from matrices."""
     transform = sample_transform(Group, batch_axes, dtype)
     assert_transforms_close(transform, Group.from_matrix(transform.as_matrix()))
+
+
+@pytest.mark.parametrize(
+    "Group, matrix",
+    [
+        (vtf.SO2, [[0, -1], [1, 0]]),
+        (vtf.SE2, [[0, -1, 1], [1, 0, 2], [0, 0, 1]]),
+        (vtf.SO3, [[1, 0, 0], [0, 0, -1], [0, 1, 0]]),
+        (vtf.SO3, [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]),
+        (vtf.SO3, [[0, -1, 0], [1, 0, 0], [0, 0, 1]]),
+        (vtf.SO3, [[0, 0, 1], [1, 0, 0], [0, 1, 0]]),
+        (vtf.SO3, [[0, 1, 0], [1, 0, 0], [0, 0, -1]]),
+        (vtf.SE3, [[1, 0, 0, 1], [0, 0, -1, 2], [0, 1, 0, 3], [0, 0, 0, 1]]),
+    ],
+)
+@pytest.mark.parametrize("dtype", [np.int16, np.int32, np.int64])
+def test_from_matrix_integer_dtype(
+    Group: Type[vtf.MatrixLieGroup], matrix: List[List[int]], dtype: onpt.DTypeLike
+):
+    """Check that integer matrices behave like their floating point equivalents."""
+    integer_matrix = np.array(matrix, dtype=dtype)
+    float_matrix = integer_matrix.astype(np.result_type(dtype, np.float32))
+
+    transform = Group.from_matrix(integer_matrix)
+    expected = Group.from_matrix(float_matrix)
+
+    assert transform.parameters().dtype == float_matrix.dtype
+    assert_transforms_close(transform, expected)
+    assert_arrays_close(transform.as_matrix(), float_matrix)
+    assert_arrays_close(transform.log(), expected.log())
 
 
 @general_group_test

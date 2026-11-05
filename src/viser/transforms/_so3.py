@@ -196,6 +196,7 @@ class SO3(
     @override
     def from_matrix(cls, matrix: onpt.NDArray[onp.floating]) -> SO3:
         assert matrix.shape[-2:] == (3, 3)
+        matrix = onp.asarray(matrix, dtype=onp.result_type(matrix.dtype, onp.float32))
 
         # Modified from:
         # > "Converting a Rotation Matrix to a Quaternion" from Mike Day
