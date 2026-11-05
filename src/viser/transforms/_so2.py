@@ -67,7 +67,11 @@ class SO2(
     @override
     def from_matrix(cls, matrix: npt.NDArray[np.floating]) -> SO2:
         assert matrix.shape[-2:] == (2, 2)
-        return SO2(unit_complex=np.array(matrix[..., :, 0]))
+        return SO2(
+            unit_complex=np.array(
+                matrix[..., :, 0], dtype=np.result_type(matrix.dtype, np.float32)
+            )
+        )
 
     # Accessors.
 
