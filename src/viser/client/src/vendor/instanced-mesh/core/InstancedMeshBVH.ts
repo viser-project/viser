@@ -423,12 +423,17 @@ export class InstancedMeshBVH {
 
   protected _enableReversedDepthFrustum(_projScreenMatrix: Matrix4): void {
     const frustum = this.bvh.frustum;
-    this._origSetFromProjectionMatrix =
-      frustum.setFromProjectionMatrix.bind(frustum);
+    // === VISER LOCAL PATCH ===
+    // Save the original method so repeated culls do not stack bound functions.
+    const setFromProjectionMatrix = frustum.setFromProjectionMatrix;
+    this._origSetFromProjectionMatrix = setFromProjectionMatrix;
+    // === END VISER LOCAL PATCH ===
 
     frustum.setFromProjectionMatrix = (mat: ArrayLike<number>) => {
       // Let bvh.js do its standard plane extraction for planes 0-3 first.
-      this._origSetFromProjectionMatrix!(mat);
+      // === VISER LOCAL PATCH ===
+      setFromProjectionMatrix.call(frustum, mat);
+      // === END VISER LOCAL PATCH ===
       const arr = frustum.array;
 
       // Recompute plane 4 (far) for reversed depth: (mat[2], mat[6], mat[10], mat[14])
