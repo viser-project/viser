@@ -139,3 +139,13 @@ lists every divergence from upstream.
   now-coherent cache before each of its own uploads.
 - **Re-apply check:** every `pixelStorei` in this file must target
   `renderer.state`, never the raw `gl` context.
+
+### 7. Restore the original projection method after reversed-depth culling
+
+- **File:** `core/InstancedMeshBVH.ts`
+- **What:** save the original `setFromProjectionMatrix` function and call it
+  with the frustum as its receiver, then restore the same function.
+- **Why:** restoring a bound copy added another bound function on each cull.
+  Covered for both BVH culling paths in `core/FrustumCulling.sorting.test.ts`.
+- **Re-apply check:** after culling with reversed depth, the projection method
+  must be the same function object as before the call.

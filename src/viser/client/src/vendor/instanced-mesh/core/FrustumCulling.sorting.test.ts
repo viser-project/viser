@@ -356,3 +356,32 @@ describe("InstancedMesh2 sorting with LODs", () => {
     ]);
   });
 });
+
+describe("InstancedMesh2 reversed-depth BVH culling", () => {
+  it.each([false, true])("restores the projection method (LOD: %s)", (lod) => {
+    const material = new THREE.MeshBasicMaterial();
+    const mesh = makeMesh([3, 20, 2500], material, makeRenderer());
+    if (lod) mesh.addLOD(new THREE.BoxGeometry(), material.clone(), 10);
+    mesh.computeBVH();
+    const frustum = mesh.bvh.bvh.frustum;
+    const original = frustum.setFromProjectionMatrix;
+
+    const camera = makeCamera();
+    Object.assign(camera, { _reversedDepth: true });
+    camera.updateProjectionMatrix();
+
+    for (let frame = 0; frame < 3; frame++) {
+      mesh.performFrustumCulling(camera);
+      if (lod) {
+        const levels = mesh.LODinfo!.render!.levels;
+        expect(levels.map((level) => renderedOrder(level.object))).toEqual([
+          [0],
+          [1],
+        ]);
+      } else {
+        expect(renderedOrder(mesh).sort((a, b) => a - b)).toEqual([0, 1]);
+      }
+      expect(frustum.setFromProjectionMatrix).toBe(original);
+    }
+  });
+});
