@@ -34,6 +34,7 @@ export class SceneNodeGroup extends THREE.Group {
   constructor() {
     super();
     this.matrixAutoUpdate = false;
+    this.matrixWorldNeedsUpdate = true;
   }
 
   updateMatrixWorld(force?: boolean): void {

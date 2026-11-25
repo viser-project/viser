@@ -9,7 +9,6 @@
  * Kept free of R3F imports so the test can load it in Node.
  */
 import * as THREE from "three";
-import { InstanceSource } from "./scene/AutoInstancer";
 import { SceneNodeGroup } from "./scene/SceneNodeGroup";
 
 /** Rendered by viser's own components (<mesh />, <group />, ...). */
@@ -22,7 +21,6 @@ export const viserThreeCatalogue = {
   Fog: THREE.Fog,
   Group: THREE.Group,
   HemisphereLight: THREE.HemisphereLight,
-  InstanceSource: InstanceSource,
   InstancedMesh: THREE.InstancedMesh,
   Mesh: THREE.Mesh,
   MeshBasicMaterial: THREE.MeshBasicMaterial,

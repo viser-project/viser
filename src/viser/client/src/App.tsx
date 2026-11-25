@@ -12,7 +12,7 @@ import { Notifications } from "@mantine/notifications";
 import { Stats } from "@react-three/drei";
 import { HDRJPGEnvironment } from "./HDRJPGEnvironment";
 import * as THREE from "three";
-import { Canvas, useThree, useFrame } from "@react-three/fiber";
+import { Canvas, useThree, useFrame, useStore } from "@react-three/fiber";
 import React, { useEffect, useMemo } from "react";
 import { ViewerMutable } from "./ViewerContext";
 import { InteractionController } from "./pointer/interactionController";
@@ -101,9 +101,36 @@ function RendererSetup() {
   const gl = useThree((state) => state.gl);
   const raycaster = useThree((state) => state.raycaster);
   React.useLayoutEffect(() => installFastShadowPass(gl), [gl]);
+
+  // The scene's own transform never changes. When this is enabled, three.js
+  // recomputes it every frame, and then the world matrix of every object in it.
+  const scene = useThree((state) => state.scene);
+  React.useLayoutEffect(() => {
+    scene.matrixAutoUpdate = false;
+  }, [scene]);
   React.useLayoutEffect(() => {
     raycaster.layers.enable(RAYCAST_ONLY_LAYER);
   }, [raycaster]);
+
+  // Zustand holds on to a store's initial state. In the case of R3F's store, the
+  // arrays in it are shared with the current state until something is removed
+  // from them. Anything that was added before then would be retained forever,
+  // including buffers from scene nodes that have since been removed.
+  //
+  // This needs to happen after R3F's Provider sets `internal.active`, which is
+  // what makes the copy of `internal`.
+  const store = useStore();
+  React.useEffect(() => {
+    const initial = store.getInitialState().internal;
+    const current = store.getState().internal;
+    if (initial === current) return;
+    if (initial.subscribers === current.subscribers)
+      current.subscribers = [...current.subscribers];
+    if (initial.interaction === current.interaction)
+      current.interaction = [...current.interaction];
+    initial.subscribers = [];
+    initial.interaction = [];
+  }, [store]);
   return null;
 }
 

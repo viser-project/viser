@@ -16,7 +16,11 @@ import { normalizeScale } from "./utils/normalizeScale";
 import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
 import { ViewerContext } from "./ViewerContext";
 import { HoverableContext } from "./HoverContext";
-import { MeshBatch, raycastOnlyLayers } from "./scene/AutoInstancer";
+import {
+  InstanceSource,
+  MeshBatch,
+  raycastOnlyLayers,
+} from "./scene/AutoInstancer";
 import { useInstanceSource } from "./scene/useInstanceSource";
 import {
   LabelRendererContext,
@@ -358,32 +362,49 @@ export const CoordinateFrame = React.forwardRef<
   },
   ref,
 ) {
-  const originRadiusOrDefault = originRadius ?? axesRadius * 2;
+  const [source] = React.useState(() => new InstanceSource());
+  return (
+    <primitive object={source} ref={ref}>
+      {showAxes && (
+        <FrameAxes
+          source={source}
+          axesLength={axesLength}
+          axesRadius={axesRadius}
+          originRadius={originRadius ?? axesRadius * 2}
+          originColor={originColor}
+          scale={normalizeScale(scale)}
+        />
+      )}
+      {children}
+    </primitive>
+  );
+});
+
+function FrameAxes(props: {
+  source: InstanceSource;
+  axesLength: number;
+  axesRadius: number;
+  originRadius: number;
+  originColor: number;
+  scale: [number, number, number];
+}) {
+  const { axesLength, axesRadius, originRadius, originColor } = props;
   const geometry = React.useMemo(
-    () =>
-      showAxes
-        ? getFrameGeometry(
-            axesLength,
-            axesRadius,
-            originRadiusOrDefault,
-            originColor,
-          )
-        : null,
-    [showAxes, axesLength, axesRadius, originRadiusOrDefault, originColor],
+    () => getFrameGeometry(axesLength, axesRadius, originRadius, originColor),
+    [axesLength, axesRadius, originRadius, originColor],
   );
   const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
 
-  const s = normalizeScale(scale);
-  const [sx, sy, sz] = s;
+  const [sx, sy, sz] = props.scale;
   const appearance = React.useMemo(
     () => ({ color: 0xffffff, scale: [sx, sy, sz] }),
     [sx, sy, sz],
   );
-  const { sourceRef, drawIndividually } = useInstanceSource(
-    ref,
+  const drawIndividually = useInstanceSource(
+    props.source,
     // Mirrored meshes can't be instanced: front faces are determined for all
     // instances at once.
-    geometry !== null && sx > 0 && sy > 0 && sz > 0
+    sx > 0 && sy > 0 && sz > 0
       ? {
           key: `frame|${geometry.uuid}`,
           makeBatch: () =>
@@ -391,26 +412,20 @@ export const CoordinateFrame = React.forwardRef<
           appearance,
         }
       : null,
-    geometry !== null,
   );
-
+  if (!drawIndividually && !raycastable) return null;
   return (
-    <instanceSource ref={sourceRef}>
-      {geometry !== null && (drawIndividually || raycastable) ? (
-        <mesh
-          key={drawIndividually ? "drawn" : "raycast"}
-          geometry={geometry}
-          scale={s}
-          material={frameMaterial}
-          layers={drawIndividually ? defaultLayers : raycastOnlyLayers}
-        >
-          <OutlinesIfHovered enableCreaseAngle />
-        </mesh>
-      ) : null}
-      {children}
-    </instanceSource>
+    <mesh
+      key={drawIndividually ? "drawn" : "raycast"}
+      geometry={geometry}
+      scale={props.scale}
+      material={frameMaterial}
+      layers={drawIndividually ? defaultLayers : raycastOnlyLayers}
+    >
+      <OutlinesIfHovered enableCreaseAngle />
+    </mesh>
   );
-});
+}
 
 const defaultLayers = new THREE.Layers();
 

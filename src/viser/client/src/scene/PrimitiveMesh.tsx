@@ -8,7 +8,7 @@ import {
 } from "../mesh/meshMaterialUtils";
 import { HoverableContext } from "../HoverContext";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
-import { MeshBatch, raycastOnlyLayers } from "./AutoInstancer";
+import { InstanceSource, MeshBatch, raycastOnlyLayers } from "./AutoInstancer";
 import { InstancingSpec, useInstanceSource } from "./useInstanceSource";
 
 const raycastOnlyMaterials = {
@@ -83,10 +83,11 @@ export const PrimitiveMesh = React.forwardRef<
         appearance,
       }
     : null;
-  const { sourceRef, drawIndividually } = useInstanceSource(ref, spec);
+  const [source] = React.useState(() => new InstanceSource());
+  const drawIndividually = useInstanceSource(source, spec);
 
   return (
-    <instanceSource ref={sourceRef}>
+    <primitive object={source} ref={ref}>
       {drawIndividually ? (
         <mesh
           geometry={geometry}
@@ -113,6 +114,6 @@ export const PrimitiveMesh = React.forwardRef<
         scale={scale}
       />
       {children}
-    </instanceSource>
+    </primitive>
   );
 });

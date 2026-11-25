@@ -1,6 +1,7 @@
 import { Line } from "./Line";
 import React from "react";
 import { HoverableContext, useIsHovered } from "./HoverContext";
+import { InstanceSource } from "./scene/AutoInstancer";
 import { LineBatch } from "./scene/LineBatch";
 import { useDrawable, useMarkTransformsDirty } from "./scene/SceneNodeContext";
 import { useInstanceSource } from "./scene/useInstanceSource";
@@ -134,8 +135,9 @@ export const CameraFrustumComponent = React.forwardRef<
     () => ({ color: lineColor, points: frustumPoints }),
     [lineColor, frustumPoints],
   );
-  const { sourceRef, drawIndividually } = useInstanceSource(
-    ref,
+  const [source] = React.useState(() => new InstanceSource());
+  const drawIndividually = useInstanceSource(
+    source,
     isHovered || message.props.variant === "filled"
       ? null
       : {
@@ -150,7 +152,7 @@ export const CameraFrustumComponent = React.forwardRef<
   useMarkTransformsDirty([imageTexture]);
 
   return (
-    <instanceSource ref={sourceRef}>
+    <primitive object={source} ref={ref}>
       {drawIndividually || raycastable ? (
         <Line
           points={frustumPoints}
@@ -194,6 +196,6 @@ export const CameraFrustumComponent = React.forwardRef<
         </mesh>
       )}
       {children}
-    </instanceSource>
+    </primitive>
   );
 });
