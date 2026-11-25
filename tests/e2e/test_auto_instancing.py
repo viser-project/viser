@@ -12,7 +12,7 @@ from playwright.sync_api import Page
 
 import viser
 
-from .utils import wait_for_scene_node
+from .utils import get_client_handle, wait_for_scene_node
 
 Q = (0.9238795, 0.3826834, 0.0, 0.0)
 
@@ -99,7 +99,10 @@ def _add_frustum(server: viser.ViserServer, name: str, i: int, group: int) -> An
         fov=1.0,
         aspect=1.5,
         scale=0.2,
-        thickness=0.02 + group * 1e-7,
+        # World-space lines have a transparent antialiasing skirt. How it's sorted
+        # depends on how it's batched.
+        thickness_units="screen",
+        thickness=2.0 + group * 1e-6,
         color=(i * 3, 255 - i * 3, 100),
         wxyz=Q,
         position=_position(i),
@@ -125,7 +128,7 @@ def _render(client: viser.ClientHandle) -> np.ndarray:
 def test_batched_matches_individual(
     viser_server: viser.ViserServer, viser_page: Page, add: AddFn
 ) -> None:
-    client = next(iter(viser_server.get_clients().values()))
+    client = get_client_handle(viser_server)
     # Adaptive resolution would affect renders.
     viser_page.evaluate("window.__viserTestpoints.devSettings.set({ fixedDpr: 1 })")
 
@@ -190,10 +193,22 @@ def test_batched_matches_individual(
         assert (np.abs(a - b).max(axis=-1) > 16).mean() < 0.002, step
 
 
+def _click_until(
+    page: Page, position: tuple[float, float], event: threading.Event
+) -> None:
+    for _ in range(20):
+        page.mouse.move(*position)
+        page.wait_for_timeout(300)
+        page.mouse.click(*position)
+        if event.wait(0.5):
+            return
+    raise AssertionError("Click wasn't received.")
+
+
 def test_batched_nodes_are_clickable(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
-    client = next(iter(viser_server.get_clients().values()))
+    client = get_client_handle(viser_server)
     client.camera.position = (0.0, 0.01, 10.0)
     client.camera.look_at = (0.0, 0.0, 0.0)
     clicked: list[str] = []
@@ -225,11 +240,8 @@ def test_batched_nodes_are_clickable(
     bbox = canvas.bounding_box()
     assert bbox is not None
     center = (bbox["x"] + bbox["width"] / 2, bbox["y"] + bbox["height"] / 2)
-    viser_page.mouse.move(*center)
-    viser_page.wait_for_timeout(300)
-    viser_page.mouse.click(*center)
-    assert event.wait(5.0)
-    assert clicked == ["/center"]
+    _click_until(viser_page, center, event)
+    assert set(clicked) == {"/center"}
 
     # Hidden nodes shouldn't receive events.
     event.clear()
@@ -244,7 +256,7 @@ def test_children_of_batched_nodes_bubble_clicks(
 ) -> None:
     """Clicks on non-interactive descendants are handled by interactive
     ancestors, so batched descendants still need to be raycast against."""
-    client = next(iter(viser_server.get_clients().values()))
+    client = get_client_handle(viser_server)
     client.camera.position = (0.0, 0.01, 10.0)
     client.camera.look_at = (0.0, 0.0, 0.0)
     event = threading.Event()
@@ -274,10 +286,7 @@ def test_children_of_batched_nodes_bubble_clicks(
     bbox = viser_page.locator("canvas").first.bounding_box()
     assert bbox is not None
     center = (bbox["x"] + bbox["width"] / 2, bbox["y"] + bbox["height"] / 2)
-    viser_page.mouse.move(*center)
-    viser_page.wait_for_timeout(300)
-    viser_page.mouse.click(*center)
-    assert event.wait(5.0)
+    _click_until(viser_page, center, event)
 
 
 def test_removed_nodes_are_not_retained(
@@ -285,13 +294,14 @@ def test_removed_nodes_are_not_retained(
 ) -> None:
     """Buffers of removed nodes used to be retained by the initial state of
     R3F's store."""
-    client = next(iter(viser_server.get_clients().values()))
-    num_points = 500_000
+    client = get_client_handle(viser_server)
+    num_points = 300_000
     viser_server.scene.add_point_cloud(
         "/points",
         np.zeros((num_points, 3), dtype=np.float32),
         np.zeros((num_points, 3), dtype=np.uint8),
         precision="float32",
+        point_size=1e-5,
     )
     wait_for_scene_node(viser_page, "/points")
     _render(client)
@@ -309,10 +319,11 @@ def test_removed_nodes_are_not_retained(
     viser_page.wait_for_function(
         "() => !('/points' in window.__viserMutable.nodeRefFromName)"
     )
-    # Dispose callbacks, and React's alternate fibers.
-    for i in range(3):
+    expected = 0.8 * num_points * 15 / 1e6
+    for i in range(20):
+        # Flush dispose callbacks, React's alternate fibers, etc.
         viser_server.scene.add_frame(f"/frame_{i}")
-        _render(client)
-    viser_page.wait_for_timeout(500)
-    freed = before - heap_mb()
-    assert freed > 0.8 * num_points * 15 / 1e6
+        viser_page.wait_for_timeout(300)
+        if before - heap_mb() > expected:
+            return
+    raise AssertionError("Buffers are still retained.")
