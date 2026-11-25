@@ -1,5 +1,9 @@
 import React from "react";
 import * as THREE from "three";
+import {
+  computeBoundingSphere,
+  computeVertexNormals,
+} from "../utils/meshGeometry";
 import { ViserStandardMeshMaterial, ShadowSkinnedMesh } from "./MeshUtils";
 import { SkinnedMeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
@@ -42,8 +46,12 @@ export const SkinnedMesh = React.forwardRef<
       new THREE.BufferAttribute(message.props.vertices, 3),
     );
     geometry.setIndex(new THREE.BufferAttribute(message.props.faces, 1));
-    geometry.computeVertexNormals();
-    geometry.computeBoundingSphere();
+    const { vertices, faces } = message.props;
+    geometry.setAttribute(
+      "normal",
+      new THREE.BufferAttribute(computeVertexNormals(vertices, faces), 3),
+    );
+    geometry.boundingSphere = computeBoundingSphere(vertices);
 
     // Bone data arrives as Float32Array views. Use directly.
     const bone_wxyzs = message.props.bone_wxyzs;

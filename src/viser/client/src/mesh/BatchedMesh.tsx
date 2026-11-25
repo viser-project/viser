@@ -1,5 +1,9 @@
 import React, { useMemo } from "react";
 import * as THREE from "three";
+import {
+  computeBoundingSphere,
+  computeVertexNormals,
+} from "../utils/meshGeometry";
 import { createStandardMaterial } from "./meshMaterialUtils";
 import { BatchedMeshesMessage } from "../WebsocketMessages";
 import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
@@ -70,8 +74,12 @@ export const BatchedMesh = React.forwardRef<
       new THREE.BufferAttribute(message.props.vertices, 3),
     );
     geometry.setIndex(new THREE.BufferAttribute(message.props.faces, 1));
-    geometry.computeVertexNormals();
-    geometry.computeBoundingSphere();
+    const { vertices, faces } = message.props;
+    geometry.setAttribute(
+      "normal",
+      new THREE.BufferAttribute(computeVertexNormals(vertices, faces), 3),
+    );
+    geometry.boundingSphere = computeBoundingSphere(vertices);
     return geometry;
     // Keyed on the VIEWS, not their .buffer (BasicMesh's pattern): in a
     // playback recording every array is a view on ONE shared ArrayBuffer,

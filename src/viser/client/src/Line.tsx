@@ -84,9 +84,11 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         };
       }, [lineGeom]);
 
+      // Distances are only used for dashes. They're slow to compute, and need an
+      // extra buffer.
       React.useLayoutEffect(() => {
-        lineRef.current?.computeLineDistances();
-      }, [lineGeom]);
+        if (dashed) lineRef.current?.computeLineDistances();
+      }, [lineGeom, dashed]);
 
       // Handle dashed defines via ref (can't be expressed as a prop).
       React.useLayoutEffect(() => {

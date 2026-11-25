@@ -48,6 +48,12 @@ def _pos(i: int) -> tuple[float, float, float]:
 
 
 @scene
+def empty(server):
+    """Lower bound for every metric."""
+    return [server.scene.add_frame("/bench/0", show_axes=False)]
+
+
+@scene
 def frames(server):
     return [
         server.scene.add_frame(

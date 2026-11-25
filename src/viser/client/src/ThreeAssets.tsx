@@ -121,6 +121,10 @@ export const PointCloud = React.forwardRef<
     // a same-size swap reuses it; a point-count change reallocates safely. See
     // syncPointCloudGeometry / syncBufferGeometry.
     syncPointCloudGeometry(geom, props.points, props.colors);
+    // Point clouds aren't culled, so this is only used for sorting opaque objects.
+    // It's not worth computing: it'd be more expensive than everything else
+    // about adding a point cloud.
+    geom.boundingSphere ??= new THREE.Sphere();
   }, [props.points, props.colors]);
 
   // Material needs heavy per-frame uniform updates, so kept imperative.
