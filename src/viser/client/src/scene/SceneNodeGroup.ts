@@ -1,21 +1,36 @@
 import * as THREE from "three";
 
-// Object3D.updateWorldMatrix(true, false) brings an object and its ancestors up
-// to date, and clears their `matrixWorldNeedsUpdate` flags. But it doesn't
-// update the ancestors' other children. Those are only updated by the next
-// traversal if the ancestors' flags are still set, or if matrixAutoUpdate is
-// enabled on every object. We rely on being able to disable the latter, so keep
-// the flags.
+// Object3D.updateWorldMatrix(true, false) is what getWorldPosition() and friends
+// use to bring an object and its ancestors up to date. It's written with the
+// assumption that matrixAutoUpdate is enabled everywhere. When it isn't:
+// - Objects don't notice that their ancestors have moved, unless their own
+//   `matrixWorldNeedsUpdate` is also set.
+// - `matrixWorldNeedsUpdate` is cleared on ancestors, without updating their
+//   other children. Those will never be updated.
 const originalUpdateWorldMatrix = THREE.Object3D.prototype.updateWorldMatrix;
+const previousMatrixWorld = /* @__PURE__ */ new THREE.Matrix4();
 THREE.Object3D.prototype.updateWorldMatrix = function (
   updateParents: boolean,
   updateChildren: boolean,
-  force?: boolean,
+  force: boolean = false,
 ) {
-  const stale = this.matrixWorldNeedsUpdate || (force ?? false);
+  if (updateParents) this.parent?.updateWorldMatrix(true, false);
+
+  const stale = this.matrixWorldNeedsUpdate || force;
+  previousMatrixWorld.copy(this.matrixWorld);
   // @ts-ignore The third argument is missing from type definitions.
-  originalUpdateWorldMatrix.call(this, updateParents, updateChildren, force);
-  if (stale && !updateChildren) this.matrixWorldNeedsUpdate = true;
+  originalUpdateWorldMatrix.call(this, false, false, true);
+  const changed = stale || !previousMatrixWorld.equals(this.matrixWorld);
+
+  if (updateChildren) {
+    for (const child of this.children) {
+      // @ts-ignore The third argument is missing from type definitions.
+      child.updateWorldMatrix(false, true, true);
+    }
+  } else if (changed) {
+    // For the next traversal to update children.
+    this.matrixWorldNeedsUpdate = true;
+  }
 };
 
 /** Group that contains everything in a scene node's subtree. Its own transform

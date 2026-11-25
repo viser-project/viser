@@ -1,0 +1,318 @@
+"""Large groups of similar scene nodes are automatically drawn as batches. This
+shouldn't be observable."""
+
+from __future__ import annotations
+
+import threading
+from typing import Any, Callable
+
+import numpy as np
+import pytest
+from playwright.sync_api import Page
+
+import viser
+
+from .utils import wait_for_scene_node
+
+Q = (0.9238795, 0.3826834, 0.0, 0.0)
+
+# Groups need to have this many members to be batched.
+ACTIVATE_AT = 64
+NUM_NODES = 80
+
+# Groups for batches are children of a group with this name.
+JS_NUM_BATCHES = """
+() => window.__viserMutable.scene.getObjectByName("autoInstancer").children.length
+"""
+
+
+def _position(i: int) -> tuple[float, float, float]:
+    return ((i % 10) * 0.6 - 2.7, (i // 10) * 0.6 - 2.1, 0.0)
+
+
+# Adds a node. The final argument is used to create groups that can't be batched
+# together, without any changes to appearance.
+AddFn = Callable[[viser.ViserServer, str, int, int], Any]
+
+
+def _add_box(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
+    return server.scene.add_box(
+        name,
+        dimensions=(0.3, 0.2, 0.1),
+        color=(i * 3, 255 - i * 3, 100),
+        material="unlit",
+        cast_shadow=False,
+        receive_shadow=False,
+        flat_shading=group == 1,
+        wxyz=Q,
+        position=_position(i),
+    )
+
+
+def _add_cylinder(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
+    return server.scene.add_cylinder(
+        name,
+        radius=0.1,
+        height=0.4,
+        scale=(1.0, 2.0, 0.5),
+        color=(i * 3, 255 - i * 3, 100),
+        material="unlit",
+        cast_shadow=False,
+        receive_shadow=False,
+        flat_shading=group == 1,
+        wxyz=Q,
+        position=_position(i),
+    )
+
+
+def _add_mesh(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
+    return server.scene.add_mesh_simple(
+        name,
+        vertices=np.array(
+            [[0, 0, 0], [0.3, 0, 0], [0, 0.2 + 0.003 * i, 0], [0, 0, 0.2]]
+        ),
+        faces=np.array([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]),
+        color=(i * 3, 255 - i * 3, 100),
+        material="unlit",
+        side="double",
+        cast_shadow=False,
+        receive_shadow=False,
+        flat_shading=group == 1,
+        wxyz=Q,
+        position=_position(i),
+    )
+
+
+def _add_frame(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
+    return server.scene.add_frame(
+        name,
+        axes_length=0.3,
+        axes_radius=0.02 + group * 1e-6,
+        wxyz=Q,
+        position=_position(i),
+    )
+
+
+def _add_frustum(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
+    return server.scene.add_camera_frustum(
+        name,
+        fov=1.0,
+        aspect=1.5,
+        scale=0.2,
+        thickness=0.02 + group * 1e-7,
+        color=(i * 3, 255 - i * 3, 100),
+        wxyz=Q,
+        position=_position(i),
+    )
+
+
+def _render(client: viser.ClientHandle) -> np.ndarray:
+    # Explicit camera: looking down along -Z, with X to the right, and tilted.
+    tilt = 0.5
+    return client.get_render(
+        height=200,
+        width=300,
+        wxyz=(np.cos((np.pi + tilt) / 2), np.sin((np.pi + tilt) / 2), 0.0, 0.0),
+        position=(0.0, -3.5, 6.0),
+        fov=1.0,
+        transport_format="png",
+    ).astype(np.int32)
+
+
+@pytest.mark.parametrize(
+    "add", [_add_box, _add_cylinder, _add_mesh, _add_frame, _add_frustum]
+)
+def test_batched_matches_individual(
+    viser_server: viser.ViserServer, viser_page: Page, add: AddFn
+) -> None:
+    client = next(iter(viser_server.get_clients().values()))
+    # Adaptive resolution would affect renders.
+    viser_page.evaluate("window.__viserTestpoints.devSettings.set({ fixedDpr: 1 })")
+
+    def scenario(batched: bool) -> list[np.ndarray]:
+        prefix = f"/batched_{batched}"
+        root = viser_server.scene.add_frame(prefix, show_axes=False)
+        handles = [
+            add(viser_server, f"{prefix}/{i}", i, 0 if batched else i % 2)
+            for i in range(NUM_NODES)
+        ]
+        wait_for_scene_node(viser_page, f"{prefix}/{NUM_NODES - 1}")
+        out = [_render(client)]
+        assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == batched
+
+        for i, handle in enumerate(handles):
+            if i % 3 == 0:
+                handle.visible = False
+            if i % 3 == 1:
+                handle.position = (*_position(i)[:2], 0.5)
+            if i % 5 == 0 and hasattr(handle, "color"):
+                handle.color = (0, 0, 255)
+            if i % 5 == 1:
+                handle.scale = 1.5
+        out.append(_render(client))
+
+        root.wxyz = Q
+        root.position = (0.5, 0.0, 0.0)
+        for i, handle in enumerate(handles):
+            if i % 3 == 0:
+                handle.visible = True
+            if i % 7 == 0:
+                handle.remove()
+        out.append(_render(client))
+
+        root.visible = False
+        out.append(_render(client))
+        root.visible = True
+        # Added below a parent with a non-identity pose.
+        extra = [
+            add(viser_server, f"{prefix}/extra_{i}", i, 0 if batched else 1)
+            for i in range(0, NUM_NODES, 7)
+        ]
+        out.append(_render(client))
+
+        # Too few for batching.
+        for i, handle in enumerate(handles):
+            if i % 7 != 0 and i > 20:
+                handle.remove()
+        out.append(_render(client))
+        assert viser_page.evaluate(JS_NUM_BATCHES) == 0
+        del extra
+        root.remove()
+        out.append(_render(client))
+        return out
+
+    batched = scenario(True)
+    individual = scenario(False)
+    assert (batched[0][..., 3] > 0).mean() > 0.01
+    assert (batched[0] != batched[1]).any()
+    for step, (a, b) in enumerate(zip(batched, individual)):
+        # Allow for differences in how ties in depth are resolved.
+        assert (np.abs(a - b).max(axis=-1) > 16).mean() < 0.002, step
+
+
+def test_batched_nodes_are_clickable(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    client = next(iter(viser_server.get_clients().values()))
+    client.camera.position = (0.0, 0.01, 10.0)
+    client.camera.look_at = (0.0, 0.0, 0.0)
+    clicked: list[str] = []
+    event = threading.Event()
+
+    def on_click(e: viser.SceneNodePointerEvent) -> None:
+        clicked.append(e.target.name)
+        event.set()
+
+    for i in range(NUM_NODES):
+        _add_box(viser_server, f"/box_{i}", i, 0)
+    big = viser_server.scene.add_box(
+        "/center",
+        dimensions=(2.0, 2.0, 0.5),
+        position=(0.0, 0.0, 2.0),
+        material="unlit",
+        cast_shadow=False,
+        receive_shadow=False,
+        flat_shading=False,
+    )
+    big.on_click(on_click)
+    wait_for_scene_node(viser_page, "/center")
+    _render(client)
+    # Let the camera settle.
+    viser_page.wait_for_timeout(500)
+    assert viser_page.evaluate(JS_NUM_BATCHES) == 1
+
+    canvas = viser_page.locator("canvas").first
+    bbox = canvas.bounding_box()
+    assert bbox is not None
+    center = (bbox["x"] + bbox["width"] / 2, bbox["y"] + bbox["height"] / 2)
+    viser_page.mouse.move(*center)
+    viser_page.wait_for_timeout(300)
+    viser_page.mouse.click(*center)
+    assert event.wait(5.0)
+    assert clicked == ["/center"]
+
+    # Hidden nodes shouldn't receive events.
+    event.clear()
+    big.visible = False
+    _render(client)
+    viser_page.mouse.click(*center)
+    assert not event.wait(0.5)
+
+
+def test_children_of_batched_nodes_bubble_clicks(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """Clicks on non-interactive descendants are handled by interactive
+    ancestors, so batched descendants still need to be raycast against."""
+    client = next(iter(viser_server.get_clients().values()))
+    client.camera.position = (0.0, 0.01, 10.0)
+    client.camera.look_at = (0.0, 0.0, 0.0)
+    event = threading.Event()
+
+    parent = viser_server.scene.add_icosphere("/parent", radius=0.01)
+    parent.position = (30.0, 0.0, 0.0)  # Offscreen.
+    parent.on_click(lambda _: event.set())
+    for i in range(NUM_NODES):
+        x, y, z = _position(i)
+        child = _add_box(viser_server, f"/parent/{i}", i, 0)
+        child.position = (x - 30.0, y, z)
+    viser_server.scene.add_box(
+        "/parent/center",
+        dimensions=(2.0, 2.0, 0.5),
+        position=(-30.0, 0.0, 2.0),
+        material="unlit",
+        cast_shadow=False,
+        receive_shadow=False,
+        flat_shading=False,
+    )
+    wait_for_scene_node(viser_page, "/parent/center")
+    _render(client)
+    # Let the camera settle.
+    viser_page.wait_for_timeout(500)
+    assert viser_page.evaluate(JS_NUM_BATCHES) == 1
+
+    bbox = viser_page.locator("canvas").first.bounding_box()
+    assert bbox is not None
+    center = (bbox["x"] + bbox["width"] / 2, bbox["y"] + bbox["height"] / 2)
+    viser_page.mouse.move(*center)
+    viser_page.wait_for_timeout(300)
+    viser_page.mouse.click(*center)
+    assert event.wait(5.0)
+
+
+def test_removed_nodes_are_not_retained(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """Buffers of removed nodes used to be retained by the initial state of
+    R3F's store."""
+    client = next(iter(viser_server.get_clients().values()))
+    num_points = 500_000
+    viser_server.scene.add_point_cloud(
+        "/points",
+        np.zeros((num_points, 3), dtype=np.float32),
+        np.zeros((num_points, 3), dtype=np.uint8),
+        precision="float32",
+    )
+    wait_for_scene_node(viser_page, "/points")
+    _render(client)
+    cdp = viser_page.context.new_cdp_session(viser_page)
+
+    def heap_mb() -> float:
+        for _ in range(3):
+            cdp.send("HeapProfiler.collectGarbage")
+            viser_page.wait_for_timeout(100)
+        usage = cdp.send("Runtime.getHeapUsage")
+        return (usage["usedSize"] + usage["backingStorageSize"]) / 1e6
+
+    before = heap_mb()
+    viser_server.scene.remove_by_name("/points")
+    viser_page.wait_for_function(
+        "() => !('/points' in window.__viserMutable.nodeRefFromName)"
+    )
+    # Dispose callbacks, and React's alternate fibers.
+    for i in range(3):
+        viser_server.scene.add_frame(f"/frame_{i}")
+        _render(client)
+    viser_page.wait_for_timeout(500)
+    freed = before - heap_mb()
+    assert freed > 0.8 * num_points * 15 / 1e6

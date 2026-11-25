@@ -1,10 +1,28 @@
 import React from "react";
 import * as THREE from "three";
 import { ViserStandardMeshMaterial, ShadowMesh } from "./MeshUtils";
+import { createStandardMaterial, rgbToInt } from "./meshMaterialUtils";
+import { HoverableContext } from "../HoverContext";
 import { MeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
+import {
+  InstanceSource,
+  raycastOnlyLayers,
+  raycastOnlyMaterials,
+} from "../scene/AutoInstancer";
+import { GeometryAppearance, GeometryBatch } from "../scene/GeometryBatch";
+import { InstancingSpec, useInstanceSource } from "../scene/useInstanceSource";
 import { normalizeScale } from "../utils/normalizeScale";
 import { syncBufferGeometry } from "../utils/bufferGeometrySync";
+import {
+  computeBoundingSphere,
+  computeVertexNormals,
+} from "../utils/meshGeometry";
+
+/** Only small meshes are batched. Batches hold a copy of their contents in JS
+ * memory, and draw calls aren't a bottleneck for large ones. */
+const MAX_BATCHED_VERTICES = 4096;
+const MAX_BATCHED_FACES = 8192;
 
 /**
  * Component for rendering basic THREE.js meshes
@@ -16,32 +34,122 @@ export const BasicMesh = React.forwardRef<
   { children, ...message },
   ref: React.ForwardedRef<THREE.Group>,
 ) {
+  const { props } = message;
+  const { vertices, faces } = props;
+  const [source] = React.useState(() => new InstanceSource());
+  const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
+  const color = rgbToInt(props.color);
+  const [sx, sy, sz] = normalizeScale(props.scale);
+
+  // Streaming meshes are drawn individually.
+  const [initialGeometry] = React.useState({ vertices, faces });
+  const [isStatic, setIsStatic] = React.useState(true);
+  if (
+    isStatic &&
+    (initialGeometry.vertices !== vertices || initialGeometry.faces !== faces)
+  )
+    setIsStatic(false);
+
+  // Not batched:
+  // - Transparent meshes, which need to be depth-sorted.
+  // - Meshes with a separate shadow mesh.
+  // - Mirrored meshes: front faces are determined for all instances at once.
+  const eligible =
+    isStatic &&
+    vertices.length <= 3 * MAX_BATCHED_VERTICES &&
+    faces.length <= 3 * MAX_BATCHED_FACES &&
+    vertices.length > 0 &&
+    faces.length > 0 &&
+    !props.wireframe &&
+    (props.opacity === null || props.opacity >= 1.0) &&
+    typeof props.receive_shadow !== "number" &&
+    sx > 0 &&
+    sy > 0 &&
+    sz > 0;
+  const appearance = React.useMemo<GeometryAppearance>(
+    () => ({ vertices, faces, color, scale: [sx, sy, sz] }),
+    [vertices, faces, color, sx, sy, sz],
+  );
+  const spec: InstancingSpec | null = eligible
+    ? {
+        key: [
+          "geometry",
+          props.material,
+          props.flat_shading,
+          props.side,
+          props.cast_shadow,
+          props.receive_shadow,
+        ].join("|"),
+        makeBatch: () =>
+          new GeometryBatch(
+            createStandardMaterial({ ...props, color: [255, 255, 255] }),
+            props.cast_shadow,
+            props.receive_shadow === true,
+          ),
+        appearance,
+      }
+    : null;
+  const drawIndividually = useInstanceSource(source, spec);
+
+  return (
+    <primitive object={source} ref={ref}>
+      {drawIndividually || raycastable ? (
+        <IndividualMesh
+          key={drawIndividually ? "drawn" : "raycast"}
+          message={message}
+          raycastOnly={!drawIndividually}
+        />
+      ) : null}
+      {children}
+    </primitive>
+  );
+});
+
+function IndividualMesh({
+  message,
+  raycastOnly,
+}: {
+  message: MeshMessage;
+  raycastOnly: boolean;
+}) {
+  const { props } = message;
   // Persistent geometry, synced in place: a streaming/deforming mesh reuses the
   // existing GL buffers via bufferSubData instead of allocating a new
   // BufferGeometry on every vertex/face update. Kept imperative (run during
   // render via useMemo) because the geometry is read synchronously below for
   // OutlinesIfHovered heuristics and the shadow mesh.
-  const geometryRef = React.useRef<THREE.BufferGeometry | null>(null);
-  if (geometryRef.current === null) {
-    geometryRef.current = new THREE.BufferGeometry();
-  }
-  const geometry = geometryRef.current;
+  const [geometry] = React.useState(() => new THREE.BufferGeometry());
   React.useMemo(() => {
     // Vertices and faces arrive as Float32Array / Uint32Array views.
     const reallocated = syncBufferGeometry(
       geometry,
-      { position: { array: message.props.vertices, itemSize: 3 } },
-      message.props.faces,
+      { position: { array: props.vertices, itemSize: 3 } },
+      props.faces,
     );
-    // On realloc (e.g. vertex-count change), drop the stale 'normal' attribute:
-    // computeVertexNormals reuses an existing attribute without a size check,
-    // which would leave normals mismatched with the new position count.
-    if (reallocated) {
-      geometry.deleteAttribute("normal");
+    geometry.boundingSphere = computeBoundingSphere(
+      props.vertices,
+      geometry.boundingSphere ?? undefined,
+    );
+    if (raycastOnly) return;
+    const oldNormals = geometry.getAttribute("normal") as
+      THREE.BufferAttribute | undefined;
+    if (reallocated || oldNormals === undefined) {
+      geometry.setAttribute(
+        "normal",
+        new THREE.BufferAttribute(
+          computeVertexNormals(props.vertices, props.faces),
+          3,
+        ),
+      );
+    } else {
+      computeVertexNormals(
+        props.vertices,
+        props.faces,
+        oldNormals.array as Float32Array,
+      );
+      oldNormals.needsUpdate = true;
     }
-    geometry.computeVertexNormals();
-    geometry.computeBoundingSphere();
-  }, [geometry, message.props.vertices, message.props.faces]);
+  }, [geometry, props.vertices, props.faces, raycastOnly]);
 
   // Clean up geometry when it changes.
   React.useEffect(() => {
@@ -52,32 +160,41 @@ export const BasicMesh = React.forwardRef<
 
   // Check if we should render a shadow mesh.
   const shadowOpacity =
-    typeof message.props.receive_shadow === "number"
-      ? message.props.receive_shadow
-      : 0.0;
+    typeof props.receive_shadow === "number" ? props.receive_shadow : 0.0;
+  const scale = normalizeScale(props.scale);
+  const outlines = (
+    <OutlinesIfHovered
+      enableCreaseAngle={
+        geometry.attributes.position.count < 1024 &&
+        geometry.boundingSphere!.radius > 0.1
+      }
+    />
+  );
 
-  return (
-    <group ref={ref}>
+  if (raycastOnly) {
+    return (
       <mesh
         geometry={geometry}
-        scale={normalizeScale(message.props.scale)}
-        castShadow={message.props.cast_shadow}
-        receiveShadow={message.props.receive_shadow === true}
+        scale={scale}
+        layers={raycastOnlyLayers}
+        material={raycastOnlyMaterials[props.side]}
       >
-        <ViserStandardMeshMaterial {...message.props} />
-        <OutlinesIfHovered
-          enableCreaseAngle={
-            geometry.attributes.position.count < 1024 &&
-            geometry.boundingSphere!.radius > 0.1
-          }
-        />
+        {outlines}
       </mesh>
-      <ShadowMesh
-        opacity={shadowOpacity}
+    );
+  }
+  return (
+    <>
+      <mesh
         geometry={geometry}
-        scale={normalizeScale(message.props.scale)}
-      />
-      {children}
-    </group>
+        scale={scale}
+        castShadow={props.cast_shadow}
+        receiveShadow={props.receive_shadow === true}
+      >
+        <ViserStandardMeshMaterial {...props} />
+        {outlines}
+      </mesh>
+      <ShadowMesh opacity={shadowOpacity} geometry={geometry} scale={scale} />
+    </>
   );
-});
+}

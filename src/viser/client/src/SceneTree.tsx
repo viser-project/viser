@@ -385,6 +385,7 @@ function createObjectFactory(
     }
     case "MeshMessage": {
       return {
+        tracksDrawables: true,
         staticTransforms: true,
         makeObject: (ref, children) => (
           <BasicMesh ref={ref} {...message}>

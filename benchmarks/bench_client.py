@@ -229,6 +229,18 @@ JS_STUB_DRAWS = """
                       "drawArraysInstanced", "drawRangeElements"]) {
     WebGL2RenderingContext.prototype[name] = () => { window.__benchDraws++; };
   }
+  const getExtension = WebGL2RenderingContext.prototype.getExtension;
+  WebGL2RenderingContext.prototype.getExtension = function (name) {
+    const ext = getExtension.call(this, name);
+    if (name === "WEBGL_multi_draw" && ext !== null) {
+      const proto = Object.getPrototypeOf(ext);
+      for (const key of Object.getOwnPropertyNames(proto)) {
+        if (key.startsWith("multiDraw"))
+          proto[key] = () => { window.__benchDraws++; };
+      }
+    }
+    return ext;
+  };
 })();
 """
 

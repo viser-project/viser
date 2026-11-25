@@ -1,7 +1,8 @@
 import React from "react";
 import { ViewerContext } from "../ViewerContext";
 import { BatchEntry, InstanceBatch, InstanceSource } from "./AutoInstancer";
-import { useDrawable } from "./SceneNodeContext";
+import { HoverableContext } from "../HoverContext";
+import { useDrawable, useMarkTransformsDirty } from "./SceneNodeContext";
 
 /** How a scene node can be drawn as part of a batch. */
 export type InstancingSpec = {
@@ -63,5 +64,8 @@ export function useInstanceSource(
   );
   const drawIndividually = key === null || (joined?.key === key && !active);
   useDrawable(drawIndividually);
+  // Components may mount or unmount meshes when either of these changes.
+  const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
+  useMarkTransformsDirty([drawIndividually, raycastable]);
   return drawIndividually;
 }

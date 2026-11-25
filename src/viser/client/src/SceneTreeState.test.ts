@@ -512,3 +512,114 @@ describe("randomized display-rule oracle", () => {
     }
   });
 });
+
+describe("batching", () => {
+  it("notifies once per node, with final values", () => {
+    const { store, actions } = setup();
+    const onRoot = vi.fn();
+    const onA = vi.fn();
+    store.subscribe("", onRoot);
+    store.subscribe("/a", onA);
+    actions.batch(() => {
+      for (const name of ["/a", "/b", "/c"])
+        actions.addSceneNode(makeFrameMessage(name));
+      actions.updateNodeAttributes("/a", { visibility: false });
+      actions.removeSceneNode("/b");
+      // Reads of individual nodes see writes immediately.
+      expect(store.get("/a")!.visibility).toBe(false);
+      expect(store.get("/b")).toBeUndefined();
+      expect(onRoot).not.toHaveBeenCalled();
+      expect(onA).not.toHaveBeenCalled();
+    });
+    expect(onRoot).toHaveBeenCalledTimes(1);
+    expect(onA).toHaveBeenCalledTimes(1);
+    expect(store.get("")!.children).toEqual(["/a", "/c"]);
+  });
+
+  it("flushes when an exception is thrown", () => {
+    const { store, actions } = setup();
+    const listener = vi.fn();
+    store.subscribe("", listener);
+    expect(() =>
+      actions.batch(() => {
+        actions.addSceneNode(makeFrameMessage("/a"));
+        throw new Error("test");
+      }),
+    ).toThrow("test");
+    expect(store.get("")!.children).toEqual(["/a"]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    actions.addSceneNode(makeFrameMessage("/b"));
+    expect(store.get("")!.children).toEqual(["/a", "/b"]);
+  });
+
+  it("matches unbatched operations", () => {
+    let state = 1;
+    const random = (n: number) => (state = (state * 16807) % 2147483647) % n;
+    for (let trial = 0; trial < 50; trial++) {
+      const batched = setup();
+      const unbatched = setup();
+      const operations: ((s: ReturnType<typeof setup>) => void)[] = [];
+      const randomName = () => {
+        const name = `/${random(4)}`;
+        return random(2) === 0 ? name : `${name}/${random(4)}`;
+      };
+      for (let i = 0; i < 40; i++) {
+        const name = randomName();
+        const parent = name.slice(0, name.lastIndexOf("/"));
+        switch (random(5)) {
+          case 0:
+          case 1:
+            operations.push(({ store, actions }) => {
+              if (store.get(parent) !== undefined)
+                actions.addSceneNode(makeFrameMessage(name));
+            });
+            break;
+          case 2:
+            operations.push(({ actions }) =>
+              actions.removeSceneNodeVariantSubtree(name, ""),
+            );
+            break;
+          case 3: {
+            const visibility = random(2) === 0;
+            operations.push(({ store, actions }) => {
+              if (store.get(name) !== undefined)
+                actions.updateNodeAttributes(name, { visibility });
+            });
+            break;
+          }
+          case 4:
+            operations.push(({ store, actions }) => {
+              if (store.get(name) !== undefined) actions.removeSceneNode(name);
+            });
+            break;
+        }
+      }
+      operations.forEach((op) => op(unbatched));
+      batched.actions.batch(() => operations.forEach((op) => op(batched)));
+      expect(batched.store.getAll()).toEqual(unbatched.store.getAll());
+
+      // Effective visibility should be consistent.
+      const all = batched.store.getAll();
+      for (const [name, node] of Object.entries(all)) {
+        if (name === "") continue;
+        const parent = all[name.slice(0, name.lastIndexOf("/"))]!;
+        expect(parent.children).toContain(name);
+        expect(node!.effectiveVisibility).toBe(
+          (parent.effectiveVisibility ?? true) && (node!.visibility ?? true),
+        );
+      }
+    }
+  });
+});
+
+describe("effective visibility of new nodes", () => {
+  it("is inherited from hidden parents", () => {
+    const { store, actions } = setup();
+    actions.addSceneNode(makeFrameMessage("/a"));
+    actions.updateNodeAttributes("/a", { visibility: false });
+    actions.addSceneNode(makeFrameMessage("/a/b"));
+    expect(store.get("/a/b")!.effectiveVisibility).toBe(false);
+    actions.updateNodeAttributes("/a", { visibility: true });
+    expect(store.get("/a/b")!.effectiveVisibility).toBe(true);
+  });
+});

@@ -5,6 +5,12 @@ export const RAYCAST_ONLY_LAYER = 30;
 export const raycastOnlyLayers = new THREE.Layers();
 raycastOnlyLayers.set(RAYCAST_ONLY_LAYER);
 
+export const raycastOnlyMaterials = {
+  front: new THREE.MeshBasicMaterial({ side: THREE.FrontSide }),
+  back: new THREE.MeshBasicMaterial({ side: THREE.BackSide }),
+  double: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+};
+
 /** Groups of primitives are instanced when they have this many members. Below
  * this, the benefits don't outweigh the costs of an extra shader program. */
 const ACTIVATE_AT = 64;
@@ -291,6 +297,10 @@ export class AutoInstancer {
    * root of the scene. */
   readonly group = new THREE.Group();
   viewportSize: [number, number] = [1, 1];
+  constructor() {
+    this.group.name = "autoInstancer";
+  }
+
   private readonly entries = new Map<string, BatchEntry>();
 
   /** Returns the entry for a key, which should describe everything that members

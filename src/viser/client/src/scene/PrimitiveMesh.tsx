@@ -8,14 +8,13 @@ import {
 } from "../mesh/meshMaterialUtils";
 import { HoverableContext } from "../HoverContext";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
-import { InstanceSource, MeshBatch, raycastOnlyLayers } from "./AutoInstancer";
+import {
+  InstanceSource,
+  MeshBatch,
+  raycastOnlyLayers,
+  raycastOnlyMaterials,
+} from "./AutoInstancer";
 import { InstancingSpec, useInstanceSource } from "./useInstanceSource";
-
-const raycastOnlyMaterials = {
-  front: new THREE.MeshBasicMaterial({ side: THREE.FrontSide }),
-  back: new THREE.MeshBasicMaterial({ side: THREE.BackSide }),
-  double: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
-};
 
 /** Scene node that draws a geometry which is shared between many nodes. Large
  * numbers of nodes with similar parameters are automatically instanced. */
