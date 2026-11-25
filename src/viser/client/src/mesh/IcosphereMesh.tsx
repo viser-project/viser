@@ -1,8 +1,7 @@
 import React from "react";
 import * as THREE from "three";
-import { ViserStandardMeshMaterial, ShadowMesh } from "./MeshUtils";
 import { IcosphereMessage } from "../WebsocketMessages";
-import { OutlinesIfHovered } from "../OutlinesIfHovered";
+import { PrimitiveMesh } from "../scene/PrimitiveMesh";
 import { normalizeScale } from "../utils/normalizeScale";
 
 // Cache icosphere geometries based on # of subdivisions. In theory this cache
@@ -31,33 +30,19 @@ export const IcosphereMesh = React.forwardRef<
     return icosphereGeometryCache.get(message.props.subdivisions)!;
   }, [message.props.subdivisions]);
 
-  // Check if we should render a shadow mesh.
-  const shadowOpacity =
-    typeof message.props.receive_shadow === "number"
-      ? message.props.receive_shadow
-      : 0.0;
-
-  // Calculate scaling values.
-  const normalizedScale = normalizeScale(message.props.scale);
-  const scale: [number, number, number] = [
-    normalizedScale[0] * message.props.radius,
-    normalizedScale[1] * message.props.radius,
-    normalizedScale[2] * message.props.radius,
-  ];
-
+  const s = normalizeScale(message.props.scale);
+  const r = message.props.radius;
   return (
-    <group ref={ref}>
-      <mesh
-        geometry={geometry}
-        scale={scale}
-        castShadow={message.props.cast_shadow}
-        receiveShadow={message.props.receive_shadow === true}
-      >
-        <ViserStandardMeshMaterial {...message.props} />
-        <OutlinesIfHovered />
-      </mesh>
-      <ShadowMesh opacity={shadowOpacity} geometry={geometry} scale={scale} />
+    <PrimitiveMesh
+      ref={ref}
+      geometry={geometry}
+      scale={[s[0] * r, s[1] * r, s[2] * r]}
+      material={message.props}
+      castShadow={message.props.cast_shadow}
+      receiveShadow={message.props.receive_shadow}
+      outlineCreaseAngle={false}
+    >
       {children}
-    </group>
+    </PrimitiveMesh>
   );
 });

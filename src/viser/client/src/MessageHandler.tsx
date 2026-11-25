@@ -21,7 +21,12 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { Button, Progress } from "@mantine/core";
 import { IconCheck, IconDownload } from "@tabler/icons-react";
 import { computeT_threeworld_world } from "./WorldTransformUtils";
-import { ownerOf, rootNodeTemplate, SceneNode } from "./SceneTreeState";
+import {
+  ownerOf,
+  parentNameOf,
+  rootNodeTemplate,
+  SceneNode,
+} from "./SceneTreeState";
 import { applyGuiConfigUpdate } from "./ControlPanel/GuiState";
 import { GaussianSplatsContext } from "./Splatting/GaussianSplatsHelpers";
 
@@ -120,7 +125,7 @@ function useMessageHandler() {
     // Make sure parents exists. (Rarely needed on the live wire -- the
     // server sends same-scope virtual anchors for missing ancestors before
     // the child -- but kept for old recordings.)
-    const parentName = message.name.split("/").slice(0, -1).join("/");
+    const parentName = parentNameOf(message.name);
     if (viewer.useSceneTree.get(parentName)?.message === undefined) {
       addSceneNodeMakeParents({
         ...rootNodeTemplate.message,
@@ -706,6 +711,7 @@ function useMessageHandler() {
               poseUpdateState: "needsUpdate",
             };
           }
+          viewer.sceneNodeUpdates.markDirty("");
           return {
             kind: "sceneNodeAttrUpdate",
             targetNode: "",
@@ -735,6 +741,7 @@ function useMessageHandler() {
             poseUpdateState: "needsUpdate",
           };
         }
+        viewer.sceneNodeUpdates.markDirty(message.name);
         return;
       }
       case "SetPositionMessage": {
@@ -760,6 +767,7 @@ function useMessageHandler() {
             poseUpdateState: "needsUpdate",
           };
         }
+        viewer.sceneNodeUpdates.markDirty(message.name);
         return;
       }
       case "SetSceneNodeVisibilityMessage": {
@@ -1131,7 +1139,7 @@ export function FrameSynchronizedMessageHandler() {
       const guiUpdates: { uuid: string; updates: { [key: string]: any } }[] =
         [];
 
-      for (const msg of processBatch) {
+      const handleBatchMessage = (msg: Message) => {
         // An add or variant remove flips the name's variant topology at
         // receive time; parked updates for it must land first to keep
         // wire order (see the drainFor contract).
@@ -1139,7 +1147,7 @@ export function FrameSynchronizedMessageHandler() {
           parked.drainFor(msg.name);
         }
         const result = handleMessage(msg);
-        if (result === undefined) continue;
+        if (result === undefined) return;
         switch (result.kind) {
           case "sceneNodeAttrUpdate": {
             parked.parkAttr(
@@ -1161,13 +1169,22 @@ export function FrameSynchronizedMessageHandler() {
             guiUpdates.push(result);
             break;
         }
-      }
+      };
+      viewer.sceneTreeActions.batch(() => {
+        processBatch.forEach(handleBatchMessage);
 
-      // Apply all accumulated scene tree updates in a single set().
-      const { mergedUpdates, visibilityNames } = parked.flush();
-      if (Object.keys(mergedUpdates).length > 0) {
+        // Apply all accumulated scene tree updates in a single set().
+        const { mergedUpdates, visibilityNames } = parked.flush();
         viewer.useSceneTree.set(mergedUpdates);
-      }
+
+        // Recompute effective visibility for nodes whose visibility change
+        // actually merged into an effective variant (updates consumed into
+        // a shadow slot don't affect what renders). This needs to be done
+        // after updates are applied.
+        for (const name of visibilityNames) {
+          viewer.sceneTreeActions.computeEffectiveVisibility(name);
+        }
+      });
 
       // Apply all accumulated GUI config updates in a single set().
       if (guiUpdates.length > 0) {
@@ -1217,14 +1234,6 @@ export function FrameSynchronizedMessageHandler() {
             },
           };
         });
-      }
-
-      // Recompute effective visibility for nodes whose visibility change
-      // actually merged into an effective variant (updates consumed into
-      // a shadow slot don't affect what renders). This needs to be done
-      // after updates are applied.
-      for (const name of visibilityNames) {
-        viewer.sceneTreeActions.computeEffectiveVisibility(name);
       }
 
       // A render request that arrived with no messages in front of it has
@@ -1316,35 +1325,10 @@ export function FrameSynchronizedMessageHandler() {
       // an exception (or a null toBlob) would wedge the render state machine
       // and block all further message handling, which is gated on "ready".
       try {
-        // Defensively apply node poses still marked "needsUpdate": a pose
-        // marked by a React effect that ran after this frame's SceneTree
-        // applier pass (e.g. a node that just [re]mounted) would otherwise
-        // be captured stale.
-        for (const [name, pose] of Object.entries(viewerMutable.nodePoseData)) {
-          if (pose === undefined || pose.poseUpdateState !== "needsUpdate")
-            continue;
-          const obj = viewerMutable.nodeRefFromName[name];
-          // Absent while detached (e.g. unmountWhenInvisible nodes that are
-          // currently hidden); a TypeError here would fail the whole capture
-          // with the pose still pending.
-          if (obj === undefined) continue;
-          pose.poseUpdateState = "updated";
-          if (viewer.useSceneTree.get(name)?.message.type !== "LabelMessage") {
-            obj.quaternion.set(
-              pose.wxyz[1],
-              pose.wxyz[2],
-              pose.wxyz[3],
-              pose.wxyz[0],
-            );
-          }
-          obj.position.set(
-            pose.position[0],
-            pose.position[1],
-            pose.position[2],
-          );
-          if (!obj.matrixAutoUpdate) obj.updateMatrix();
-          if (!obj.matrixWorldAutoUpdate) obj.updateMatrixWorld();
-        }
+        // Defensively apply pending node updates: a pose marked by a React
+        // effect that ran after this frame's SceneTree applier pass (e.g. a
+        // node that just [re]mounted) would otherwise be captured stale.
+        viewer.sceneNodeUpdates.flush();
 
         const cameraPosition = viewerMutable.getRenderRequest!.position;
         const cameraWxyz = viewerMutable.getRenderRequest!.wxyz;

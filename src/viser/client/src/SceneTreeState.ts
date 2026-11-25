@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { SceneNodeMessage } from "./WebsocketMessages";
 import { DragBinding } from "./dragUtils";
 import { createKeyedStore, KeyedStore } from "./store";
+import { SceneNodeUpdates } from "./sceneNodeUpdates";
 import { NodePoseDataMap } from "./ViewerContext";
 
 export type SceneNode = {
@@ -63,6 +64,11 @@ function isVirtual(message: SceneNodeMessage): boolean {
  * (rendered, interactive); the other is shadowed. */
 function variantRank(message: SceneNodeMessage): number {
   return (isVirtual(message) ? 0 : 2) + (ownerOf(message) !== "" ? 1 : 0);
+}
+
+/** Name of a node's parent. The root's is itself. */
+export function parentNameOf(name: string): string {
+  return name.slice(0, Math.max(0, name.lastIndexOf("/")));
 }
 
 function makeRootNodeTemplate(): SceneNode {
@@ -137,7 +143,62 @@ export function createSceneTreeActions(
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
   nodePoseData: NodePoseDataMap,
   requestRender: () => void,
+  /** Called for nodes whose pose changes. Changes to the store itself can be
+   * observed via `store.subscribeAll()`. */
+  markDirty: (name: string) => void = () => {},
 ) {
+  // Children lists that were modified in the current batch, and haven't been
+  // written back to the store yet. Sets have the same (insertion) order as the
+  // lists that they replace. Without these, adding or removing N siblings one by
+  // one would copy the list N times.
+  const pendingChildren = new Map<string, Set<string>>();
+
+  function getChildren(name: string): Iterable<string> {
+    return pendingChildren.get(name) ?? store.get(name)?.children ?? [];
+  }
+
+  function getPendingChildren(name: string): Set<string> | undefined {
+    let pending = pendingChildren.get(name);
+    if (pending === undefined) {
+      const node = store.get(name);
+      if (node === undefined) return undefined;
+      pending = new Set(node.children);
+      pendingChildren.set(name, pending);
+    }
+    return pending;
+  }
+
+  let batchDepth = 0;
+
+  /** Group modifications to the scene tree. Updates to children lists and
+   * subscriber notifications are deferred to the end of the outermost batch;
+   * use `getChildren()` to read children lists. */
+  function batch<T>(fn: () => T): T {
+    return store.batch(() => {
+      batchDepth += 1;
+      try {
+        return fn();
+      } finally {
+        batchDepth -= 1;
+        if (batchDepth === 0) {
+          pendingChildren.forEach((children, name) => {
+            const node = store.get(name);
+            if (node === undefined) return;
+            const updated = [...children];
+            // Don't notify for lists that ended up where they started.
+            if (
+              updated.length === node.children.length &&
+              updated.every((child, i) => child === node.children[i])
+            )
+              return;
+            store.set({ [name]: { ...node, children: updated } });
+          });
+          pendingChildren.clear();
+        }
+      }
+    });
+  }
+
   /** Pre-order names of `name`'s subtree, collected BEFORE any removal:
    * children lists die with their nodes. Shared by variant-subtree and
    * whole-node removal. */
@@ -145,35 +206,25 @@ export function createSceneTreeActions(
     const names: string[] = [];
     function collect(nodeName: string) {
       names.push(nodeName);
-      store.get(nodeName)?.children.forEach(collect);
+      for (const child of getChildren(nodeName)) collect(child);
     }
     collect(name);
     return names;
   }
 
-  /** Remove `name` from its parent's `children` list, recording the change
-   * in `updates`. Shared by variant removal and recursive removal. */
-  function dropFromParentChildren(
-    name: string,
-    updates: Record<string, SceneNode | undefined>,
-  ) {
-    const parentName = name.split("/").slice(0, -1).join("/");
-    const parentNode = store.get(parentName);
-    if (parentNode) {
-      updates[parentName] = {
-        ...parentNode,
-        children: parentNode.children.filter(
-          (child_name) => child_name !== name,
-        ),
-      };
-    }
+  /** Remove `name` from its parent's children. Shared by variant removal and
+   * recursive removal. Must be called in a batch. */
+  function dropFromParentChildren(name: string) {
+    getPendingChildren(parentNameOf(name))?.delete(name);
   }
 
   const actions = {
+    batch,
     /** Returns whether the added variant became the effective one for its
      * name, or was parked in the shadow slot. */
     addSceneNode: (message: SceneNodeMessage): "effective" | "shadowed" => {
       const existingNode = store.get(message.name);
+      markDirty(message.name);
 
       // Cross-scope add: the name already has a variant from the OTHER
       // scope. The display rule decides which becomes effective; the loser
@@ -241,36 +292,42 @@ export function createSceneTreeActions(
       // downgrades an existing in-scope name to a virtual anchor (anchors
       // are only sent for names missing in that scope), so a supersede
       // keeps this variant effective unconditionally.
-      const parentName = message.name.split("/").slice(0, -1).join("/");
-      const parentNode = store.get(parentName);
-
-      const updates: Record<string, SceneNode | undefined> = {
-        [message.name]: {
-          ...existingNode,
-          message: message,
-          children: existingNode?.children ?? [],
-          clickBindings: existingNode?.clickBindings ?? [],
-          dragBindings: existingNode?.dragBindings ?? [],
-          labelVisible: existingNode?.labelVisible ?? false,
-          // Default to true, will be updated when visibility is set.
-          effectiveVisibility: existingNode?.effectiveVisibility ?? true,
-        },
-      };
-
-      // Add to parent's children if this is a new node.
-      if (parentNode && !parentNode.children.includes(message.name)) {
-        updates[parentName] = {
-          ...parentNode,
-          children: [...parentNode.children, message.name],
-        };
-      }
+      const parentName = parentNameOf(message.name);
+      // New nodes are visible until their visibility is set, but can't be
+      // effectively visible if their parent isn't.
+      const effectiveVisibility =
+        (message.name === "" ||
+          (store.get(parentName)?.effectiveVisibility ?? true)) &&
+        (existingNode?.overrideVisibility ?? existingNode?.visibility ?? true);
 
       // Preserve refs when playback replays the same creation message; React
       // may reuse the mounted object instead of remounting it.
       if (existingNode && existingNode.message !== message) {
         delete nodeRefFromName[message.name];
       }
-      store.set(updates);
+      batch(() => {
+        store.set({
+          [message.name]: {
+            ...existingNode,
+            message: message,
+            children: existingNode?.children ?? [],
+            clickBindings: existingNode?.clickBindings ?? [],
+            dragBindings: existingNode?.dragBindings ?? [],
+            labelVisible: existingNode?.labelVisible ?? false,
+            effectiveVisibility:
+              existingNode?.effectiveVisibility ?? effectiveVisibility,
+          },
+        });
+        // No-op if this isn't a new node.
+        getPendingChildren(parentName)?.add(message.name);
+        if (
+          existingNode !== undefined &&
+          (existingNode.effectiveVisibility ?? true) !== effectiveVisibility
+        ) {
+          // Descendants need to be updated, too.
+          actions.computeEffectiveVisibility(message.name);
+        }
+      });
       return "effective";
     },
 
@@ -301,6 +358,7 @@ export function createSceneTreeActions(
           // Promote the shadowed variant, with the state its scope's
           // messages have been accumulating while it was hidden.
           delete nodeRefFromName[name];
+          markDirty(name);
           if (!isVirtual(shadowed.message)) {
             nodePoseData[name] = {
               wxyz: shadowed.wxyz,
@@ -324,13 +382,13 @@ export function createSceneTreeActions(
           return "promoted";
         }
         // Last variant: drop the entry (no recursion -- see docstring).
-        const updates: Record<string, SceneNode | undefined> = {
-          [name]: undefined,
-        };
         delete nodeRefFromName[name];
         delete nodePoseData[name];
-        dropFromParentChildren(name, updates);
-        store.set(updates);
+        batch(() => {
+          pendingChildren.delete(name);
+          store.set({ [name]: undefined });
+          dropFromParentChildren(name);
+        });
         return "removed-effective";
       }
       if (node.shadowed && ownerOf(node.shadowed.message) === owner) {
@@ -351,8 +409,10 @@ export function createSceneTreeActions(
      * state. */
     removeSceneNodeVariantSubtree: (name: string, owner: string): string[] => {
       if (store.get(name) === undefined) return [];
-      return collectSubtreeNames(name).filter(
-        (n) => actions.removeSceneNodeVariant(n, owner) !== "noop",
+      return batch(() =>
+        collectSubtreeNames(name).filter(
+          (n) => actions.removeSceneNodeVariant(n, owner) !== "noop",
+        ),
       );
     },
 
@@ -409,10 +469,11 @@ export function createSceneTreeActions(
         delete nodeRefFromName[removeName];
         delete nodePoseData[removeName];
       });
-
-      // Remove node from parent's children list.
-      dropFromParentChildren(name, updates);
-      store.set(updates);
+      batch(() => {
+        removeNames.forEach((removeName) => pendingChildren.delete(removeName));
+        store.set(updates);
+        dropFromParentChildren(name);
+      });
     },
 
     updateSceneNodeProps: (name: string, updates: { [key: string]: any }) => {
@@ -466,25 +527,27 @@ export function createSceneTreeActions(
     },
 
     resetScene: () => {
-      // Remove all children of root except /WorldAxes.
-      const root = store.get("");
-      if (root) {
-        for (const child of root.children) {
+      batch(() => {
+        // Remove all children of root except /WorldAxes.
+        for (const child of [...getChildren("")]) {
           if (child === "/WorldAxes") continue;
           actions.removeSceneNode(child);
         }
-      }
-      // Reset root and /WorldAxes to default state.
-      const defaultState = makeDefaultSceneTreeState();
-      store.set({
-        "": defaultState[""],
-        "/WorldAxes": defaultState["/WorldAxes"],
+        // Reset root and /WorldAxes to default state.
+        const defaultState = makeDefaultSceneTreeState();
+        pendingChildren.delete("");
+        pendingChildren.delete("/WorldAxes");
+        store.set({
+          "": defaultState[""],
+          "/WorldAxes": defaultState["/WorldAxes"],
+        });
+        nodePoseData[""] = {
+          wxyz: defaultState[""].wxyz!,
+          position: defaultState[""].position!,
+          poseUpdateState: "needsUpdate",
+        };
+        markDirty("");
       });
-      nodePoseData[""] = {
-        wxyz: defaultState[""].wxyz!,
-        position: defaultState[""].position!,
-        poseUpdateState: "needsUpdate",
-      };
     },
 
     updateNodeAttributes: (name: string, attributes: Partial<SceneNode>) => {
@@ -531,8 +594,7 @@ export function createSceneTreeActions(
       // parent, but its *children* (whose parentName is also "") must inherit
       // the root's actual effectiveVisibility -- otherwise a child recomputed
       // after `set_global_visibility(False)` would wrongly become visible.
-      const parentName = name.split("/").slice(0, -1).join("/");
-      const parentNode = store.get(parentName);
+      const parentNode = store.get(parentNameOf(name));
       const parentEffective =
         name === ""
           ? true // Root node has no parent.
@@ -542,26 +604,25 @@ export function createSceneTreeActions(
       const nodeVisibility = node.overrideVisibility ?? node.visibility ?? true;
       const effective = parentEffective && nodeVisibility;
 
-      // Update this node and all descendants.
-      const updates: Record<string, SceneNode> = {
-        [name]: {
-          ...node,
-          effectiveVisibility: effective,
-        },
-      };
+      // Update this node and all descendants. A node's effective visibility
+      // is always consistent with its parent's, so there's nothing to do in
+      // subtrees whose root doesn't change.
+      const updates: Record<string, SceneNode> = {};
+      if (node.effectiveVisibility !== effective) {
+        updates[name] = { ...node, effectiveVisibility: effective };
+        updateChildren(name, effective);
+      }
 
       // Recursively update children.
       function updateChildren(nodeName: string, parentEffective: boolean) {
-        const n = store.get(nodeName);
-        if (!n?.children) return;
-
-        n.children.forEach((childName) => {
+        for (const childName of getChildren(nodeName)) {
           const child = store.get(childName);
-          if (!child) return;
+          if (!child) continue;
 
           const childVisibility =
             child.overrideVisibility ?? child.visibility ?? true;
           const childEffective = parentEffective && childVisibility;
+          if (child.effectiveVisibility === childEffective) continue;
 
           updates[childName] = {
             ...child,
@@ -569,9 +630,8 @@ export function createSceneTreeActions(
           };
 
           updateChildren(childName, childEffective);
-        });
+        }
       }
-      updateChildren(name, effective);
       store.set(updates);
       // Effective visibility is applied to three.js objects inside useFrame,
       // so under frameloop="demand" the change needs a frame. Requested here
@@ -589,6 +649,7 @@ export function useSceneTreeState(
   nodeRefFromName: { [name: string]: undefined | THREE.Object3D },
   nodePoseData: NodePoseDataMap,
   requestRender: () => void,
+  sceneNodeUpdates: SceneNodeUpdates,
 ) {
   return React.useState(() => {
     const store = createKeyedStore<SceneNode>(makeDefaultSceneTreeState());
@@ -598,7 +659,9 @@ export function useSceneTreeState(
       nodeRefFromName,
       nodePoseData,
       requestRender,
+      (name) => sceneNodeUpdates.markDirty(name),
     );
+    store.subscribeAll((name) => sceneNodeUpdates.markDirty(name));
 
     // Establish the default state up front via the same path used on
     // (re)connect. This seeds the root node's pose into nodePoseData -- which

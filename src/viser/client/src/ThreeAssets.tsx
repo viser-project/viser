@@ -15,6 +15,9 @@ import { MeshBasicMaterial } from "three";
 import { normalizeScale } from "./utils/normalizeScale";
 import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
 import { ViewerContext } from "./ViewerContext";
+import { HoverableContext } from "./HoverContext";
+import { MeshBatch, raycastOnlyLayers } from "./scene/AutoInstancer";
+import { useInstanceSource } from "./scene/useInstanceSource";
 import {
   LabelRendererContext,
   LabelConfig,
@@ -355,40 +358,61 @@ export const CoordinateFrame = React.forwardRef<
   },
   ref,
 ) {
+  const originRadiusOrDefault = originRadius ?? axesRadius * 2;
+  const geometry = React.useMemo(
+    () =>
+      showAxes
+        ? getFrameGeometry(
+            axesLength,
+            axesRadius,
+            originRadiusOrDefault,
+            originColor,
+          )
+        : null,
+    [showAxes, axesLength, axesRadius, originRadiusOrDefault, originColor],
+  );
+  const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
+
+  const s = normalizeScale(scale);
+  const [sx, sy, sz] = s;
+  const appearance = React.useMemo(
+    () => ({ color: 0xffffff, scale: [sx, sy, sz] }),
+    [sx, sy, sz],
+  );
+  const { sourceRef, drawIndividually } = useInstanceSource(
+    ref,
+    // Mirrored meshes can't be instanced: front faces are determined for all
+    // instances at once.
+    geometry !== null && sx > 0 && sy > 0 && sz > 0
+      ? {
+          key: `frame|${geometry.uuid}`,
+          makeBatch: () =>
+            new MeshBatch(geometry, frameMaterial.clone(), false, false),
+          appearance,
+        }
+      : null,
+    geometry !== null,
+  );
+
   return (
-    <group ref={ref}>
-      <group scale={normalizeScale(scale)}>
-        {showAxes && (
-          <FrameMesh
-            axesLength={axesLength}
-            axesRadius={axesRadius}
-            originRadius={originRadius ?? axesRadius * 2}
-            originColor={originColor}
-          />
-        )}
-      </group>
+    <instanceSource ref={sourceRef}>
+      {geometry !== null && (drawIndividually || raycastable) ? (
+        <mesh
+          key={drawIndividually ? "drawn" : "raycast"}
+          geometry={geometry}
+          scale={s}
+          material={frameMaterial}
+          layers={drawIndividually ? defaultLayers : raycastOnlyLayers}
+        >
+          <OutlinesIfHovered enableCreaseAngle />
+        </mesh>
+      ) : null}
       {children}
-    </group>
+    </instanceSource>
   );
 });
 
-function FrameMesh(props: {
-  axesLength: number;
-  axesRadius: number;
-  originRadius: number;
-  originColor: number;
-}) {
-  const { axesLength, axesRadius, originRadius, originColor } = props;
-  const geometry = React.useMemo(
-    () => getFrameGeometry(axesLength, axesRadius, originRadius, originColor),
-    [axesLength, axesRadius, originRadius, originColor],
-  );
-  return (
-    <mesh geometry={geometry} material={frameMaterial}>
-      <OutlinesIfHovered enableCreaseAngle />
-    </mesh>
-  );
-}
+const defaultLayers = new THREE.Layers();
 
 /** Helper for adding batched/instanced coordinate frames as scene nodes. */
 export const InstancedAxes = React.forwardRef<

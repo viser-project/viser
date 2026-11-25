@@ -1,7 +1,9 @@
 import { Line } from "./Line";
-import { useFrame } from "@react-three/fiber";
 import React from "react";
-import { HoverableContext } from "./HoverContext";
+import { HoverableContext, useIsHovered } from "./HoverContext";
+import { LineBatch } from "./scene/LineBatch";
+import { useDrawable, useMarkTransformsDirty } from "./scene/SceneNodeContext";
+import { useInstanceSource } from "./scene/useInstanceSource";
 import * as THREE from "three";
 import { CameraFrustumMessage } from "./WebsocketMessages";
 import { rgbToInt } from "./mesh/meshMaterialUtils";
@@ -39,17 +41,7 @@ export const CameraFrustumComponent = React.forwardRef<
   y *= scaleTuple[1];
   z *= scaleTuple[2];
 
-  const hoverContext = React.useContext(HoverableContext);
-  const [isHovered, setIsHovered] = React.useState(false);
-
-  useFrame(() => {
-    if (
-      hoverContext !== null &&
-      hoverContext.state.current.isHovered !== isHovered
-    ) {
-      setIsHovered(hoverContext.state.current.isHovered);
-    }
-  });
+  const isHovered = useIsHovered();
 
   // Memoized on geometry inputs only; <Line> rebuilds its geometry whenever
   // the `points` identity changes.
@@ -132,18 +124,42 @@ export const CameraFrustumComponent = React.forwardRef<
     [message.props.color],
   );
 
+  // Wireframe lines are drawn as part of a batch, if there are many frustums.
+  // Except for hovered ones, which have thicker lines.
+  const lineColor = rgbToInt(message.props.color);
+  const worldUnits = message.props.thickness_units === "world";
+  const { thickness } = message.props;
+  const appearance = React.useMemo(
+    () => ({ color: lineColor, points: frustumPoints }),
+    [lineColor, frustumPoints],
+  );
+  const { sourceRef, drawIndividually } = useInstanceSource(
+    ref,
+    isHovered
+      ? null
+      : {
+          key: `lines|${frustumPoints.length}|${thickness}|${worldUnits}`,
+          makeBatch: () =>
+            new LineBatch(frustumPoints.length / 6, thickness, worldUnits),
+          appearance,
+        },
+  );
+  const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
+  useDrawable(message.props.variant === "filled" || imageTexture !== undefined);
+  useMarkTransformsDirty([imageTexture]);
+
   return (
-    <group ref={ref}>
-      {/* Wireframe lines - always visible */}
-      <Line
-        points={frustumPoints}
-        color={isHovered ? 0xfbff00 : rgbToInt(message.props.color)}
-        lineWidth={
-          isHovered ? 1.5 * message.props.thickness : message.props.thickness
-        }
-        worldUnits={message.props.thickness_units === "world"}
-        segments={true}
-      />
+    <instanceSource ref={sourceRef}>
+      {drawIndividually || raycastable ? (
+        <Line
+          points={frustumPoints}
+          color={isHovered ? 0xfbff00 : lineColor}
+          lineWidth={isHovered ? 1.5 * thickness : thickness}
+          worldUnits={worldUnits}
+          segments={true}
+          raycastOnly={!drawIndividually}
+        />
+      ) : null}
 
       {/* Filled faces - only for "filled" variant */}
       {message.props.variant === "filled" && filledGeometry && (
@@ -177,6 +193,6 @@ export const CameraFrustumComponent = React.forwardRef<
         </mesh>
       )}
       {children}
-    </group>
+    </instanceSource>
   );
 });

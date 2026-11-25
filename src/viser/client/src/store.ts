@@ -114,6 +114,12 @@ export interface KeyedStore<V> {
   setAll: (newState: Record<string, V>, replace?: boolean) => void;
   /** Subscribe to changes for a specific key. Returns unsubscribe. */
   subscribe: (key: string, listener: Listener) => () => void;
+  /** Call a listener with every key that changes, as it changes. Returns
+   * unsubscribe. */
+  subscribeAll: (listener: (key: string) => void) => () => void;
+  /** Run a function that makes many writes. Values update immediately, but
+   * subscribers are only notified at the end, at most once per key. */
+  batch: <T>(fn: () => T) => T;
 }
 
 export function createKeyedStore<V>(
@@ -135,9 +141,32 @@ export function createKeyedStore<V>(
     keyVersions.set(key, getVersion(key) + 1);
   }
 
+  const allListeners = new Set<(key: string) => void>();
+  let batchDepth = 0;
+  let batchedKeys = new Set<string>();
+
   function notifyKey(key: string): void {
+    allListeners.forEach((l) => l(key));
+    if (batchDepth > 0) {
+      batchedKeys.add(key);
+      return;
+    }
     const set = keyListeners.get(key);
     if (set) set.forEach((l) => l());
+  }
+
+  function batch<T>(fn: () => T): T {
+    batchDepth += 1;
+    try {
+      return fn();
+    } finally {
+      batchDepth -= 1;
+      if (batchDepth === 0 && batchedKeys.size > 0) {
+        const keys = batchedKeys;
+        batchedKeys = new Set();
+        keys.forEach((key) => keyListeners.get(key)?.forEach((l) => l()));
+      }
+    }
   }
 
   function get(key: string): V | undefined {
@@ -276,6 +305,13 @@ export function createKeyedStore<V>(
   useKeyedStore.set = set;
   useKeyedStore.setAll = setAll;
   useKeyedStore.subscribe = subscribeToKey;
+  useKeyedStore.subscribeAll = (listener: (key: string) => void) => {
+    allListeners.add(listener);
+    return () => {
+      allListeners.delete(listener);
+    };
+  };
+  useKeyedStore.batch = batch;
 
   return useKeyedStore as KeyedStore<V>;
 }

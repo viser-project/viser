@@ -117,11 +117,11 @@ export const BatchedMeshHoverOutlines: React.FC<
 
     // Check if we're hovering and have a valid instanceId.
     if (
-      hoverContext.state.current.isHovered &&
-      hoverContext.state.current.instanceId !== null
+      hoverContext.state.isHovered &&
+      hoverContext.state.instanceId !== null
     ) {
       // Get the instance ID from the hover state.
-      const hoveredInstanceId = hoverContext.state.current.instanceId;
+      const hoveredInstanceId = hoverContext.state.instanceId;
 
       // Calculate the actual batch index using the mapping function if provided.
       const batchIndex = computeBatchIndexFromInstanceIndex

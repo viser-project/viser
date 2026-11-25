@@ -100,7 +100,7 @@ function PlaybackInterface({
     viewer.useEnvironment.set(defaultEnvironmentState());
 
     const sceneTreeState = viewer.useSceneTree.getAll();
-    Object.keys(sceneTreeState).forEach((key) => {
+    const resetNode = (key: string) => {
       if (key === "") return;
       const node = sceneTreeState[key];
       const nodeMessage = node?.message;
@@ -110,6 +110,7 @@ function PlaybackInterface({
         position: [0, 0, 0],
         poseUpdateState: "needsUpdate",
       };
+      viewer.sceneNodeUpdates.markDirty(key);
       if (
         nodeMessage !== undefined &&
         (nodeMessage.type !== "FrameMessage" || nodeMessage.props.show_axes)
@@ -121,7 +122,10 @@ function PlaybackInterface({
           visibility: false,
         });
       }
-    });
+    };
+    viewer.sceneTreeActions.batch(() =>
+      Object.keys(sceneTreeState).forEach(resetNode),
+    );
   }
 
   const [currentTime, setCurrentTime] = useState(0.0);

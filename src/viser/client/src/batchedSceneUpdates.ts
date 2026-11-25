@@ -45,25 +45,42 @@ export function createParkedSceneUpdates(
   store: KeyedStore<SceneNode>,
   actions: SceneTreeActions,
 ): ParkedSceneUpdates {
-  const attrUpdates: {
-    [ownerAndName: string]: {
-      name: string;
-      owner: string;
-      updates: Partial<SceneNode>;
-    };
-  } = {};
-  const propsUpdates: {
-    [ownerAndName: string]: {
-      name: string;
-      owner: string;
-      updates: { [key: string]: any };
-    };
-  } = {};
-  // Names with at least one parked entry, so the per-add/remove drainFor
-  // call is O(1) in the common case (nothing parked for that name) instead
-  // of scanning both tables. Never pruned on drain; a stale member only
-  // costs one extra scan.
-  const parkedNames = new Set<string>();
+  type AttrEntry = {
+    name: string;
+    owner: string;
+    updates: Partial<SceneNode>;
+  };
+  type PropsEntry = {
+    name: string;
+    owner: string;
+    updates: { [key: string]: any };
+  };
+  // Maps rather than plain objects: names are arbitrary strings, and entries
+  // need to be applied in the order that they were parked.
+  const attrUpdates = new Map<string, AttrEntry>();
+  const propsUpdates = new Map<string, PropsEntry>();
+  // Owners with parked entries, for each name. This makes drainFor() O(1). Never
+  // more than a couple: each name has at most one variant per scope.
+  const ownersFromName = new Map<string, string[]>();
+
+  /** Merge an update into the entry for (owner, name). */
+  function park(
+    table: Map<string, { name: string; owner: string; updates: object }>,
+    owner: string,
+    name: string,
+    updates: object,
+  ) {
+    const key = variantKey(owner, name);
+    const entry = table.get(key);
+    if (entry !== undefined) {
+      Object.assign(entry.updates, updates);
+      return;
+    }
+    table.set(key, { name, owner, updates: { ...updates } });
+    const owners = ownersFromName.get(name);
+    if (owners === undefined) ownersFromName.set(name, [owner]);
+    else if (!owners.includes(owner)) owners.push(owner);
+  }
 
   /** Route one attr entry to the shadow slot, or merge it into `out`.
    * Returns true when a visibility change merged into the effective
@@ -111,39 +128,30 @@ export function createParkedSceneUpdates(
   }
 
   return {
-    parkAttr: (owner, name, updates) => {
-      parkedNames.add(name);
-      const entry = (attrUpdates[variantKey(owner, name)] ??= {
-        name,
-        owner,
-        updates: {},
-      });
-      Object.assign(entry.updates, updates);
-    },
-    parkProps: (owner, name, updates) => {
-      parkedNames.add(name);
-      const entry = (propsUpdates[variantKey(owner, name)] ??= {
-        name,
-        owner,
-        updates: {},
-      });
-      Object.assign(entry.updates, updates);
-    },
+    parkAttr: (owner, name, updates) => park(attrUpdates, owner, name, updates),
+    parkProps: (owner, name, updates) =>
+      park(propsUpdates, owner, name, updates),
     drainFor: (name) => {
-      if (!parkedNames.has(name)) return;
+      const owners = ownersFromName.get(name);
+      if (owners === undefined) return;
+      ownersFromName.delete(name);
       // Rare path (a cross-scope flip mid-batch): immediate store writes
       // are fine, and required -- the topology change lands right after.
-      for (const [key, entry] of Object.entries(attrUpdates)) {
-        if (entry.name !== name) continue;
-        delete attrUpdates[key];
+      for (const owner of owners) {
+        const key = variantKey(owner, name);
+        const entry = attrUpdates.get(key);
+        if (entry === undefined) continue;
+        attrUpdates.delete(key);
         const out: { [n: string]: SceneNode } = {};
         const recompute = applyAttr(entry, out);
         if (Object.keys(out).length > 0) store.set(out);
         if (recompute) actions.computeEffectiveVisibility(name);
       }
-      for (const [key, entry] of Object.entries(propsUpdates)) {
-        if (entry.name !== name) continue;
-        delete propsUpdates[key];
+      for (const owner of owners) {
+        const key = variantKey(owner, name);
+        const entry = propsUpdates.get(key);
+        if (entry === undefined) continue;
+        propsUpdates.delete(key);
         const out: { [n: string]: SceneNode } = {};
         applyProps(entry, out);
         if (Object.keys(out).length > 0) store.set(out);
@@ -152,10 +160,10 @@ export function createParkedSceneUpdates(
     flush: () => {
       const mergedUpdates: { [name: string]: SceneNode } = {};
       const visibilityNames: string[] = [];
-      for (const entry of Object.values(attrUpdates)) {
+      for (const entry of attrUpdates.values()) {
         if (applyAttr(entry, mergedUpdates)) visibilityNames.push(entry.name);
       }
-      for (const entry of Object.values(propsUpdates)) {
+      for (const entry of propsUpdates.values()) {
         applyProps(entry, mergedUpdates);
       }
       return { mergedUpdates, visibilityNames };

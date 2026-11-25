@@ -21,6 +21,8 @@ import {
   LineGeometry,
   LineSegmentsGeometry,
 } from "three-stdlib";
+import { InstanceSource } from "./scene/AutoInstancer";
+import { SceneNodeGroup } from "./scene/SceneNodeGroup";
 import { dreiThreeCatalogue, viserThreeCatalogue } from "./threeCatalogue";
 
 extend({
@@ -41,5 +43,7 @@ declare module "@react-three/fiber" {
     lineSegments2: ThreeElement<typeof LineSegments2>;
     lineGeometry: ThreeElement<typeof LineGeometry>;
     lineSegmentsGeometry: ThreeElement<typeof LineSegmentsGeometry>;
+    instanceSource: ThreeElement<typeof InstanceSource>;
+    sceneNodeGroup: ThreeElement<typeof SceneNodeGroup>;
   }
 }

@@ -6,6 +6,9 @@ import "./index.css";
 import { CameraControls } from "@react-three/drei";
 import * as THREE from "three";
 import React from "react";
+import { AutoInstancer } from "./scene/AutoInstancer";
+import { SceneNodeGraph } from "./scene/SceneNodeGroup";
+import { SceneNodeUpdates } from "./sceneNodeUpdates";
 import { useSceneTreeState } from "./SceneTreeState";
 
 import { UseGui } from "./ControlPanel/GuiState";
@@ -137,6 +140,14 @@ export type ViewerContextContents = {
   // Store hooks and actions.
   useSceneTree: ReturnType<typeof useSceneTreeState>["store"];
   sceneTreeActions: ReturnType<typeof useSceneTreeState>["actions"];
+  /** Queue of nodes with pending updates to their three.js objects. Writes to
+   * `useSceneTree` are tracked automatically; anything that modifies a node's
+   * entry in `mutable.nodePoseData` needs to mark it dirty. */
+  sceneNodeUpdates: SceneNodeUpdates;
+  /** Bookkeeping for skipping parts of the scene graph. */
+  sceneNodeGraph: SceneNodeGraph;
+  /** Draws large numbers of similar scene nodes. */
+  autoInstancer: AutoInstancer;
   useEnvironment: ReturnType<typeof useEnvironmentState>;
   useGui: UseGui["store"];
   useGuiConfig: UseGui["configStore"];

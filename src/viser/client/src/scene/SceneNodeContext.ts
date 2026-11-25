@@ -1,0 +1,24 @@
+import React from "react";
+import { HoverableContext } from "../HoverContext";
+import { ViewerContext } from "../ViewerContext";
+
+/** Declare whether a component has something that needs to be drawn, which isn't
+ * already accounted for by its scene node. See SceneNodeGraph. */
+export function useDrawable(active: boolean): void {
+  const { sceneNodeGraph } = React.useContext(ViewerContext)!;
+  const name = React.useContext(HoverableContext)?.nodeName;
+  React.useLayoutEffect(() => {
+    if (!active || name === undefined) return;
+    return sceneNodeGraph.addDrawable(name);
+  }, [active, name, sceneNodeGraph]);
+}
+
+/** Should be used by components that add objects to a scene node, after it has
+ * been mounted. See SceneNodeGraph. */
+export function useMarkTransformsDirty(deps: React.DependencyList): void {
+  const { sceneNodeGraph } = React.useContext(ViewerContext)!;
+  const name = React.useContext(HoverableContext)?.nodeName;
+  React.useLayoutEffect(() => {
+    if (name !== undefined) sceneNodeGraph.markTransformsDirty(name);
+  }, [sceneNodeGraph, name, ...deps]);
+}

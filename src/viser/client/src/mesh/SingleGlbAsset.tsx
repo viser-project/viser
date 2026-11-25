@@ -75,7 +75,7 @@ export const SingleGlbAsset = React.forwardRef<
   const hoverContext = React.useContext(HoverableContext)!;
   useFrame(() => {
     if (outlineRef.current === null) return;
-    outlineRef.current.visible = hoverContext.state.current.isHovered;
+    outlineRef.current.visible = hoverContext.state.isHovered;
   });
   const clickable = hoverContext.clickable;
 

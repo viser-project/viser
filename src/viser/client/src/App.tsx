@@ -33,7 +33,7 @@ import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 
 // Local imports.
 import { SynchronizedCameraControls } from "./CameraControls";
-import { SceneNodeThreeObject } from "./SceneTree";
+import { SceneNodeThreeObject, SceneNodeUpdater } from "./SceneTree";
 import { DragLayer } from "./DragLayer";
 import { KeyModifier, hasCmdCtrl, keyModifierFromEvent } from "./dragUtils";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
@@ -52,6 +52,10 @@ import { Titlebar } from "./Titlebar";
 import { ViserModal } from "./Modal";
 import { CommandPalette } from "./CommandPalette";
 import { useSceneTreeState } from "./SceneTreeState";
+import { AutoInstancer, RAYCAST_ONLY_LAYER } from "./scene/AutoInstancer";
+import { SceneNodeGraph } from "./scene/SceneNodeGroup";
+import { installFastShadowPass } from "./scene/shadowPass";
+import { SceneNodeUpdates } from "./sceneNodeUpdates";
 import { useEnvironmentState } from "./EnvironmentState";
 import { useDevSettingsStore } from "./DevSettingsStore";
 import { useInitialCameraState } from "./InitialCameraState";
@@ -92,6 +96,27 @@ const getDefaultServerFromUrl = (): string => {
 };
 
 /** Disables rendering when component is not in view. */
+/** One-time configuration of the renderer. */
+function RendererSetup() {
+  const gl = useThree((state) => state.gl);
+  const raycaster = useThree((state) => state.raycaster);
+  React.useLayoutEffect(() => installFastShadowPass(gl), [gl]);
+  React.useLayoutEffect(() => {
+    raycaster.layers.enable(RAYCAST_ONLY_LAYER);
+  }, [raycaster]);
+  return null;
+}
+
+/** Objects for scene nodes that are drawn as part of a batch. */
+function AutoInstancedObjects() {
+  const { autoInstancer } = React.useContext(ViewerContext)!;
+  const size = useThree((state) => state.size);
+  React.useLayoutEffect(() => {
+    autoInstancer.setViewportSize(size.width, size.height);
+  }, [autoInstancer, size]);
+  return <primitive object={autoInstancer.group} />;
+}
+
 const DisableRender = (): null => useFrame(() => null, 1000);
 
 // ======= Main component tree =======
@@ -230,11 +255,15 @@ function ViewerRoot() {
   );
 
   // Create the scene tree state and extract store and actions.
+  const sceneNodeUpdates = React.useState(() => new SceneNodeUpdates())[0];
+  const sceneNodeGraph = React.useState(() => new SceneNodeGraph())[0];
+  const autoInstancer = React.useState(() => new AutoInstancer())[0];
   const sceneTreeState = useSceneTreeState(
     mutable.current.nodeRefFromName,
     mutable.current.nodePoseData,
     // Deferred: requestRender is installed once the canvas mounts.
     () => mutable.current.requestRender(),
+    sceneNodeUpdates,
   );
 
   // Create the environment state and extract store and actions.
@@ -288,6 +317,9 @@ function ViewerRoot() {
     messageSource,
     useSceneTree: sceneTreeState.store,
     sceneTreeActions: sceneTreeState.actions,
+    sceneNodeUpdates,
+    sceneNodeGraph,
+    autoInstancer,
     useEnvironment: environmentState,
     useGui: guiState.store,
     useGuiConfig: guiState.configStore,
@@ -352,6 +384,7 @@ function ViewerContents({
         <Viewer2DCanvas />
         <ViewerCanvas>
           <FrameSynchronizedMessageHandler />
+          <SceneNodeUpdater />
         </ViewerCanvas>
       </>
     ),
@@ -782,6 +815,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         <SplatRenderContext>
           <AdaptiveDpr />
           {children}
+          <AutoInstancedObjects />
           <LabelRenderer>
             <DragLayer>
               <SceneNodeThreeObject name="" />
@@ -848,6 +882,7 @@ function ViewerCanvas({ children }: { children: React.ReactNode }) {
         // On-demand rendering: see ViewerMutable.requestRender.
         frameloop="demand"
       >
+        <RendererSetup />
         {!inView && <DisableRender />}
         {sceneContents}
       </Canvas>

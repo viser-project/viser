@@ -19,6 +19,7 @@ import {
 } from "three-stdlib";
 import { ForwardRefComponent } from "@react-three/drei/helpers/ts-utils";
 import type { LineSegmentsMessage } from "./WebsocketMessages";
+import { raycastOnlyLayers } from "./scene/AutoInstancer";
 import { normalizeScale } from "./utils/normalizeScale";
 
 export type LineProps = {
@@ -26,11 +27,15 @@ export type LineProps = {
   vertexColors?: Uint8Array; // length must be n * 3, values 0-255 for RGB
   lineWidth?: number;
   segments?: boolean;
+  /** Raycast against this line, but don't draw it. Only for segments. */
+  raycastOnly?: boolean;
 } & Omit<LineMaterialParameters, "vertexColors" | "color"> &
   Omit<ThreeElement<typeof Line2>, "args"> &
   Omit<ThreeElement<typeof LineMaterial>, "color" | "vertexColors" | "args"> & {
     color?: ColorRepresentation;
   };
+
+const defaultLayers = new THREE.Layers();
 
 // Fringe pass objects are visual-only; the core object handles picking.
 const noopRaycast = () => undefined;
@@ -47,6 +52,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         segments,
         dashed,
         worldUnits,
+        raycastOnly = false,
         ...rest
       },
       ref,
@@ -108,7 +114,8 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       // patchLineMaterial): the fringe material re-draws the line with a
       // smooth edge falloff, depth-tested but not depth-written, on top of
       // the opaque depth-anchoring core.
-      const showFringe = (worldUnits ?? false) && !(dashed ?? false);
+      const showFringe =
+        (worldUnits ?? false) && !(dashed ?? false) && !raycastOnly;
       // The fringe define is applied via callback ref rather than an effect
       // keyed on showFringe: the fringe material remounts when the
       // segments/dashed JSX branch flips while showFringe stays true, and an
@@ -175,7 +182,11 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       if (segments) {
         return (
           <>
-            <lineSegments2 ref={setLineRef} {...rest}>
+            <lineSegments2
+              ref={setLineRef}
+              layers={raycastOnly ? raycastOnlyLayers : defaultLayers}
+              {...rest}
+            >
               <primitive object={lineGeom} attach="geometry" />
               {materialJsx}
             </lineSegments2>

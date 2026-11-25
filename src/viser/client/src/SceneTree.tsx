@@ -1,17 +1,14 @@
 import { PivotControls } from "@react-three/drei";
 import { Grid } from "./Grid";
 import { useContextBridge } from "its-fine";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame, useStore } from "@react-three/fiber";
 import React, { useEffect } from "react";
 import * as THREE from "three";
 
 import { ViewerContext, ViewerContextContents } from "./ViewerContext";
-import {
-  makeThrottledMessageSender,
-  useThrottledMessageSender,
-} from "./WebsocketUtils";
+import { makeThrottledMessageSender } from "./WebsocketUtils";
 import { Html } from "@react-three/drei";
-import { ownerOf, useSceneTreeState } from "./SceneTreeState";
+import { ownerOf, SceneNode, useSceneTreeState } from "./SceneTreeState";
 import { rayToViserCoords } from "./WorldTransformUtils";
 import { HoverableContext, HoverState } from "./HoverContext";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
@@ -52,6 +49,8 @@ import { SkinnedMesh } from "./mesh/SkinnedMesh";
 import { BatchedMesh } from "./mesh/BatchedMesh";
 import { SingleGlbAsset } from "./mesh/SingleGlbAsset";
 import { BatchedGlbAsset } from "./mesh/BatchedGlbAsset";
+import { InstanceSource } from "./scene/AutoInstancer";
+import { SceneNodeGroup } from "./scene/SceneNodeGroup";
 import { normalizeScale } from "./utils/normalizeScale";
 import { opencvXyFromPointerXy } from "./utils/pointerCoords";
 
@@ -67,14 +66,10 @@ function rgbToInt(rgb: [number, number, number]): number {
 /** Type corresponding to useSceneTree hook. */
 export type UseSceneTree = ReturnType<typeof useSceneTreeState>;
 
-/** Component for updating attributes of a scene node. */
+/** Name label, which is shown when hovering over a node in the scene tree
+ * table. */
 function SceneNodeLabel(props: { name: string }) {
-  const viewer = React.useContext(ViewerContext)!;
-  const labelVisible = viewer.useSceneTree(
-    props.name,
-    (node) => node?.labelVisible,
-  );
-  return labelVisible ? (
+  return (
     <Html>
       <span
         style={{
@@ -88,7 +83,7 @@ function SceneNodeLabel(props: { name: string }) {
         {props.name}
       </span>
     </Html>
-  ) : null;
+  );
 }
 
 function tripletListFromFloat32Array(data: Float32Array) {
@@ -251,6 +246,12 @@ function createObjectFactory(
 ): {
   makeObject: MakeObject;
   unmountWhenInvisible?: boolean;
+  /** Set if everything that's drawn by this object is either part of a batch, or
+   * declared with useDrawable(). See SceneNodeGraph. */
+  tracksDrawables?: boolean;
+  /** Set if nothing in this object moves, except for when the message changes or
+   * when useMarkTransformsDirty() is used. See SceneNodeGraph. */
+  staticTransforms?: boolean;
   computeClickInstanceIndexFromInstanceId?: (
     instanceId: number | undefined,
   ) => number | null;
@@ -261,6 +262,8 @@ function createObjectFactory(
     // Add a coordinate frame.
     case "FrameMessage": {
       return {
+        tracksDrawables: true,
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <CoordinateFrame
             ref={ref}
@@ -280,6 +283,7 @@ function createObjectFactory(
     // Add axes to visualize.
     case "BatchedAxesMessage": {
       return {
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <InstancedAxes
             ref={ref}
@@ -366,6 +370,7 @@ function createObjectFactory(
     // Add a point cloud.
     case "PointCloudMessage": {
       return {
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <PointCloud ref={ref} {...message}>
             {children}
@@ -386,6 +391,7 @@ function createObjectFactory(
     }
     case "MeshMessage": {
       return {
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <BasicMesh ref={ref} {...message}>
             {children}
@@ -395,6 +401,8 @@ function createObjectFactory(
     }
     case "BoxMessage": {
       return {
+        tracksDrawables: true,
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <BoxMesh ref={ref} {...message}>
             {children}
@@ -404,6 +412,8 @@ function createObjectFactory(
     }
     case "IcosphereMessage": {
       return {
+        tracksDrawables: true,
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <IcosphereMesh ref={ref} {...message}>
             {children}
@@ -413,6 +423,8 @@ function createObjectFactory(
     }
     case "CylinderMessage": {
       return {
+        tracksDrawables: true,
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <CylinderMesh ref={ref} {...message}>
             {children}
@@ -436,6 +448,9 @@ function createObjectFactory(
     // Add a camera frustum.
     case "CameraFrustumMessage": {
       return {
+        tracksDrawables: true,
+        // The image is loaded asynchronously, but declares when it's added.
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <CameraFrustumComponent ref={ref} {...message}>
             {children}
@@ -540,6 +555,8 @@ function createObjectFactory(
     // Add a 2D label.
     case "LabelMessage": {
       return {
+        tracksDrawables: true,
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <ViserLabel ref={ref} {...message}>
             {children}
@@ -568,6 +585,7 @@ function createObjectFactory(
     // Add an image.
     case "ImageMessage": {
       return {
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <ViserImage ref={ref} {...message}>
             {children}
@@ -597,6 +615,7 @@ function createObjectFactory(
     }
     case "LineSegmentsMessage": {
       return {
+        staticTransforms: true,
         makeObject: (ref, children) => (
           <LineSegments ref={ref} {...message}>
             {children}
@@ -615,6 +634,7 @@ function createObjectFactory(
     }
     case "CatmullRomSplineMessage": {
       return {
+        staticTransforms: true,
         makeObject: (ref, children) => {
           return (
             <group ref={ref}>
@@ -629,6 +649,7 @@ function createObjectFactory(
     }
     case "CubicBezierSplineMessage": {
       return {
+        staticTransforms: true,
         makeObject: (ref, children) => {
           return (
             <group ref={ref}>
@@ -763,152 +784,214 @@ function createObjectFactory(
   }
 }
 
-export function SceneNodeThreeObject(props: { name: string }) {
+function identity<T>(x: T): T {
+  return x;
+}
+
+/** Equality for everything that a scene node's component depends on.
+ *
+ * shallowArrayEqual: the server echoes a fresh `bindings` array on every binding
+ * update even if the content is unchanged; this prevents spurious re-renders
+ * when the binding set is identical. */
+function sceneNodeRenderEqual(
+  a: SceneNode | undefined,
+  b: SceneNode | undefined,
+): boolean {
+  return (
+    a === b ||
+    (a?.message === b?.message &&
+      shallowArrayEqual(a?.clickBindings, b?.clickBindings) &&
+      shallowArrayEqual(a?.dragBindings, b?.dragBindings))
+  );
+}
+
+/** Applies pending updates (pose, visibility, ...) to the three.js objects of
+ * scene nodes. */
+export function SceneNodeUpdater() {
   const viewer = React.useContext(ViewerContext)!;
-  const message = viewer.useSceneTree(props.name, (node) => node?.message);
-  const {
-    makeObject,
-    unmountWhenInvisible,
-    computeClickInstanceIndexFromInstanceId,
-  } = React.useMemo(
-    () => createObjectFactory(message, viewer),
-    [message, viewer],
+  useFrame(
+    () => viewer.sceneNodeUpdates.flush(),
+    // Other useFrame hooks may depend on transforms + visibility. So it's best
+    // to call this hook early.
+    //
+    // However, it's also important that this is *higher* than the priority for
+    // the MessageHandler's useFrame. This is to make sure that transforms are
+    // updated in the same frame that they are set.
+    -1000,
   );
+  return null;
+}
 
-  const [unmount, setUnmount] = React.useState(false);
-  // shallowArrayEqual: the server echoes a fresh `bindings` array on
-  // every binding update even if the content is unchanged; this
-  // prevents spurious re-renders when the binding set is identical.
-  const clickBindings =
-    viewer.useSceneTree(
+/** Three.js objects for a scene node and its descendants.
+ *
+ * Scenes can have tens of thousands of these, so hooks here should be kept to a
+ * minimum. Memoized to prevent a parent from re-rendering all of its children
+ * when one is added or removed. */
+export const SceneNodeThreeObject = React.memo(
+  function SceneNodeThreeObject(props: { name: string }) {
+    const viewer = React.useContext(ViewerContext)!;
+    const renderState = viewer.useSceneTree(
       props.name,
-      (node) => node?.clickBindings,
-      shallowArrayEqual,
-    ) ?? EMPTY_DRAG_BINDINGS;
-  const dragBindings =
-    viewer.useSceneTree(
-      props.name,
-      (node) => node?.dragBindings,
-      shallowArrayEqual,
-    ) ?? EMPTY_DRAG_BINDINGS;
-  const clickable = clickBindings.length > 0;
-  const draggable = dragBindings.length > 0;
-  const interactive = clickable || draggable;
-  const objRef = React.useRef<THREE.Object3D | null>(null);
-  const groupRef = React.useRef<THREE.Group | null>(null);
+      identity,
+      sceneNodeRenderEqual,
+    );
+    const message = renderState?.message;
+    const {
+      makeObject,
+      unmountWhenInvisible,
+      computeClickInstanceIndexFromInstanceId,
+      tracksDrawables = false,
+      staticTransforms = false,
+    } = React.useMemo(
+      () => createObjectFactory(message, viewer),
+      [message, viewer],
+    );
 
-  // Get children.
-  const children = React.useMemo(
-    () => <SceneNodeChildren name={props.name} />,
-    [],
-  );
+    const [unmount, setUnmount] = React.useState(false);
+    const clickBindings = renderState?.clickBindings ?? EMPTY_DRAG_BINDINGS;
+    const dragBindings = renderState?.dragBindings ?? EMPTY_DRAG_BINDINGS;
+    const clickable = clickBindings.length > 0;
+    const draggable = dragBindings.length > 0;
+    const interactive = clickable || draggable;
+    const objRef = React.useRef<THREE.Object3D | null>(null);
+    const groupRef = React.useRef<THREE.Group | null>(null);
+    const { sceneNodeGraph } = viewer;
+    const setGroupRef = React.useCallback(
+      (group: SceneNodeGroup) => {
+        groupRef.current = group;
+        sceneNodeGraph.attachGroup(props.name, group);
+        return () => {
+          groupRef.current = null;
+          sceneNodeGraph.detachGroup(props.name, group);
+        };
+      },
+      [sceneNodeGraph, props.name],
+    );
+    React.useLayoutEffect(() => {
+      if (!tracksDrawables) return sceneNodeGraph.addDrawable(props.name);
+    }, [sceneNodeGraph, props.name, tracksDrawables]);
+    React.useLayoutEffect(() => {
+      if (!staticTransforms) return sceneNodeGraph.addDynamic(props.name);
+    }, [sceneNodeGraph, props.name, staticTransforms]);
 
-  // Create object + children.
-  //
-  // For not-fully-understood reasons, wrapping makeObject with useMemo() fixes
-  // stability issues (eg breaking runtime errors) associated with
-  // PivotControls.
-  const viewerMutable = viewer.mutable.current;
-  const objNode = React.useMemo(() => {
-    if (makeObject === undefined) return null;
-    return makeObject((ref: THREE.Object3D | null) => {
-      if (ref === null) {
-        // React detaches a ref with null: on unmount, or when an
-        // unmountWhenInvisible node hides. nodeRefFromName is typed as
-        // Object3D | undefined, so drop the entry rather than store the null
-        // (readers that only check `!== undefined` would crash on it, see
-        // #788). Only drop it if it is still ours: a successor mounted under
-        // the same name has already registered by the time we detach.
-        if (viewerMutable.nodeRefFromName[props.name] === objRef.current) {
-          delete viewerMutable.nodeRefFromName[props.name];
+    // Get children.
+    const children = React.useMemo(
+      () => <SceneNodeChildren name={props.name} />,
+      [],
+    );
+
+    // Create object + children.
+    //
+    // For not-fully-understood reasons, wrapping makeObject with useMemo() fixes
+    // stability issues (eg breaking runtime errors) associated with
+    // PivotControls.
+    const viewerMutable = viewer.mutable.current;
+    const objNode = React.useMemo(() => {
+      if (makeObject === undefined) return null;
+      return makeObject((ref: THREE.Object3D | null) => {
+        if (ref === null) {
+          // React detaches a ref with null: on unmount, or when an
+          // unmountWhenInvisible node hides. nodeRefFromName is typed as
+          // Object3D | undefined, so drop the entry rather than store the null
+          // (readers that only check `!== undefined` would crash on it, see
+          // #788). Only drop it if it is still ours: a successor mounted under
+          // the same name has already registered by the time we detach.
+          if (viewerMutable.nodeRefFromName[props.name] === objRef.current) {
+            delete viewerMutable.nodeRefFromName[props.name];
+          }
+          objRef.current = null;
+          return;
         }
-        objRef.current = null;
+        objRef.current = ref;
+        viewerMutable.nodeRefFromName[props.name] = ref;
+        // Poses are the only thing that modifies a node's local transform, and
+        // they're applied below. Don't recompute it every frame.
+        if (ref.matrixAutoUpdate) {
+          ref.matrixAutoUpdate = false;
+          ref.updateMatrix();
+        }
+        viewer.sceneNodeUpdates.markDirty(props.name);
+      }, children);
+    }, [makeObject, children]);
+
+    // Helper for transient visibility checks. Uses the cached effectiveVisibility
+    // which includes both this node and all ancestors in the scene tree.
+    //
+    // This is used for (1) suppressing click events and (2) unmounting when
+    // unmountWhenInvisible is true. The latter is used for <Html /> components.
+    function isDisplayed(): boolean {
+      const node = viewer.useSceneTree.get(props.name);
+      return node?.effectiveVisibility ?? false;
+    }
+
+    // Anything about the object may have changed.
+    React.useLayoutEffect(() => {
+      sceneNodeGraph.markTransformsDirty(props.name);
+    }, [objNode]);
+
+    // Pose needs to be updated whenever component is remounted / object is re-created.
+    React.useEffect(() => {
+      const pose = viewerMutable.nodePoseData[props.name];
+      if (pose) {
+        pose.poseUpdateState = "needsUpdate";
+        viewer.sceneNodeUpdates.markDirty(props.name);
+      }
+      if (isFirstObjNode.current) {
+        isFirstObjNode.current = false;
         return;
       }
-      objRef.current = ref;
-      viewerMutable.nodeRefFromName[props.name] = ref;
-    }, children);
-  }, [makeObject, children]);
+      if (hoverState.isHovered) {
+        // Wait 2 frames for the new mesh to be fully rendered.
+        hoverRecheckCountdown.current = 2;
+        viewer.sceneNodeUpdates.markDirty(props.name);
+      }
+    }, [objNode]);
 
-  // Helper for transient visibility checks. Uses the cached effectiveVisibility
-  // which includes both this node and all ancestors in the scene tree.
-  //
-  // This is used for (1) suppressing click events and (2) unmounting when
-  // unmountWhenInvisible is true. The latter is used for <Html /> components.
-  function isDisplayed(): boolean {
-    const node = viewer.useSceneTree.get(props.name);
-    return node?.effectiveVisibility ?? false;
-  }
+    // Track hover state.
+    const hoverState = React.useState(() => new HoverState())[0];
 
-  // Pose needs to be updated whenever component is remounted / object is re-created.
-  React.useEffect(() => {
-    const pose = viewerMutable.nodePoseData[props.name];
-    if (pose) {
-      pose.poseUpdateState = "needsUpdate";
-    }
-  }, [objNode]);
+    // Track last pointer position for re-raycasting when mesh changes.
+    const lastPointerPos = React.useRef<{
+      clientX: number;
+      clientY: number;
+    } | null>(null);
 
-  // Track hover state.
-  const hoveredRef = React.useRef<HoverState>({
-    isHovered: false,
-    instanceId: null,
-  });
+    // Frame counter for delayed hover recheck after objNode changes.
+    // We wait a few frames to ensure the new mesh geometry is fully rendered.
+    const hoverRecheckCountdown = React.useRef(0);
+    const isFirstObjNode = React.useRef(true);
 
-  // Track last pointer position for re-raycasting when mesh changes.
-  const lastPointerPos = React.useRef<{
-    clientX: number;
-    clientY: number;
-  } | null>(null);
+    // R3F state for raycasting. Non-reactive: subscribing would re-render every
+    // scene node when the store changes (resize ticks, dock drags, adaptive DPR).
+    const threeStore = useStore();
 
-  // Frame counter for delayed hover recheck after objNode changes.
-  // We wait a few frames to ensure the new mesh geometry is fully rendered.
-  const hoverRecheckCountdown = React.useRef(0);
-  const isFirstObjNode = React.useRef(true);
-  React.useEffect(() => {
-    if (isFirstObjNode.current) {
-      isFirstObjNode.current = false;
-      return;
-    }
-    if (hoveredRef.current.isHovered) {
-      // Wait 2 frames for the new mesh to be fully rendered.
-      hoverRecheckCountdown.current = 2;
-    }
-  }, [objNode]);
+    // Drag state lives in the viewer-level DragLayer -- this component only
+    // dispatches pointer events into it and reads bindings for matching.
+    const dragLayer = useDragLayer();
+    const interaction = viewer.interaction;
 
-  // Get R3F state for raycasting. Selectors, not a bare useThree(): the
-  // bare form subscribes to the whole store, so every setSize/setDpr write
-  // (resize ticks, dock drags, adaptive DPR) re-rendered every scene node.
-  const raycaster = useThree((state) => state.raycaster);
-  const camera = useThree((state) => state.camera);
+    const getPointerXy = React.useCallback(
+      (clientX: number, clientY: number): [number, number] => {
+        const canvasBbox = viewerMutable.canvas!.getBoundingClientRect();
+        return [clientX - canvasBbox.left, clientY - canvasBbox.top];
+      },
+      [viewerMutable],
+    );
 
-  // Reusable Vector2 for hover recheck raycasting.
-  const pointerNDC = React.useMemo(() => new THREE.Vector2(), []);
-
-  // Drag state lives in the viewer-level DragLayer -- this component only
-  // dispatches pointer events into it and reads bindings for matching.
-  const dragLayer = useDragLayer();
-  const interaction = viewer.interaction;
-
-  const getPointerXy = React.useCallback(
-    (clientX: number, clientY: number): [number, number] => {
-      const canvasBbox = viewerMutable.canvas!.getBoundingClientRect();
-      return [clientX - canvasBbox.left, clientY - canvasBbox.top];
-    },
-    [viewerMutable],
-  );
-
-  // Update attributes on a per-frame basis. Currently does redundant work,
-  // although this shouldn't be a bottleneck.
-  useFrame(
-    () => {
+    // Sync attributes to the three.js object. Runs at the start of a frame if
+    // any of the state that it depends on has been marked dirty.
+    const applyUpdates = () => {
       // Re-check hover state after objNode changes (mesh geometry update).
       if (hoverRecheckCountdown.current > 0) {
         hoverRecheckCountdown.current--;
         // The countdown needs consecutive frames (on-demand loop).
-        if (hoverRecheckCountdown.current > 0) viewerMutable.requestRender();
+        if (hoverRecheckCountdown.current > 0) {
+          viewer.sceneNodeUpdates.markDirty(props.name);
+          viewerMutable.requestRender();
+        }
         if (
           hoverRecheckCountdown.current === 0 &&
-          hoveredRef.current.isHovered &&
+          hoverState.isHovered &&
           groupRef.current &&
           lastPointerPos.current
         ) {
@@ -916,7 +999,8 @@ export function SceneNodeThreeObject(props: { name: string }) {
           const canvas = viewerMutable.canvas;
           if (canvas) {
             const rect = canvas.getBoundingClientRect();
-            pointerNDC.set(
+            const { raycaster, camera } = threeStore.getState();
+            const pointerNDC = new THREE.Vector2(
               ((lastPointerPos.current.clientX - rect.left) / rect.width) * 2 -
                 1,
               -((lastPointerPos.current.clientY - rect.top) / rect.height) * 2 +
@@ -929,8 +1013,7 @@ export function SceneNodeThreeObject(props: { name: string }) {
             );
             if (intersects.length === 0) {
               // Pointer is no longer over this mesh, reset hover state.
-              hoveredRef.current.isHovered = false;
-              hoveredRef.current.instanceId = null;
+              hoverState.set(false, null);
               interaction.hover.setHovered(props.name, false);
             }
           }
@@ -968,16 +1051,14 @@ export function SceneNodeThreeObject(props: { name: string }) {
       // propagation (children of invisible parents are not rendered).
       objRef.current.visible =
         node.overrideVisibility ?? node.visibility ?? true;
+      if (objRef.current instanceof InstanceSource) {
+        objRef.current.setDisplayed(node.effectiveVisibility ?? true);
+      }
 
       // If an interactive node becomes invisible while hovered, clean up hover
       // state so the cursor doesn't stay stuck as "pointer".
-      if (
-        !node.effectiveVisibility &&
-        hoveredRef.current.isHovered &&
-        interactive
-      ) {
-        hoveredRef.current.isHovered = false;
-        hoveredRef.current.instanceId = null;
+      if (!node.effectiveVisibility && hoverState.isHovered && interactive) {
+        hoverState.set(false, null);
         interaction.hover.setHovered(props.name, false);
       }
 
@@ -1002,319 +1083,363 @@ export function SceneNodeThreeObject(props: { name: string }) {
         if (!objRef.current.matrixAutoUpdate) objRef.current.updateMatrix();
         if (!objRef.current.matrixWorldAutoUpdate)
           objRef.current.updateMatrixWorld();
+        sceneNodeGraph.markTransformsDirty(props.name);
       }
-    },
-    // Other useFrame hooks may depend on transforms + visibility. So it's best
-    // to call this hook early.
-    //
-    // However, it's also important that this is *higher* than the priority for
-    // the MessageHandler's useFrame. This is to make sure that transforms are
-    // updated in the same frame that they are set.
-    -1000,
-  );
-
-  // Clicking logic.
-  const sendClicksThrottled = useThrottledMessageSender(50).send;
-
-  // Handle case where interactivity is toggled off while still hovered.
-  if (!interactive && hoveredRef.current.isHovered) {
-    hoveredRef.current.isHovered = false;
-    interaction.hover.setHovered(props.name, false);
-    interaction.nodeGestures.cancelNode(props.name);
-  }
-
-  // End the active drag if this node's draggability is revoked (bindings
-  // cleared) or the component unmounts. DragLayer no-ops if the active
-  // drag targets a different node, so this is safe to call unconditionally.
-  React.useEffect(() => {
-    if (!draggable && dragLayer !== null) {
-      dragLayer.stopIfNodeIs(props.name);
-      interaction.nodeGestures.cancelNode(props.name);
-    }
-  }, [draggable, dragLayer, interaction, props.name]);
-
-  // Reset hover state on true unmount, and tell DragLayer to end the
-  // drag if it targets this node.
-  const dragLayerRef = React.useRef(dragLayer);
-  dragLayerRef.current = dragLayer;
-  useEffect(() => {
-    return () => {
-      if (hoveredRef.current.isHovered) {
-        hoveredRef.current.isHovered = false;
-        interaction.hover.setHovered(props.name, false);
-      }
-      dragLayerRef.current?.stopIfNodeIs(props.name);
-      interaction.nodeGestures.cancelNode(props.name);
     };
-  }, [interaction, props.name]);
-
-  if (objNode === undefined || unmount) {
-    return null;
-  } else {
-    return (
-      <>
-        <group
-          ref={groupRef}
-          // Instead of using onClick, we use onPointerDown/Move/Up to check mouse drag,
-          // and only send a click if the mouse hasn't moved between the down and up events.
-          //  - onPointerDown resets the click state (dragged = false)
-          //  - onPointerMove, if triggered, sets dragged = true
-          //  - onPointerUp, if triggered, sends a click if dragged = false.
-          // Note: It would be cool to have dragged actions too...
-          onPointerDown={
-            !interactive
-              ? undefined
-              : (e) => {
-                  if (!isDisplayed()) return;
-                  e.stopPropagation();
-                  const buttonName = pointerButtonFromNative(
-                    e.nativeEvent.button,
-                  );
-                  const input: DragInput | null =
-                    buttonName === null
-                      ? null
-                      : {
-                          button: buttonName,
-                          modifier: keyModifierFromEvent(e),
-                        };
-                  interaction.nodeGestures.recordPointerDown(input);
-
-                  const clickMatches =
-                    input !== null && anyBindingMatches(clickBindings, input);
-                  const targetObj = objRef.current;
-                  const dragMatches =
-                    input !== null &&
-                    draggable &&
-                    dragLayer !== null &&
-                    targetObj !== null &&
-                    anyBindingMatches(dragBindings, input);
-                  if (!clickMatches && !dragMatches) return;
-
-                  const beginDragArgs =
-                    dragMatches &&
-                    input !== null &&
-                    dragLayer !== null &&
-                    targetObj !== null
-                      ? {
-                          nodeName: props.name,
-                          // Batched handles (meshes/GLBs/axes) set
-                          // computeClickInstanceIndexFromInstanceId; plain
-                          // handles leave it undefined and instance_index
-                          // is null on the wire.
-                          instanceIndex:
-                            computeClickInstanceIndexFromInstanceId ===
-                            undefined
-                              ? null
-                              : computeClickInstanceIndexFromInstanceId(
-                                  e.instanceId,
-                                ),
-                          targetObj,
-                          eventPoint: e.point,
-                          pointerXy: getPointerXy(e.clientX, e.clientY),
-                          pointerId: e.nativeEvent.pointerId,
-                          input,
-                          bindings: dragBindings,
-                        }
-                      : null;
-
-                  if (clickMatches || dragMatches) {
-                    // Every interactive node runs through the
-                    // motion-threshold candidate: a stationary press on
-                    // a clickable node fires the click without a
-                    // spurious drag start/end pair, and a stationary
-                    // press on a drag-only node fires nothing at all
-                    // (vs. the prior behavior, where dragstart fired
-                    // immediately and dragend followed on release with
-                    // no motion between -- a degenerate gesture user
-                    // code had to special-case).
-                    interaction.nodeGestures.beginCandidate({
-                      pointerId: e.nativeEvent.pointerId,
-                      nodeKey: props.name,
-                      startClientXy: [e.clientX, e.clientY],
-                      lockCamera: dragMatches,
-                      onPromote:
-                        beginDragArgs === null || dragLayer === null
-                          ? null
-                          : (promotionModifier) =>
-                              dragLayer.beginDrag({
-                                ...beginDragArgs,
-                                promotionModifier,
-                              }),
-                    });
-                    if (dragMatches) e.nativeEvent.preventDefault();
-                  }
-                }
-          }
-          onContextMenu={
-            !interactive
-              ? undefined
-              : (e) => {
-                  if (!isDisplayed()) return;
-                  // Suppress the browser context menu only when the
-                  // gesture that fired this contextmenu would actually
-                  // be consumed by this node. The native contextmenu
-                  // event's button code is not reliable across browsers,
-                  // so we consult the input recorded by the most recent
-                  // pointerdown -- which on macOS includes the
-                  // pointerdown that ctrl+left-click raises alongside
-                  // the contextmenu event.
-                  // Fallback: if no pointerdown was recorded (e.g. the
-                  // menu was triggered by the keyboard menu key), use a
-                  // plain right-button input -- preserves the original
-                  // "right-click on a right-bound node" behavior.
-                  const input: DragInput =
-                    interaction.nodeGestures.getLastPointerDownInput() ?? {
-                      button: "right",
-                      modifier: keyModifierFromEvent(e),
-                    };
-                  const dragMatches = anyBindingMatches(dragBindings, input);
-                  const clickMatches = anyBindingMatches(clickBindings, input);
-                  if (!dragMatches && !clickMatches) return;
-                  e.nativeEvent.preventDefault();
-                  e.stopPropagation();
-                }
-          }
-          onPointerMove={
-            !interactive
-              ? undefined
-              : (e) => {
-                  if (!isDisplayed()) return;
-                  e.stopPropagation();
-
-                  // Track pointer position for the useFrame hover
-                  // recheck (mesh geometry update / visibility loss).
-                  lastPointerPos.current = {
-                    clientX: e.clientX,
-                    clientY: e.clientY,
-                  };
-                }
-          }
-          onPointerUp={
-            !interactive
-              ? undefined
-              : (e) => {
-                  if (!isDisplayed()) return;
-                  e.stopPropagation();
-
-                  // Drop the recorded pointerdown input now that the
-                  // gesture is over. Prevents stale state from
-                  // confusing a later keyboard-triggered contextmenu
-                  // (Shift+F10 / Menu key). macOS ctrl+click fires
-                  // contextmenu BEFORE pointerup, so the suppression
-                  // path has already consumed the value by the time
-                  // we clear it.
-                  interaction.nodeGestures.clearLastPointerDownInput();
-                  // Settle any node-click-candidate. "click" means the
-                  // press stayed stationary; "none" means it
-                  // promoted to drag, was cancelled, or no candidate
-                  // was ever started (for example, a drag-only node).
-                  const outcome = interaction.nodeGestures.settlePointerUp({
-                    pointerId: e.nativeEvent.pointerId,
-                  });
-                  if (!clickable || outcome !== "click") return;
-                  // Convert ray to viser coordinates.
-                  const ray = rayToViserCoords(viewer, e.ray);
-
-                  // Send OpenCV image coordinates to the server (normalized).
-                  const mouseVectorOpenCV = opencvXyFromPointerXy(
-                    viewer,
-                    getPointerXy(e.clientX, e.clientY),
-                  );
-
-                  sendClicksThrottled({
-                    type: "SceneNodeClickMessage",
-                    name: props.name,
-                    instance_index:
-                      computeClickInstanceIndexFromInstanceId === undefined
-                        ? null
-                        : computeClickInstanceIndexFromInstanceId(e.instanceId),
-                    // Note that the threejs up is +Y, but we expose a +Z up.
-                    ray_origin: [ray.origin.x, ray.origin.y, ray.origin.z],
-                    ray_direction: [
-                      ray.direction.x,
-                      ray.direction.y,
-                      ray.direction.z,
-                    ],
-                    screen_pos: [mouseVectorOpenCV.x, mouseVectorOpenCV.y],
-                    modifier: keyModifierFromEvent(e),
-                    // Echo the EFFECTIVE variant's owner: only the mounted
-                    // variant is interactive, and the server routes the
-                    // event to that scope's registry alone.
-                    owner: ownerOf(
-                      viewer.useSceneTree.get(props.name)?.message,
-                    ),
-                  });
-                }
-          }
-          onPointerCancel={
-            !interactive
-              ? undefined
-              : (e) => {
-                  interaction.cancelPointer(e.nativeEvent.pointerId);
-                }
-          }
-          onPointerOver={
-            !interactive
-              ? undefined
-              : (e) => {
-                  if (!isDisplayed()) return;
-                  e.stopPropagation();
-
-                  // Store pointer position for re-raycasting when mesh changes.
-                  lastPointerPos.current = {
-                    clientX: e.clientX,
-                    clientY: e.clientY,
-                  };
-
-                  // Guard against double-increment if already hovered.
-                  if (hoveredRef.current.isHovered) return;
-
-                  // Update hover state.
-                  hoveredRef.current.isHovered = true;
-                  // Store the instanceId in the hover ref.
-                  hoveredRef.current.instanceId = e.instanceId ?? null;
-                  interaction.hover.setHovered(props.name, true);
-                }
-          }
-          onPointerOut={
-            !interactive
-              ? undefined
-              : () => {
-                  if (!isDisplayed()) return;
-                  // Guard against decrementing if already reset (e.g., by objNode change).
-                  if (!hoveredRef.current.isHovered) return;
-
-                  // Update hover state.
-                  hoveredRef.current.isHovered = false;
-                  // Clear the instanceId when no longer hovering.
-                  hoveredRef.current.instanceId = null;
-                  interaction.hover.setHovered(props.name, false);
-                }
-          }
-        >
-          <HoverableContext.Provider value={{ state: hoveredRef, clickable }}>
-            {objNode}
-          </HoverableContext.Provider>
-        </group>
-      </>
+    const applyUpdatesRef = React.useRef(applyUpdates);
+    React.useLayoutEffect(() => {
+      applyUpdatesRef.current = applyUpdates;
+    });
+    React.useLayoutEffect(
+      () =>
+        viewer.sceneNodeUpdates.register(props.name, () =>
+          applyUpdatesRef.current(),
+        ),
+      [viewer, props.name],
     );
-  }
+    // Visibility may have changed again while a change to `unmount` was pending.
+    React.useLayoutEffect(() => {
+      viewer.sceneNodeUpdates.markDirty(props.name);
+    }, [viewer, props.name, unmount]);
+
+    // Clicking logic. The sender is created on the first click.
+    const clickSenderRef = React.useRef<ReturnType<
+      typeof makeThrottledMessageSender
+    > | null>(null);
+
+    // Handle case where interactivity is toggled off while still hovered. Not
+    // during render: components that show the hover state are notified.
+    React.useLayoutEffect(() => {
+      if (!interactive && hoverState.isHovered) {
+        hoverState.set(false, null);
+        interaction.hover.setHovered(props.name, false);
+        interaction.nodeGestures.cancelNode(props.name);
+      }
+    }, [interactive, hoverState, interaction, props.name]);
+
+    // End the active drag if this node's draggability is revoked (bindings
+    // cleared) or the component unmounts. DragLayer no-ops if the active
+    // drag targets a different node, so this is safe to call unconditionally.
+    React.useEffect(() => {
+      if (!draggable && dragLayer !== null) {
+        dragLayer.stopIfNodeIs(props.name);
+        interaction.nodeGestures.cancelNode(props.name);
+      }
+    }, [draggable, dragLayer, interaction, props.name]);
+
+    // Reset hover state on true unmount, and tell DragLayer to end the
+    // drag if it targets this node.
+    const dragLayerRef = React.useRef(dragLayer);
+    dragLayerRef.current = dragLayer;
+    useEffect(() => {
+      return () => {
+        if (hoverState.isHovered) {
+          hoverState.set(false, null);
+          interaction.hover.setHovered(props.name, false);
+        }
+        clickSenderRef.current?.cancel();
+        dragLayerRef.current?.stopIfNodeIs(props.name);
+        interaction.nodeGestures.cancelNode(props.name);
+      };
+    }, [interaction, props.name]);
+
+    // Pointer events on descendants bubble up to us, so they need to be
+    // raycast against too.
+    const raycastable =
+      (React.useContext(HoverableContext)?.raycastable ?? false) || interactive;
+    const hoverContextValue = React.useMemo(
+      () => ({
+        nodeName: props.name,
+        state: hoverState,
+        clickable,
+        raycastable,
+      }),
+      [props.name, hoverState, clickable, raycastable],
+    );
+
+    if (objNode === undefined || unmount) {
+      return null;
+    } else {
+      return (
+        <>
+          <sceneNodeGroup
+            ref={setGroupRef}
+            // Instead of using onClick, we use onPointerDown/Move/Up to check mouse drag,
+            // and only send a click if the mouse hasn't moved between the down and up events.
+            //  - onPointerDown resets the click state (dragged = false)
+            //  - onPointerMove, if triggered, sets dragged = true
+            //  - onPointerUp, if triggered, sends a click if dragged = false.
+            // Note: It would be cool to have dragged actions too...
+            onPointerDown={
+              !interactive
+                ? undefined
+                : (e) => {
+                    if (!isDisplayed()) return;
+                    e.stopPropagation();
+                    const buttonName = pointerButtonFromNative(
+                      e.nativeEvent.button,
+                    );
+                    const input: DragInput | null =
+                      buttonName === null
+                        ? null
+                        : {
+                            button: buttonName,
+                            modifier: keyModifierFromEvent(e),
+                          };
+                    interaction.nodeGestures.recordPointerDown(input);
+
+                    const clickMatches =
+                      input !== null && anyBindingMatches(clickBindings, input);
+                    const targetObj = objRef.current;
+                    const dragMatches =
+                      input !== null &&
+                      draggable &&
+                      dragLayer !== null &&
+                      targetObj !== null &&
+                      anyBindingMatches(dragBindings, input);
+                    if (!clickMatches && !dragMatches) return;
+
+                    const beginDragArgs =
+                      dragMatches &&
+                      input !== null &&
+                      dragLayer !== null &&
+                      targetObj !== null
+                        ? {
+                            nodeName: props.name,
+                            // Batched handles (meshes/GLBs/axes) set
+                            // computeClickInstanceIndexFromInstanceId; plain
+                            // handles leave it undefined and instance_index
+                            // is null on the wire.
+                            instanceIndex:
+                              computeClickInstanceIndexFromInstanceId ===
+                              undefined
+                                ? null
+                                : computeClickInstanceIndexFromInstanceId(
+                                    e.instanceId,
+                                  ),
+                            targetObj,
+                            eventPoint: e.point,
+                            pointerXy: getPointerXy(e.clientX, e.clientY),
+                            pointerId: e.nativeEvent.pointerId,
+                            input,
+                            bindings: dragBindings,
+                          }
+                        : null;
+
+                    if (clickMatches || dragMatches) {
+                      // Every interactive node runs through the
+                      // motion-threshold candidate: a stationary press on
+                      // a clickable node fires the click without a
+                      // spurious drag start/end pair, and a stationary
+                      // press on a drag-only node fires nothing at all
+                      // (vs. the prior behavior, where dragstart fired
+                      // immediately and dragend followed on release with
+                      // no motion between -- a degenerate gesture user
+                      // code had to special-case).
+                      interaction.nodeGestures.beginCandidate({
+                        pointerId: e.nativeEvent.pointerId,
+                        nodeKey: props.name,
+                        startClientXy: [e.clientX, e.clientY],
+                        lockCamera: dragMatches,
+                        onPromote:
+                          beginDragArgs === null || dragLayer === null
+                            ? null
+                            : (promotionModifier) =>
+                                dragLayer.beginDrag({
+                                  ...beginDragArgs,
+                                  promotionModifier,
+                                }),
+                      });
+                      if (dragMatches) e.nativeEvent.preventDefault();
+                    }
+                  }
+            }
+            onContextMenu={
+              !interactive
+                ? undefined
+                : (e) => {
+                    if (!isDisplayed()) return;
+                    // Suppress the browser context menu only when the
+                    // gesture that fired this contextmenu would actually
+                    // be consumed by this node. The native contextmenu
+                    // event's button code is not reliable across browsers,
+                    // so we consult the input recorded by the most recent
+                    // pointerdown -- which on macOS includes the
+                    // pointerdown that ctrl+left-click raises alongside
+                    // the contextmenu event.
+                    // Fallback: if no pointerdown was recorded (e.g. the
+                    // menu was triggered by the keyboard menu key), use a
+                    // plain right-button input -- preserves the original
+                    // "right-click on a right-bound node" behavior.
+                    const input: DragInput =
+                      interaction.nodeGestures.getLastPointerDownInput() ?? {
+                        button: "right",
+                        modifier: keyModifierFromEvent(e),
+                      };
+                    const dragMatches = anyBindingMatches(dragBindings, input);
+                    const clickMatches = anyBindingMatches(
+                      clickBindings,
+                      input,
+                    );
+                    if (!dragMatches && !clickMatches) return;
+                    e.nativeEvent.preventDefault();
+                    e.stopPropagation();
+                  }
+            }
+            onPointerMove={
+              !interactive
+                ? undefined
+                : (e) => {
+                    if (!isDisplayed()) return;
+                    e.stopPropagation();
+
+                    // Track pointer position for the useFrame hover
+                    // recheck (mesh geometry update / visibility loss).
+                    lastPointerPos.current = {
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                    };
+                  }
+            }
+            onPointerUp={
+              !interactive
+                ? undefined
+                : (e) => {
+                    if (!isDisplayed()) return;
+                    e.stopPropagation();
+
+                    // Drop the recorded pointerdown input now that the
+                    // gesture is over. Prevents stale state from
+                    // confusing a later keyboard-triggered contextmenu
+                    // (Shift+F10 / Menu key). macOS ctrl+click fires
+                    // contextmenu BEFORE pointerup, so the suppression
+                    // path has already consumed the value by the time
+                    // we clear it.
+                    interaction.nodeGestures.clearLastPointerDownInput();
+                    // Settle any node-click-candidate. "click" means the
+                    // press stayed stationary; "none" means it
+                    // promoted to drag, was cancelled, or no candidate
+                    // was ever started (for example, a drag-only node).
+                    const outcome = interaction.nodeGestures.settlePointerUp({
+                      pointerId: e.nativeEvent.pointerId,
+                    });
+                    if (!clickable || outcome !== "click") return;
+                    // Convert ray to viser coordinates.
+                    const ray = rayToViserCoords(viewer, e.ray);
+
+                    // Send OpenCV image coordinates to the server (normalized).
+                    const mouseVectorOpenCV = opencvXyFromPointerXy(
+                      viewer,
+                      getPointerXy(e.clientX, e.clientY),
+                    );
+
+                    clickSenderRef.current ??= makeThrottledMessageSender(
+                      viewer,
+                      50,
+                    );
+                    clickSenderRef.current.send({
+                      type: "SceneNodeClickMessage",
+                      name: props.name,
+                      instance_index:
+                        computeClickInstanceIndexFromInstanceId === undefined
+                          ? null
+                          : computeClickInstanceIndexFromInstanceId(
+                              e.instanceId,
+                            ),
+                      // Note that the threejs up is +Y, but we expose a +Z up.
+                      ray_origin: [ray.origin.x, ray.origin.y, ray.origin.z],
+                      ray_direction: [
+                        ray.direction.x,
+                        ray.direction.y,
+                        ray.direction.z,
+                      ],
+                      screen_pos: [mouseVectorOpenCV.x, mouseVectorOpenCV.y],
+                      modifier: keyModifierFromEvent(e),
+                      // Echo the EFFECTIVE variant's owner: only the mounted
+                      // variant is interactive, and the server routes the
+                      // event to that scope's registry alone.
+                      owner: ownerOf(
+                        viewer.useSceneTree.get(props.name)?.message,
+                      ),
+                    });
+                  }
+            }
+            onPointerCancel={
+              !interactive
+                ? undefined
+                : (e) => {
+                    interaction.cancelPointer(e.nativeEvent.pointerId);
+                  }
+            }
+            onPointerOver={
+              !interactive
+                ? undefined
+                : (e) => {
+                    if (!isDisplayed()) return;
+                    e.stopPropagation();
+
+                    // Store pointer position for re-raycasting when mesh changes.
+                    lastPointerPos.current = {
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                    };
+
+                    // Guard against double-increment if already hovered.
+                    if (hoverState.isHovered) return;
+
+                    // Update hover state.
+                    hoverState.set(true, e.instanceId ?? null);
+                    interaction.hover.setHovered(props.name, true);
+                  }
+            }
+            onPointerOut={
+              !interactive
+                ? undefined
+                : () => {
+                    if (!isDisplayed()) return;
+                    // Guard against decrementing if already reset (e.g., by objNode change).
+                    if (!hoverState.isHovered) return;
+
+                    // Update hover state.
+                    hoverState.set(false, null);
+                    interaction.hover.setHovered(props.name, false);
+                  }
+            }
+          >
+            <HoverableContext.Provider value={hoverContextValue}>
+              {objNode}
+            </HoverableContext.Provider>
+          </sceneNodeGroup>
+        </>
+      );
+    }
+  },
+);
+
+function sceneNodeChildrenEqual(
+  a: SceneNode | undefined,
+  b: SceneNode | undefined,
+): boolean {
+  return (
+    a === b ||
+    (a?.labelVisible === b?.labelVisible &&
+      shallowArrayEqual(a?.children, b?.children))
+  );
 }
 
 function SceneNodeChildren(props: { name: string }) {
   const viewer = React.useContext(ViewerContext)!;
-  const childrenNames = viewer.useSceneTree(
+  const node = viewer.useSceneTree(
     props.name,
-    (node) => node?.children,
-    shallowArrayEqual,
+    identity,
+    sceneNodeChildrenEqual,
   );
   return (
     <>
-      {childrenNames &&
-        childrenNames.map((child_id) => (
-          <SceneNodeThreeObject key={child_id} name={child_id} />
-        ))}
-      <SceneNodeLabel name={props.name} />
+      {node?.children.map((child_id) => (
+        <SceneNodeThreeObject key={child_id} name={child_id} />
+      ))}
+      {node?.labelVisible ? <SceneNodeLabel name={props.name} /> : null}
     </>
   );
 }
