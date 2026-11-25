@@ -10,8 +10,10 @@ import warnings
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     ClassVar,
     Dict,
+    FrozenSet,
     List,
     Optional,
     Tuple,
@@ -72,6 +74,197 @@ def _prepare_for_deserialization(value: Any, annotation: Type) -> Any:
             )
         return tuple(out)
     return value
+
+
+def _deserialize_float(value: Any) -> Any:
+    return value if type(value) is float else float(value)
+
+
+def _deserialize_int(value: Any) -> Any:
+    return value if type(value) is int else int(value)
+
+
+def _identity(value: Any) -> Any:
+    return value
+
+
+def _make_deserialize_converter(annotation: Any) -> Callable[[Any], Any]:
+    if annotation is float:
+        return _deserialize_float
+    if annotation is int:
+        return _deserialize_int
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is tuple and args and all(a is float for a in args):
+        length = len(args)
+
+        def deserialize_float_tuple(value: Any) -> Any:
+            if len(value) != length:
+                return _prepare_for_deserialization(value, annotation)
+            return tuple([v if type(v) is float else float(v) for v in value])
+
+        return deserialize_float_tuple
+    if origin is tuple or origin is Union:
+        return lambda value: _prepare_for_deserialization(value, annotation)
+    return _identity
+
+
+@functools.lru_cache(maxsize=None)
+def _deserialize_converters(cls: Type[Any]) -> Dict[str, Callable[[Any], Any]]:
+    return {
+        k: _make_deserialize_converter(v) for k, v in get_type_hints_cached(cls).items()
+    }
+
+
+def _flat_byte_view(array: np.ndarray) -> memoryview:
+    """View an array's contents as flat, C-ordered bytes. Copies only if the
+    array isn't C-contiguous."""
+    if array.size == 0:
+        # memoryview.cast() rejects shapes containing zeros.
+        return memoryview(b"")
+    if not array.flags.c_contiguous:
+        array = array.copy()
+    # datetime64 and friends don't support the buffer protocol directly; all the
+    # dtypes we put on the wire do.
+    return array.data.cast("B")
+
+
+_PASSTHROUGH_TYPES = frozenset({str, int, float, bool, bytes, type(None)})
+"""Exact types that msgpack encodes as-is."""
+
+Converter = Callable[[Any, Optional[List[memoryview]]], Any]
+
+
+def _serialize_dynamic(value: Any, binary_buffers: Optional[List[memoryview]]) -> Any:
+    """Serialize from the value's runtime type. Equivalent to
+    ``_prepare_for_serialization()`` with an annotation that has no bearing on
+    scalar coercion (``Any``, unions, ...), with fast paths for common types."""
+    t = type(value)
+    if t in _PASSTHROUGH_TYPES:
+        return value
+    if t is tuple or t is list:
+        return [
+            v
+            if type(v) in _PASSTHROUGH_TYPES
+            else _serialize_dynamic(v, binary_buffers)
+            for v in value
+        ]
+    if t is dict:
+        return {
+            k: v
+            if type(v) in _PASSTHROUGH_TYPES
+            else _serialize_dynamic(v, binary_buffers)
+            for k, v in value.items()
+        }
+    return _prepare_for_serialization(value, Any, binary_buffers)
+
+
+def _serialize_float(value: Any, _: Optional[List[memoryview]]) -> Any:
+    return value if type(value) is float else float(value)
+
+
+def _serialize_int(value: Any, _: Optional[List[memoryview]]) -> Any:
+    if type(value) is int:
+        return value
+    # Lenient about wrong annotations: don't truncate.
+    return float(value) if isinstance(value, np.floating) else int(value)
+
+
+def _serialize_bool(value: Any, _: Optional[List[memoryview]]) -> Any:
+    if type(value) is bool:
+        return value
+    # Lenient about wrong annotations: don't truncate.
+    if isinstance(value, (np.floating, np.integer)):
+        return value.item()
+    return bool(value)
+
+
+_SCALAR_CONVERTERS: Dict[Any, Any] = {
+    float: _serialize_float,
+    int: _serialize_int,
+    bool: _serialize_bool,
+}
+
+
+def _make_converter(annotation: Any) -> Converter:
+    """Resolve an annotation to a serialization function once, so that the
+    annotation doesn't need to be inspected for every message."""
+    if annotation is float:
+        return _serialize_float
+    if annotation is int:
+        return _serialize_int
+    if annotation is bool:
+        return _serialize_bool
+
+    if dataclasses.is_dataclass(annotation):
+
+        def serialize_dataclass(
+            value: Any, binary_buffers: Optional[List[memoryview]]
+        ) -> Any:
+            if isinstance(value, np.generic):
+                return value.item()
+            return {
+                k: v
+                if type(v) in _PASSTHROUGH_TYPES
+                else _serialize_dynamic(v, binary_buffers)
+                for k, v in vars(value).items()
+            }
+
+        return serialize_dataclass
+
+    args = get_args(annotation)
+    if get_origin(annotation) is tuple and all(
+        a in (float, int, bool) for a in args if a is not Ellipsis
+    ):
+        converters = [_SCALAR_CONVERTERS[a] for a in args if a is not Ellipsis]
+        variadic = len(args) == 2 and args[1] is Ellipsis
+
+        def serialize_scalar_tuple(
+            value: Any, binary_buffers: Optional[List[memoryview]]
+        ) -> Any:
+            if type(value) is tuple:
+                if variadic:
+                    convert = converters[0]
+                    return [convert(v, None) for v in value]
+                if len(value) == len(converters):
+                    return [convert(v, None) for v, convert in zip(value, converters)]
+            # Mismatched arity, arrays, etc.
+            return _prepare_for_serialization(value, annotation, binary_buffers)
+
+        return serialize_scalar_tuple
+
+    if annotation is Any or annotation is str or get_origin(annotation) is not tuple:
+        # Scalar coercion only happens for float/int/bool annotations, so
+        # anything else depends only on the runtime value.
+        return _serialize_dynamic
+
+    def serialize_generic(
+        value: Any, binary_buffers: Optional[List[memoryview]]
+    ) -> Any:
+        return _prepare_for_serialization(value, annotation, binary_buffers)
+
+    return serialize_generic
+
+
+@functools.lru_cache(maxsize=None)
+def _wire_converters(
+    cls: Type[Any],
+) -> Tuple[Tuple[str, FrozenSet[type], Converter], ...]:
+    """(field name, passthrough types, converter) for everything a message type
+    puts on the wire. Values whose exact type is in the passthrough set don't
+    need to be converted."""
+    hints = get_type_hints_cached(cls)
+    out = []
+    for name in wire_field_names(cls):
+        convert = _make_converter(hints[name])
+        passthrough = {
+            _serialize_float: frozenset({float}),
+            _serialize_int: frozenset({int}),
+            _serialize_bool: frozenset({bool}),
+            _serialize_dynamic: _PASSTHROUGH_TYPES,
+        }.get(convert, frozenset())
+        out.append((name, passthrough, convert))
+    return tuple(out)
 
 
 def _prepare_for_serialization(
@@ -141,7 +334,7 @@ def _prepare_for_serialization(
 
     # Handle numpy arrays: extract or inline depending on mode.
     if isinstance(value, np.ndarray):
-        data = value.data if value.flags.c_contiguous else value.copy().data
+        data = _flat_byte_view(value)
         if binary_buffers is not None:
             # Extract into separate buffer with tagged placeholder.
             idx = len(binary_buffers)
@@ -254,13 +447,12 @@ class Message(abc.ABC):
         and replaced with tagged placeholder dicts for the hybrid wire format.
         Otherwise, arrays are inlined as memoryviews in the returned dict."""
         message_type = type(self)
-        hints = get_type_hints_cached(message_type)
-        out = {
-            name: _prepare_for_serialization(
-                getattr(self, name), hints[name], binary_buffers
+        out = {}
+        for name, passthrough, convert in _wire_converters(message_type):
+            value = getattr(self, name)
+            out[name] = (
+                value if type(value) in passthrough else convert(value, binary_buffers)
             )
-            for name in wire_field_names(message_type)
-        }
         out["type"] = message_type.__name__
         return out
 
@@ -268,12 +460,8 @@ class Message(abc.ABC):
     def _from_serializable_dict(cls, mapping: Dict[str, Any]) -> Dict[str, Any]:
         """Convert a dict message back into a Python Message object."""
 
-        hints = get_type_hints_cached(cls)
-
-        mapping = {
-            k: _prepare_for_deserialization(v, hints[k]) for k, v in mapping.items()
-        }
-        return mapping
+        converters = _deserialize_converters(cls)
+        return {k: converters[k](v) for k, v in mapping.items()}
 
     @classmethod
     def deserialize(cls, message: bytes) -> Message:

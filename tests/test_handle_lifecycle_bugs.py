@@ -439,11 +439,12 @@ def test_gaussian_splat_subprop_update_does_not_alias_buffer() -> None:
 
         s.centers = np.ones((n, 3), np.float32)
         queued = latest_buffer_update()
-        # The queued message must not alias the live server-owned buffer.
-        assert queued is not s._impl.props.buffer
+        # The queued buffer may be shared with the server-side state, but only
+        # if it's immutable -- and it must not alias what user code can read.
+        assert not queued.flags.writeable
+        assert not np.shares_memory(queued, s.buffer)
         before = queued.copy()
-        # A later sub-property write mutates the stored buffer in place; the
-        # already-queued message must stay untouched.
+        # The already-queued message must stay untouched by later writes.
         s.centers = np.full((n, 3), 7.0, np.float32)
         assert np.array_equal(queued, before)
 
@@ -522,10 +523,10 @@ def test_set_gaussians_count_change_queues_single_update() -> None:
             interface.queue_message = original_queue_message  # type: ignore[method-assign]
 
         assert len(buffer_updates) == 1
-        # The queued snapshot must alias neither the live server-owned buffer
-        # (mutated in place by later sub-property writes) nor anything the
+        # The queued snapshot must be immutable, and must not alias anything the
         # caller can touch.
-        assert buffer_updates[0] is not s._impl.props.buffer
+        assert not buffer_updates[0].flags.writeable
+        assert not np.shares_memory(buffer_updates[0], s.buffer)
         queued_before = buffer_updates[0].copy()
         s.centers = np.full((m, 3), 7.0, np.float32)
         assert np.array_equal(buffer_updates[0], queued_before)

@@ -1450,17 +1450,19 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             # consumed it.
             remove_message_ids: list[int] = []
             removed_ids_by_type: dict[str, set[str]] = {}
-            for msg_id, message in buffer.message_from_id.items():
-                if message.lifecycle_phase == "remove":
-                    assert (
-                        message.entity_type is not None
-                        and message.entity_id_field is not None
-                    )
-                    if deletable(msg_id):
-                        remove_message_ids.append(msg_id)
-                    removed_ids_by_type.setdefault(message.entity_type, set()).add(
-                        getattr(message, message.entity_id_field)
-                    )
+            for msg_id in buffer.tombstone_ids:
+                message = buffer.message_from_id.get(msg_id)
+                if message is None:
+                    continue
+                assert (
+                    message.entity_type is not None
+                    and message.entity_id_field is not None
+                )
+                if deletable(msg_id):
+                    remove_message_ids.append(msg_id)
+                removed_ids_by_type.setdefault(message.entity_type, set()).add(
+                    getattr(message, message.entity_id_field)
+                )
 
             # Second pass: purge updates whose target entity has a tombstone,
             # including scene-adjacent Set*Message variants that target a

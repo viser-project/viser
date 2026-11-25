@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import dataclasses
+import operator
 import threading
 from asyncio.events import AbstractEventLoop
 from typing import (
+    Any,
     AsyncGenerator,
     Callable,
+    Deque,
     Dict,
     Generator,
     List,
@@ -46,10 +50,23 @@ class AsyncMessageBuffer:
     buffer_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     """Lock to prevent race conditions when pushing messages from different threads."""
 
-    max_window_size: int = 128
+    tombstone_ids: Set[int] = dataclasses.field(default_factory=set)
+    """Ids of buffered ``lifecycle_phase == "remove"`` messages, so the
+    connect-time GC doesn't scan the whole buffer for them. Maintained alongside
+    the entity-state index."""
+
+    max_window_size: int = 1024
+    """Cap on messages per window. This bounds how long the event loop spends
+    gathering/encoding one window; array payloads are bounded separately, by
+    the producer splitting windows on encoded bytes."""
     window_duration_sec: float = 1.0 / 60.0
     done: bool = False
     atomic_counter: int = 0
+    _wake_scheduled: bool = False
+    """True while a ``_wake`` callback is queued on the event loop. Pushes
+    coalesce onto it: each ``call_soon_threadsafe`` costs a self-pipe write, and
+    one per message dominated the cost of streaming updates."""
+
     _warned_push_after_done: bool = False
     """One-shot latch for the dead-connection write warning in push()."""
 
@@ -65,6 +82,39 @@ class AsyncMessageBuffer:
     that EVERY active generator has consumed -- a shared "any messages
     pending?" event is not a consumption watermark, since a backpressured
     client's cursor can sit arbitrarily far behind it."""
+
+    _encoding_cache: Optional[Tuple[Sequence[Message], List[Any]]] = None
+    """Most recently encoded window and its wire payload. See
+    ``get_cached_encoding()``."""
+
+    def get_cached_encoding(self, window: Sequence[Message]) -> Optional[List[Any]]:
+        """Encoded payload for a window, if another consumer just encoded the
+        exact same messages. Event loop only."""
+        if self._encoding_cache is None:
+            return None
+        cached_window, parts = self._encoding_cache
+        if len(cached_window) == len(window) and all(
+            map(operator.is_, cached_window, window)
+        ):
+            return parts
+        return None
+
+    def cache_encoding(
+        self, window: Sequence[Message], parts: Optional[List[Any]]
+    ) -> None:
+        """Share an encoded window with other consumers. ``None`` clears. Event
+        loop only."""
+        # Don't pin payloads in memory if there's nobody to share them with, or
+        # if they're big: arrays are cheap to re-encode, so there's little to
+        # gain from holding on to them.
+        if (
+            parts is not None
+            and len(self.generator_cursors) > 1
+            and sum(map(len, parts)) <= 4 << 20
+        ):
+            self._encoding_cache = (window, parts)
+        else:
+            self._encoding_cache = None
 
     @contextlib.contextmanager
     def sanctioned_dead_writes(self) -> Generator[None, None, None]:
@@ -93,6 +143,7 @@ class AsyncMessageBuffer:
         message = self.message_from_id.pop(message_id, None)
         if message is None:
             return None
+        self.tombstone_ids.discard(message_id)
         # Unmap the redundancy slot only if it still points at THIS message:
         # slots for colliding keys point at the newest holder, and a blind
         # pop here would orphan that newer message's mapping.
@@ -195,6 +246,8 @@ class AsyncMessageBuffer:
             new_message_id = self.message_counter
             self.message_from_id[new_message_id] = message
             self.message_counter += 1
+            if message.lifecycle_phase == "remove":
+                self.tombstone_ids.add(new_message_id)
             if entity_key is not None:
                 ids = self.ids_from_entity_state_key.get(entity_key)
                 if ids is None:
@@ -203,35 +256,39 @@ class AsyncMessageBuffer:
 
             # If an existing message with the same key already exists in our buffer, we
             # don't need the old one anymore. :-)
-            if (
-                redundancy_key is not None
-                and redundancy_key in self.id_from_redundancy_key
-            ):
-                old_message_id = self.id_from_redundancy_key[redundancy_key]
+            old_message_id = self.id_from_redundancy_key.get(redundancy_key)
+            if old_message_id is not None:
                 self.pop_message_locked(old_message_id)
             self.id_from_redundancy_key[redundancy_key] = new_message_id
 
-            # Pulse message event to notify consumers that a new message is
-            # available.
-            #
-            # We set this both inside and outside of the event loop.
-            #
-            # This call is necessary so we can read the value immedaitely
-            # in synchronous logic.
-            self.message_event.set()
+            # Notify consumers that a new message is available. If we're in an
+            # atomic block, this will happen when atomic_end() is called.
             if self.atomic_counter == 0:
-                # This call is necessary to make sure that awaiting tasks are
-                # triggered correctly.
-                #
-                # If we're in an atomic block, this will happen when
-                # atomic_end() is called.
-                try:
-                    self.event_loop.call_soon_threadsafe(self.message_event.set)
-                except RuntimeError:
-                    # Event loop already closed (write after stop()); the
-                    # message is buffered above, and a closed loop has no
-                    # consumer to wake -- same tolerance as set_done().
-                    pass
+                self._schedule_wake_locked()
+
+    def _schedule_wake_locked(self) -> None:
+        """Pulse ``message_event`` from the event loop, unless that's already
+        scheduled or nobody is listening. The caller must hold
+        ``buffer_lock``."""
+        # A consumer registers its cursor BEFORE reading message_counter, so if
+        # we see no cursors here then any consumer that shows up later will
+        # observe the message we just pushed.
+        if self._wake_scheduled or not self.generator_cursors:
+            return
+        try:
+            self.event_loop.call_soon_threadsafe(self._wake)
+            self._wake_scheduled = True
+        except RuntimeError:
+            # Event loop already closed (write after stop()); messages are
+            # buffered, and a closed loop has no consumer to wake -- same
+            # tolerance as set_done().
+            pass
+
+    def _wake(self) -> None:
+        # Order matters: a push landing after the flag clears schedules a new
+        # wake, and one landing before it is covered by the set() below.
+        self._wake_scheduled = False
+        self.message_event.set()
 
     def atomic_start(self) -> None:
         """Start an atomic block. No new messages/windows should be sent."""
@@ -245,13 +302,8 @@ class AsyncMessageBuffer:
         """End an atomic block."""
         with self.buffer_lock:
             self.atomic_counter -= 1
-            should_flush = self.atomic_counter == 0
-        if should_flush:
-            try:
-                self.event_loop.call_soon_threadsafe(self.message_event.set)
-            except RuntimeError:
-                # Event loop already closed (teardown); nothing to wake.
-                pass
+            if self.atomic_counter == 0:
+                self._schedule_wake_locked()
 
     def flush(self) -> None:
         """Flush the message buffer; signals to yield a message window immediately."""
@@ -309,6 +361,8 @@ class AsyncMessageBuffer:
         backlog_done_message: Message | None,
     ) -> AsyncGenerator[Sequence[Message], None]:
         last_sent_id = -1
+        # Ids to visit next, when there's a long gap to cross (see below).
+        pending_ids: Deque[int] = collections.deque()
         backlog_done_pending = backlog_done_message is not None
         flush_wait = self.event_loop.create_task(self.flush_event.wait())
         # Register this connection's consumption cursor (see
@@ -335,7 +389,31 @@ class AsyncMessageBuffer:
                     # in an atomic block.
                     and self.atomic_counter == 0
                 ):
-                    last_sent_id += 1
+                    # Advance to the next id. Ids are never reused, so after a
+                    # long animation most of the range up to message_counter is
+                    # holes left by coalesced updates. Walking those one by one
+                    # made connecting O(messages ever sent); when the gap is
+                    # large, visit only the ids that are actually buffered.
+                    # (Dicts are insertion-ordered and ids are ascending.)
+                    if (
+                        not pending_ids
+                        and most_recent_message_id - last_sent_id > self.max_window_size
+                    ):
+                        with self.buffer_lock:
+                            pending_ids.extend(
+                                i for i in self.message_from_id if i > last_sent_id
+                            )
+                        if not pending_ids:
+                            last_sent_id = most_recent_message_id
+                            break
+                    if pending_ids:
+                        if pending_ids[0] > most_recent_message_id:
+                            last_sent_id = most_recent_message_id
+                            break
+                        last_sent_id = pending_ids.popleft()
+                    else:
+                        last_sent_id += 1
+
                     if self.persistent_messages:
                         message = self.message_from_id.get(last_sent_id, None)
                     else:

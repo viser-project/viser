@@ -31,7 +31,7 @@ from viser._backwards_compat_shims import deprecated_positional_shim
 
 from . import _messages
 from . import transforms as tf
-from ._assignable_props_api import colors_to_uint8
+from ._assignable_props_api import cast_vector, colors_to_uint8
 from ._image_encoding import cv2_imencode_with_fallback
 from ._scene_handles import (
     AmbientLightHandle,
@@ -209,25 +209,6 @@ def _encode_image_binary(
         resolved_format, image, jpeg_quality, channel_ordering="rgb"
     )
     return resolved_format, encoded
-
-
-TVector = TypeVar("TVector", bound=tuple)
-
-
-def cast_vector(vector: TVector | np.ndarray, length: int) -> TVector:
-    # Arity is checked for EVERY input form: tuples/lists used to pass
-    # through unchecked, so a 2-tuple handed to a 3-vector API silently
-    # desynced from the client's fixed component count.
-    if isinstance(vector, np.ndarray):
-        if vector.shape != (length,):
-            raise ValueError(
-                f"Expected vector of shape {(length,)}, but got {vector.shape} instead"
-            )
-    elif len(vector) != length:
-        raise ValueError(
-            f"Expected vector of length {length}, but got {len(vector)} instead"
-        )
-    return cast(TVector, tuple(map(float, vector)))
 
 
 def _warn_wireframe_conflicts(
@@ -2293,8 +2274,8 @@ class SceneApi:
                         name=name,
                         websock_interface=self._websock_interface,
                         bone_index=i,
-                        wxyz=bone_wxyzs[i].copy(),
-                        position=bone_positions[i].copy(),
+                        wxyz=cast_vector(bone_wxyzs[i], 4),
+                        position=cast_vector(bone_positions[i], 3),
                         mesh_impl=node_handle._impl,
                     )
                 )
@@ -3171,14 +3152,14 @@ class SceneApi:
         def sync_cb(client_id: ClientId, state: TransformControlsHandle) -> None:
             message_orientation = _messages.SetOrientationMessage(
                 name=name,
-                wxyz=tuple(map(float, state._impl.wxyz)),  # type: ignore
+                wxyz=state._impl.wxyz,
             )
             message_orientation.excluded_self_client = client_id
             self._queue_scene_message(message_orientation)
 
             message_position = _messages.SetPositionMessage(
                 name=name,
-                position=tuple(map(float, state._impl.position)),  # type: ignore
+                position=state._impl.position,
             )
             message_position.excluded_self_client = client_id
             self._queue_scene_message(message_position)
@@ -3254,8 +3235,8 @@ class SceneApi:
         if handle is None:
             return
 
-        handle._impl.wxyz = np.array(message.wxyz)
-        handle._impl.position = np.array(message.position)
+        handle._impl.wxyz = message.wxyz
+        handle._impl.position = message.position
         handle._impl_aux.last_updated = time.time()
 
         await self._fire_transform_controls_callbacks(client_id, handle, "update")

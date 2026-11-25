@@ -26,7 +26,12 @@ import numpy.typing as npt
 from typing_extensions import Self, deprecated, override
 
 from . import _messages
-from ._assignable_props_api import AssignablePropsBase, colors_to_uint8
+from ._assignable_props_api import (
+    AssignablePropsBase,
+    array_snapshot,
+    cast_vector,
+    colors_to_uint8,
+)
 from .infra._infra import (
     WebsockClientConnection,
     WebsockServer,
@@ -42,32 +47,24 @@ if TYPE_CHECKING:
 _PoseTupleT = TypeVar("_PoseTupleT", bound=Tuple[float, ...])
 
 
-def _set_pose_vector(
-    current: np.ndarray,
+def _cast_pose_vector_if_changed(
+    current: tuple[float, ...],
     value: _PoseTupleT | np.ndarray,
     length: int,
-    queue: Callable[[_messages.Message], None],
-    make_message: Callable[[_PoseTupleT], _messages.Message],
-) -> None:
-    """Shared write path for the scene-node and skinned-bone pose setters.
+) -> _PoseTupleT | None:
+    """Shared validation for the scene-node and skinned-bone pose setters.
 
-    Casts and validates ``value``, no-ops if it is exactly equal to ``current``,
-    and otherwise writes it into ``current`` in place and queues the
-    message built from the cast value (via ``queue``, typically the owning
-    SceneApi's owner-stamping ``_queue_scene_message``). Keeping this in one
-    place stops the four near-identical wxyz/position setters from drifting
-    apart.
+    Casts and validates ``value``. Returns ``None`` if it is exactly equal to
+    ``current``, in which case there is nothing to send.
+
+    Poses are stored as immutable tuples and the getters return fresh arrays, so
+    values that users modify in-place (``handle.position += 1.0``) always compare
+    against the last value that was actually sent.
     """
-    from ._scene_api import cast_vector
-
     value_cast: _PoseTupleT = cast_vector(value, length)
-    value_arr = np.asarray(value_cast)
     # Exact, not approximate: a tolerance would drop small real motions, and the
     # skipped poses would accumulate as lag behind the caller's state.
-    if np.array_equal(value_arr, current):
-        return
-    current[:] = value_arr
-    queue(make_message(value_cast))
+    return None if value_cast == current else value_cast
 
 
 def _queue_empty_interaction_bindings(
@@ -216,12 +213,8 @@ class _SceneNodeHandleState:
     """Message containing properties of this scene node that are sent to the
     client."""
     api: SceneApi
-    wxyz: np.ndarray = dataclasses.field(
-        default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0])
-    )
-    position: np.ndarray = dataclasses.field(
-        default_factory=lambda: np.array([0.0, 0.0, 0.0])
-    )
+    wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    position: tuple[float, float, float] = (0.0, 0.0, 0.0)
     visible: bool = True
     click_cb: list[_ClickCallbackEntry] = dataclasses.field(default_factory=list)
     drag_cb: list[_DragCallbackEntry] = dataclasses.field(default_factory=list)
@@ -281,7 +274,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         # change what was already sent.
         for _field_name, _field_value in vars(message.props).items():
             if isinstance(_field_value, np.ndarray):
-                setattr(message.props, _field_name, _field_value.copy())
+                setattr(message.props, _field_name, array_snapshot(_field_value))
 
         # Same-name REPLACEMENT (explicitly supported: re-adding a node under
         # an existing name swaps it out) plus the new node's registration,
@@ -340,16 +333,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             api._queue_scene_message(message)
 
             # Shallow copy is enough to decouple the handle from the queued
-            # message: AssignablePropsBase.__init__ copies each top-level
-            # array, and scene-node props are flat (arrays + immutable
-            # scalars/tuples).
+            # message: scene-node props are flat, and consist of immutable
+            # values (array snapshots, scalars, and tuples).
             out = cls(_SceneNodeHandleState(name, copy.copy(message.props), api))
             api._handle_from_node_name[name] = out
 
             # Track parent -> child relationship.
             parent = name.rsplit("/", 1)[0]
             api._children_from_node_name.setdefault(parent, set()).add(name)
-            api._children_from_node_name.setdefault(name, set())
 
         out.wxyz = wxyz
         out.position = position
@@ -361,13 +352,11 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             # same-name creates for reconnect replays), so the reset must
             # arrive as an explicit message -- and it replaces any stale pose
             # entry in the buffer via its redundancy key.
-            from ._scene_api import cast_vector
-
             api._queue_scene_message(
-                _messages.SetOrientationMessage(name, cast_vector(out._impl.wxyz, 4))
+                _messages.SetOrientationMessage(name, out._impl.wxyz)
             )
             api._queue_scene_message(
-                _messages.SetPositionMessage(name, cast_vector(out._impl.position, 3))
+                _messages.SetPositionMessage(name, out._impl.position)
             )
 
         # Toggle visibility to make sure we send a
@@ -381,36 +370,36 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         """Orientation of the scene node. This is the quaternion representation of the R
         in `p_parent = [R | t] p_local`. Synchronized to clients automatically when assigned.
         """
-        return self._impl.wxyz
+        return np.array(self._impl.wxyz)
 
     @wxyz.setter
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
         # wxyz is assumed to be a unit quaternion (the client applies it to the
         # object's rotation without normalizing).
-        _set_pose_vector(
-            self._impl.wxyz,
-            wxyz,
-            4,
-            self._impl.api._queue_scene_message,
-            lambda v: _messages.SetOrientationMessage(self._impl.name, v),
-        )
+        impl = self._impl
+        value = _cast_pose_vector_if_changed(impl.wxyz, wxyz, 4)
+        if value is not None:
+            impl.wxyz = value
+            impl.api._queue_scene_message(
+                _messages.SetOrientationMessage(impl.name, value)
+            )
 
     @property
     def position(self) -> npt.NDArray[np.float64]:
         """Position of the scene node. This is equivalent to the t in
         `p_parent = [R | t] p_local`. Synchronized to clients automatically when assigned.
         """
-        return self._impl.position
+        return np.array(self._impl.position)
 
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
-        _set_pose_vector(
-            self._impl.position,
-            position,
-            3,
-            self._impl.api._queue_scene_message,
-            lambda v: _messages.SetPositionMessage(self._impl.name, v),
-        )
+        impl = self._impl
+        value = _cast_pose_vector_if_changed(impl.position, position, 3)
+        if value is not None:
+            impl.position = value
+            impl.api._queue_scene_message(
+                _messages.SetPositionMessage(impl.name, value)
+            )
 
     @property
     def visible(self) -> bool:
@@ -516,6 +505,8 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         parent_children = api._children_from_node_name.get(parent)
         if parent_children is not None:
             parent_children.discard(self._impl.name)
+            if len(parent_children) == 0:
+                del api._children_from_node_name[parent]
 
         # Send a RemoveSceneNodeMessage per SAME-SCOPE descendant so
         # redundancy keys clean up their creation messages from the buffer.
@@ -1161,12 +1152,9 @@ class PointCloudHandle(
         ]
         points = self._impl.props.points
         if points.dtype != dtype:
-            new_points = points.astype(dtype)
+            new_points = array_snapshot(points.astype(dtype))
             self._impl.props.points = new_points
-            # Queue a private snapshot, not the stored array (a later same-shape
-            # `points` update mutates the stored buffer in place, which could
-            # corrupt this still-unsent message). Mirrors props_setattr.
-            self._queue_update("points", new_points.copy())
+            self._queue_update("points", new_points)
 
 
 class BatchedAxesHandle(
@@ -1240,28 +1228,31 @@ class GaussianSplatHandle(
         - [7]: RGBA (4x uint8)
     """
 
-    def _ensure_buffer_size(self, num_gaussians: int) -> None:
-        """Ensure the internal buffer can hold the specified number of Gaussians.
+    def _make_update_buffer(self, num_gaussians: int) -> np.ndarray:
+        """Returns a private buffer to write updated attributes into: a copy of
+        the current one, or default values (white, opaque, small covariances,
+        centers at origin) if the number of Gaussians is changing."""
+        current = self._impl.props.buffer
+        if current.shape[0] == num_gaussians:
+            return current.copy()
 
-        If the buffer is already the correct size, this is a no-op. Otherwise,
-        a new buffer is allocated with default values (white color, full opacity,
-        small identity-like covariances, centers at origin).
-        """
-        if self.buffer.shape[0] == num_gaussians:
-            return
-
-        # Create new buffer with default values.
-        new_buffer = np.zeros((num_gaussians, 8), dtype=np.uint32)
+        buffer = np.zeros((num_gaussians, 8), dtype=np.uint32)
 
         # Set default RGBA to white, fully opaque (255, 255, 255, 255).
-        new_buffer[:, 7] = 0xFFFFFFFF
+        buffer[:, 7] = 0xFFFFFFFF
 
         # Set default covariances to small identity-like values.
         # Store as 6 float16 values: [cov00, cov01, cov02, cov11, cov12, cov22].
         default_cov = np.array([0.01, 0.0, 0.0, 0.01, 0.0, 0.01], dtype=np.float16)
-        new_buffer[:, 4:7] = np.tile(default_cov.view(np.uint32), (num_gaussians, 1))
+        buffer[:, 4:7] = default_cov.view(np.uint32)
+        return buffer
 
-        self.buffer = new_buffer
+    def _commit_update_buffer(self, buffer: np.ndarray) -> None:
+        """Store and send a buffer from `_make_update_buffer()`. Takes
+        ownership of the buffer."""
+        buffer.flags.writeable = False
+        self._impl.props.buffer = buffer
+        self._queue_update("buffer", buffer)
 
     @staticmethod
     def _pack_centers(buffer: np.ndarray, centers: np.ndarray) -> None:
@@ -1318,9 +1309,7 @@ class GaussianSplatHandle(
 
         # Assemble the full buffer locally, then store it with a single
         # property assignment: props_setattr rejects writes to removed handles,
-        # resizes or copies in place as needed, and queues exactly one private
-        # snapshot for the wire. Routing a resize through _ensure_buffer_size
-        # here would queue an extra all-default buffer message first.
+        # and queues exactly one message.
         buffer = np.zeros((num_gaussians, 8), dtype=np.uint32)
         self._pack_centers(buffer, centers)
         self._pack_covariances(buffer, covariances)
@@ -1337,12 +1326,9 @@ class GaussianSplatHandle(
         assert centers.ndim == 2 and centers.shape[1] == 3, (
             f"centers must have shape (N, 3), got {centers.shape}"
         )
-        self._ensure_buffer_size(centers.shape[0])
-        self._pack_centers(self.buffer, centers)
-        # Queue a private snapshot: the stored buffer is mutated in place by
-        # later sub-property assignments, possibly while the event loop is still
-        # serializing this message. Matches the guard in props_setattr.
-        self._queue_update("buffer", self.buffer.copy())
+        buffer = self._make_update_buffer(centers.shape[0])
+        self._pack_centers(buffer, centers)
+        self._commit_update_buffer(buffer)
 
     @property
     def rgbs(self) -> npt.NDArray[np.uint8]:
@@ -1355,9 +1341,9 @@ class GaussianSplatHandle(
         assert rgbs.ndim == 2 and rgbs.shape[1] == 3, (
             f"rgbs must have shape (N, 3), got {rgbs.shape}"
         )
-        self._ensure_buffer_size(rgbs.shape[0])
-        self._pack_rgba(self.buffer, rgbs=rgbs)
-        self._queue_update("buffer", self.buffer.copy())
+        buffer = self._make_update_buffer(rgbs.shape[0])
+        self._pack_rgba(buffer, rgbs=rgbs)
+        self._commit_update_buffer(buffer)
 
     @property
     def opacities(self) -> npt.NDArray[np.uint8]:
@@ -1371,9 +1357,9 @@ class GaussianSplatHandle(
         assert opacities.ndim == 2 and opacities.shape[1] == 1, (
             f"opacities must have shape (N, 1), got {opacities.shape}"
         )
-        self._ensure_buffer_size(opacities.shape[0])
-        self._pack_rgba(self.buffer, opacities=opacities)
-        self._queue_update("buffer", self.buffer.copy())
+        buffer = self._make_update_buffer(opacities.shape[0])
+        self._pack_rgba(buffer, opacities=opacities)
+        self._commit_update_buffer(buffer)
 
     @property
     def covariances(self) -> npt.NDArray[np.float32]:
@@ -1400,9 +1386,9 @@ class GaussianSplatHandle(
         assert covariances.ndim == 3 and covariances.shape[1:] == (3, 3), (
             f"covariances must have shape (N, 3, 3), got {covariances.shape}"
         )
-        self._ensure_buffer_size(covariances.shape[0])
-        self._pack_covariances(self.buffer, covariances)
-        self._queue_update("buffer", self.buffer.copy())
+        buffer = self._make_update_buffer(covariances.shape[0])
+        self._pack_covariances(buffer, covariances)
+        self._commit_update_buffer(buffer)
 
 
 class MeshSkinnedHandle(
@@ -1423,8 +1409,8 @@ class BoneState:
     name: str
     websock_interface: WebsockServer | WebsockClientConnection
     bone_index: int
-    wxyz: np.ndarray
-    position: np.ndarray
+    wxyz: tuple[float, float, float, float]
+    position: tuple[float, float, float]
     mesh_impl: _SceneNodeHandleState
     """The owning skinned mesh's node state: bone writes are refused once the
     mesh is removed, like every other write on a removed handle."""
@@ -1449,41 +1435,37 @@ class MeshSkinnedBoneHandle:
         """Orientation of the bone. This is the quaternion representation of the R
         in `p_parent = [R | t] p_local`. Synchronized to clients automatically when assigned.
         """
-        return self._impl.wxyz
+        return np.array(self._impl.wxyz)
 
     @wxyz.setter
     def wxyz(self, wxyz: tuple[float, float, float, float] | np.ndarray) -> None:
         # wxyz is assumed to be a unit quaternion (see SceneNodeHandle.wxyz).
         self._ensure_mesh_not_removed()
-        _set_pose_vector(
-            self._impl.wxyz,
-            wxyz,
-            4,
-            self._impl.mesh_impl.api._queue_scene_message,
-            lambda v: _messages.SetBoneOrientationMessage(
-                self._impl.name, self._impl.bone_index, v
-            ),
-        )
+        impl = self._impl
+        value = _cast_pose_vector_if_changed(impl.wxyz, wxyz, 4)
+        if value is not None:
+            impl.wxyz = value
+            impl.mesh_impl.api._queue_scene_message(
+                _messages.SetBoneOrientationMessage(impl.name, impl.bone_index, value)
+            )
 
     @property
     def position(self) -> npt.NDArray[np.float64]:
         """Position of the bone. This is equivalent to the t in
         `p_parent = [R | t] p_local`. Synchronized to clients automatically when assigned.
         """
-        return self._impl.position
+        return np.array(self._impl.position)
 
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
         self._ensure_mesh_not_removed()
-        _set_pose_vector(
-            self._impl.position,
-            position,
-            3,
-            self._impl.mesh_impl.api._queue_scene_message,
-            lambda v: _messages.SetBonePositionMessage(
-                self._impl.name, self._impl.bone_index, v
-            ),
-        )
+        impl = self._impl
+        value = _cast_pose_vector_if_changed(impl.position, position, 3)
+        if value is not None:
+            impl.position = value
+            impl.mesh_impl.api._queue_scene_message(
+                _messages.SetBonePositionMessage(impl.name, impl.bone_index, value)
+            )
 
 
 class GridHandle(
