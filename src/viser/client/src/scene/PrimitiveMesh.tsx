@@ -89,6 +89,9 @@ export const PrimitiveMesh = React.forwardRef<
     <primitive object={source} ref={ref}>
       {drawIndividually ? (
         <mesh
+          // Keys are needed because `material` is a prop for one mesh, and a child
+          // of the other. R3F resets removed props after attaching children.
+          key="drawn"
           geometry={geometry}
           scale={scale}
           castShadow={castShadow}
@@ -99,6 +102,7 @@ export const PrimitiveMesh = React.forwardRef<
         </mesh>
       ) : raycastable ? (
         <mesh
+          key="raycast"
           geometry={geometry}
           scale={scale}
           layers={raycastOnlyLayers}

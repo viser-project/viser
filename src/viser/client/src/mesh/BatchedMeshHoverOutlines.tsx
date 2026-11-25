@@ -1,6 +1,7 @@
 import React from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
+import { ViewerContext } from "../ViewerContext";
 import { HoverableContext } from "../HoverContext";
 import { OutlinesMaterial } from "../OutlinesMaterial";
 
@@ -52,6 +53,7 @@ export const BatchedMeshHoverOutlines: React.FC<
 }) => {
   // Get hover state from context.
   const hoverContext = React.useContext(HoverableContext)!;
+  const { sceneNodeGraph } = React.useContext(ViewerContext)!;
 
   // Create outline mesh reference.
   const outlineRef = React.useRef<THREE.Mesh>(null);
@@ -205,6 +207,7 @@ export const BatchedMeshHoverOutlines: React.FC<
 
         // Show the outline.
         outlineRef.current.visible = true;
+        sceneNodeGraph.markTransformsDirty(hoverContext.nodeName);
       }
     }
   });

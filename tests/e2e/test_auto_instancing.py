@@ -327,3 +327,115 @@ def test_removed_nodes_are_not_retained(
         if before - heap_mb() > expected:
             return
     raise AssertionError("Buffers are still retained.")
+
+
+JS_DRAWN_MATERIALS = """
+(prefix) => {
+  const out = [];
+  for (const [name, node] of Object.entries(window.__viserMutable.nodeRefFromName)) {
+    if (!name.startsWith(prefix)) continue;
+    node.traverse((o) => {
+      if (o.isMesh && o.layers.isEnabled(0))
+        out.push([o.material.type, o.material.color.getHex()]);
+    });
+  }
+  return out;
+}
+"""
+
+
+def test_clickable_nodes_keep_their_materials(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """Clickable from the first render, and then falling out of a batch."""
+    client = get_client_handle(viser_server)
+    with viser_server.atomic():
+        for i in range(3):
+            viser_server.scene.add_box(f"/few/{i}", color=(255, 0, 0)).on_click(
+                lambda _: None
+            )
+        handles = []
+        for i in range(NUM_NODES):
+            handle = viser_server.scene.add_icosphere(f"/many/{i}", color=(255, 0, 0))
+            handle.on_click(lambda _: None)
+            handles.append(handle)
+    wait_for_scene_node(viser_page, f"/many/{NUM_NODES - 1}")
+    _render(client)
+    red = ["MeshStandardMaterial", 0xFF0000]
+    assert viser_page.evaluate(JS_DRAWN_MATERIALS, "/few/") == [red] * 3
+    assert viser_page.evaluate(JS_DRAWN_MATERIALS, "/many/") == []
+    for handle in handles[10:]:
+        handle.remove()
+    _render(client)
+    assert viser_page.evaluate(JS_DRAWN_MATERIALS, "/many/") == [red] * 10
+
+
+def test_point_clouds_bubble_clicks(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    client = get_client_handle(viser_server)
+    client.camera.position = (0.0, 0.01, 10.0)
+    client.camera.look_at = (0.0, 0.0, 0.0)
+    event = threading.Event()
+    parent = viser_server.scene.add_icosphere("/parent", radius=1e-3)
+    parent.position = (30.0, 0.0, 0.0)  # Offscreen.
+    parent.on_click(lambda _: event.set())
+    viser_server.scene.add_point_cloud(
+        "/parent/points",
+        np.random.default_rng(0).uniform(-1, 1, (1000, 3)),
+        (255, 0, 0),
+        position=(-30.0, 0.0, 0.0),
+    )
+    wait_for_scene_node(viser_page, "/parent/points")
+    bbox = viser_page.locator("canvas").first.bounding_box()
+    assert bbox is not None
+    _click_until(
+        viser_page,
+        (bbox["x"] + bbox["width"] / 2, bbox["y"] + bbox["height"] / 2),
+        event,
+    )
+
+
+def test_batched_axes_outline_follows_instance(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    client = get_client_handle(viser_server)
+    client.camera.position = (0.0, 0.01, 10.0)
+    client.camera.look_at = (0.0, 0.0, 0.0)
+    axes = viser_server.scene.add_batched_axes(
+        "/axes",
+        batched_wxyzs=np.tile([1.0, 0.0, 0.0, 0.0], (2, 1)),
+        batched_positions=np.array([[0.0, 0.0, 0.0], [30.0, 0.0, 0.0]]),
+        axes_length=1.0,
+        axes_radius=0.5,
+        position=(0.0, 0.0, 0.5),
+    )
+    axes.on_click(lambda _: None)
+    wait_for_scene_node(viser_page, "/axes")
+    bbox = viser_page.locator("canvas").first.bounding_box()
+    assert bbox is not None
+    x = bbox["x"] + bbox["width"] / 2
+    y = bbox["y"] + bbox["height"] / 2
+    for i in range(20):
+        viser_page.mouse.move(x + i % 2, y)
+        viser_page.wait_for_timeout(200)
+        stale = viser_page.evaluate(
+            """() => {
+              let hovered = 0, stale = 0;
+              window.__viserMutable.nodeRefFromName["/axes"].traverse((o) => {
+                if (!o.isMesh || o.isInstancedMesh || !o.visible) return;
+                hovered++;
+                const expected = o.matrix.clone().compose(
+                  o.position, o.quaternion, o.scale
+                ).premultiply(o.parent.matrixWorld);
+                if (o.matrixWorld.elements.some(
+                    (v, i) => Math.abs(v - expected.elements[i]) > 1e-4))
+                  stale++;
+              });
+              return hovered === 0 ? null : stale;
+            }"""
+        )
+        if stale is not None:
+            assert stale == 0
+            return
+    raise AssertionError("Never hovered.")

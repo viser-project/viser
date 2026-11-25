@@ -130,6 +130,7 @@ export class SceneNodeController {
       object.matrixAutoUpdate = false;
       object.updateMatrix();
     }
+    this.viewer.sceneNodeGraph.markTransformsDirty(this.name);
     this.viewer.sceneNodeUpdates.markDirty(this.name);
   }
 
@@ -143,6 +144,9 @@ export class SceneNodeController {
     if (pose) {
       pose.poseUpdateState = "needsUpdate";
       sceneNodeUpdates.markDirty(this.name);
+      // We're called from a passive effect, which may have run after the frame
+      // that was triggered by the commit.
+      this.viewer.mutable.current.requestRender();
     }
     if (this.isFirstObject) {
       this.isFirstObject = false;

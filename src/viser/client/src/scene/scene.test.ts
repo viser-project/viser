@@ -522,4 +522,20 @@ describe("SceneNodeUpdates", () => {
     updates.flush();
     expect(successor).toHaveBeenCalledTimes(1);
   });
+
+  it("continues after a handler throws", () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const updates = new SceneNodeUpdates();
+    const handler = vi.fn();
+    updates.register("/a", () => {
+      throw new Error("test");
+    });
+    updates.register("/b", handler);
+    updates.flush();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
 });

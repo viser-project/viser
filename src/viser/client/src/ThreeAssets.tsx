@@ -123,8 +123,8 @@ export const PointCloud = React.forwardRef<
     syncPointCloudGeometry(geom, props.points, props.colors);
     // Point clouds aren't culled, so this is only used for sorting opaque objects.
     // It's not worth computing: it'd be more expensive than everything else
-    // about adding a point cloud.
-    geom.boundingSphere ??= new THREE.Sphere();
+    // about adding a point cloud. The radius is infinite for raycasting.
+    geom.boundingSphere ??= new THREE.Sphere(new THREE.Vector3(), Infinity);
   }, [props.points, props.colors]);
 
   // Material needs heavy per-frame uniform updates, so kept imperative.
@@ -733,13 +733,14 @@ export const ViserLabel = React.forwardRef<
     message.props.anchor,
   ]);
 
-  // LabelRenderer handles position updates, visibility, and culling.
-  React.useImperativeHandle(ref, () => groupRef.current, []);
-
   // Use a selector to subscribe only to this node's children.
   const hasChildren = viewer.useSceneTree(message.name, (node) => {
     return node?.children && node.children.length > 0;
   });
+
+  // LabelRenderer handles position updates, visibility, and culling. The group
+  // below only exists if there are children.
+  React.useImperativeHandle(ref, () => groupRef.current, [hasChildren]);
 
   // Return null when no children - LabelRenderer handles the text rendering.
   // Return group when there are children - SceneTree needs it to apply transforms to child nodes.

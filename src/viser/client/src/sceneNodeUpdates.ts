@@ -37,6 +37,13 @@ export class SceneNodeUpdates {
     if (this.dirty.size === 0) return;
     const dirty = this.dirty;
     this.dirty = new Set();
-    dirty.forEach((name) => this.handlers.get(name)?.());
+    dirty.forEach((name) => {
+      // One failure shouldn't prevent other nodes from being updated.
+      try {
+        this.handlers.get(name)?.();
+      } catch (e) {
+        console.error(`Failed to update scene node ${name}:`, e);
+      }
+    });
   }
 }

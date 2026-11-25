@@ -174,9 +174,8 @@ class AssignablePropsBase(Generic[TImpl]):
                 self._cast_value_recursive(element_type, item, prop_name)
                 for item in value
             )
-            return tuple(
-                array_snapshot(v) if isinstance(v, np.ndarray) else v for v in items
-            )
+            # Copies shouldn't alias the caller's arrays.
+            return tuple(v.copy() if isinstance(v, np.ndarray) else v for v in items)
 
         return value
 
