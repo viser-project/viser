@@ -419,6 +419,30 @@ def test_no_lost_wakeups_from_threads() -> None:
     run_isolated(lambda: asyncio.run(scenario()))
 
 
+def test_wakeup_may_run_before_scheduling_returns() -> None:
+    """The event loop thread can run a wakeup while the pushing thread is still
+    inside call_soon_threadsafe(). That used to leave the "wakeup scheduled" flag
+    set forever, which permanently stalled delivery."""
+
+    class EagerLoop:
+        num_calls = 0
+
+        def call_soon_threadsafe(self, fn: Any) -> None:
+            self.num_calls += 1
+            fn()
+
+    async def scenario() -> None:
+        loop = EagerLoop()
+        buffer = AsyncMessageBuffer(loop, persistent_messages=True)  # type: ignore
+        buffer.generator_cursors[0] = -1
+        for i in range(3):
+            buffer.push(vm.SetPositionMessage(f"/{i}", (0.0, 0.0, 0.0)))
+            assert not buffer._wake_scheduled
+            assert loop.num_calls == i + 1
+
+    run_isolated(lambda: asyncio.run(scenario()))
+
+
 class _FakeWebsocket:
     """Collects payloads like a browser would, reassembling fragments."""
 

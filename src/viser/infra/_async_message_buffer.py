@@ -275,10 +275,13 @@ class AsyncMessageBuffer:
         # observe the message we just pushed.
         if self._wake_scheduled or not self.generator_cursors:
             return
+        # Set before scheduling: the event loop may run _wake(), which clears the
+        # flag, before call_soon_threadsafe() returns.
+        self._wake_scheduled = True
         try:
             self.event_loop.call_soon_threadsafe(self._wake)
-            self._wake_scheduled = True
         except RuntimeError:
+            self._wake_scheduled = False
             # Event loop already closed (write after stop()); messages are
             # buffered, and a closed loop has no consumer to wake -- same
             # tolerance as set_done().
