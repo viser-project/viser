@@ -603,10 +603,10 @@ def test_readd_after_remove_resets_pose(server: viser.ViserServer) -> None:
     for client_is_behind in (True, False):
         handle = server.scene.add_frame("/f", position=(1.0, 2.0, 3.0))
         handle.wxyz = (0.0, 1.0, 0.0, 0.0)
-        buffer.generator_cursors[0] = buffer.message_counter
+        buffer.generator_cursors[0] = buffer.message_counter - 1
         handle.remove()
         if not client_is_behind:
-            buffer.generator_cursors[0] = buffer.message_counter
+            buffer.generator_cursors[0] = buffer.message_counter - 1
         server.scene.add_frame("/f")
         assert _positions(server, "/f") == [(0.0, 0.0, 0.0)] * client_is_behind
         assert [
