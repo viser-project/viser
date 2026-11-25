@@ -18,6 +18,9 @@ export interface Store<T> {
   set: (arg: SetArg<T>) => void;
   /** Subscribe to any state change. Returns unsubscribe function. */
   subscribe: (listener: Listener) => () => void;
+  /** Run a function that makes many writes. State updates immediately, but
+   * subscribers are only notified once, at the end. */
+  batch: <U>(fn: () => U) => U;
 }
 
 export function createStore<T extends object>(initialState: T): Store<T> {
@@ -34,7 +37,26 @@ export function createStore<T extends object>(initialState: T): Store<T> {
     const keys = Object.keys(partial) as (keyof T)[];
     if (keys.every((k) => Object.is(state[k], (partial as T)[k]))) return;
     state = Object.assign({}, state, partial);
+    if (batchDepth > 0) {
+      notifyAfterBatch = true;
+      return;
+    }
     listeners.forEach((l) => l());
+  }
+
+  let batchDepth = 0;
+  let notifyAfterBatch = false;
+  function batch<U>(fn: () => U): U {
+    batchDepth += 1;
+    try {
+      return fn();
+    } finally {
+      batchDepth -= 1;
+      if (batchDepth === 0 && notifyAfterBatch) {
+        notifyAfterBatch = false;
+        listeners.forEach((l) => l());
+      }
+    }
   }
 
   function subscribe(listener: Listener): () => void {
@@ -81,6 +103,7 @@ export function createStore<T extends object>(initialState: T): Store<T> {
   useStore.get = get;
   useStore.set = set;
   useStore.subscribe = subscribe;
+  useStore.batch = batch;
 
   return useStore as Store<T>;
 }

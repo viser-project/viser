@@ -1,5 +1,6 @@
 import { ViewerContext } from "../ViewerContext";
 import { useThrottledMessageSender } from "../WebsocketUtils";
+import { offscreenInputs } from "./offscreenInputs";
 import { GuiComponentContext } from "./GuiComponentContext";
 import { shallowObjectEqual } from "../utils/shallowObjectKeysEqual";
 
@@ -157,12 +158,35 @@ function GuiContainer({
 }
 
 /** A single generated GUI element. */
-function GeneratedInput(props: {
+const GeneratedInput = React.memo(function GeneratedInput(props: {
   guiUuid: string;
   nextGuiUuid: string | null;
 }) {
   const viewer = React.useContext(ViewerContext)!;
-  const conf = viewer.useGuiConfig(props.guiUuid);
+  const uuid = props.guiUuid;
+
+  // Subscribe to updates, but throttle the ones from the server for inputs that
+  // aren't visible. Panels can have hundreds of inputs, most of which are
+  // scrolled out of view. Local edits always need to be applied immediately,
+  // because HTML inputs are controlled.
+  const subscribe = React.useCallback(
+    (listener: () => void) => {
+      const [throttled, cleanup] = offscreenInputs.throttle(
+        uuid,
+        listener,
+        viewer.guiActions.isBatching,
+      );
+      const unsubscribe = viewer.useGuiConfig.subscribe(uuid, throttled);
+      return () => {
+        unsubscribe();
+        cleanup();
+      };
+    },
+    [viewer, uuid],
+  );
+  const conf = React.useSyncExternalStore(subscribe, () =>
+    viewer.useGuiConfig.get(uuid),
+  );
   if (conf === undefined) {
     console.error("Tried to render non-existent component", props.guiUuid);
     return null;
@@ -221,7 +245,7 @@ function GeneratedInput(props: {
     default:
       assertNeverType(conf);
   }
-}
+});
 
 function assertNeverType(x: never): never {
   throw new Error("Unexpected object: " + (x as any).type);

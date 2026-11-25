@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Box, Flex, Text, NumberInput, Tooltip } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
+import { useOffscreenRef } from "../ControlPanel/offscreenInputs";
 import { finiteNumberOrNull } from "./numberInputUtils";
 
 export function ViserInputComponent({
@@ -17,6 +18,7 @@ export function ViserInputComponent({
   hintDisabled?: boolean;
 }) {
   const { folderDepth } = React.useContext(GuiComponentContext)!;
+  const ref = useOffscreenRef(uuid);
   if (hint !== undefined && hint !== null) {
     children = // We need to add <Box /> for inputs that we can't assign refs to.
       (
@@ -46,11 +48,42 @@ export function ViserInputComponent({
     );
 
   return (
-    <Box pb="0.5em" px="xs">
+    <Box ref={ref} pb="0.5em" px="xs">
       {children}
     </Box>
   );
 }
+
+// Labels never change when values do.
+const LabelText = React.memo(function LabelText(props: {
+  uuid: string;
+  label: string;
+}) {
+  return (
+    <Text
+      c="dimmed"
+      style={{
+        fontSize: "0.875em",
+        fontWeight: "450",
+        lineHeight: "1.375em",
+        letterSpacing: "-0.75px",
+        width: "100%",
+        boxSizing: "content-box",
+        overflowWrap: "anywhere",
+      }}
+      unselectable="off"
+    >
+      <label htmlFor={props.uuid}>
+        {props.label.split(/(?<=[_\-/.])/).map((part, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <wbr />}
+            {part}
+          </React.Fragment>
+        ))}
+      </label>
+    </Text>
+  );
+});
 
 /** GUI input with a label horizontally placed to the left of it. */
 function LabeledInput(props: {
@@ -70,28 +103,7 @@ function LabeledInput(props: {
           position: "relative",
         }}
       >
-        <Text
-          c="dimmed"
-          style={{
-            fontSize: "0.875em",
-            fontWeight: "450",
-            lineHeight: "1.375em",
-            letterSpacing: "-0.75px",
-            width: "100%",
-            boxSizing: "content-box",
-            overflowWrap: "anywhere",
-          }}
-          unselectable="off"
-        >
-          <label htmlFor={props.uuid}>
-            {props.label.split(/(?<=[_\-/.])/).map((part, i) => (
-              <React.Fragment key={i}>
-                {i > 0 && <wbr />}
-                {part}
-              </React.Fragment>
-            ))}
-          </label>
-        </Text>
+        <LabelText uuid={props.uuid} label={props.label} />
       </Box>
       <Box style={{ flexGrow: 1 }}>{props.input}</Box>
     </Flex>

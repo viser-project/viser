@@ -23,6 +23,10 @@ export default function FormComponent({
 }: GuiFormMessage & { nextGuiUuid: string | null }) {
   const viewer = React.useContext(ViewerContext)!;
   const guiContext = React.useContext(GuiComponentContext)!;
+  const childContext = React.useMemo(
+    () => ({ ...guiContext, folderDepth: guiContext.folderDepth + 1 }),
+    [guiContext],
+  );
   const [opened, { toggle }] = useDisclosure(expand_by_default);
   const isDirty = viewer.useGui((state) => state.dirtyFormUuids[uuid] === true);
 
@@ -55,12 +59,7 @@ export default function FormComponent({
   const hiddenSubmitButton = <button type="submit" hidden tabIndex={-1} />;
 
   const innerFormContents = (unwrapped: boolean) => (
-    <GuiComponentContext.Provider
-      value={{
-        ...guiContext,
-        folderDepth: guiContext.folderDepth + 1,
-      }}
-    >
+    <GuiComponentContext.Provider value={childContext}>
       <guiContext.GuiContainer containerUuid={uuid} unwrapped={unwrapped} />
     </GuiComponentContext.Provider>
   );

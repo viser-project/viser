@@ -20,6 +20,10 @@ export default function FolderComponent({
     shallowObjectKeysEqual,
   );
   const guiContext = React.useContext(GuiComponentContext)!;
+  const childContext = React.useMemo(
+    () => ({ ...guiContext, folderDepth: guiContext.folderDepth + 1 }),
+    [guiContext],
+  );
   const isEmpty = guiIdSet === undefined || Object.keys(guiIdSet).length === 0;
   const nextGuiType = viewer.useGuiConfig(nextGuiUuid ?? "", (conf) =>
     nextGuiUuid == null ? null : (conf?.type ?? null),
@@ -31,12 +35,7 @@ export default function FolderComponent({
   // `unwrapped` so we don't introduce extra padding above the first child.
   if (label === null) {
     return (
-      <GuiComponentContext.Provider
-        value={{
-          ...guiContext,
-          folderDepth: guiContext.folderDepth + 1,
-        }}
-      >
+      <GuiComponentContext.Provider value={childContext}>
         <guiContext.GuiContainer containerUuid={uuid} unwrapped />
       </GuiComponentContext.Provider>
     );
@@ -70,12 +69,7 @@ export default function FolderComponent({
       </Paper>
       <Collapse expanded={opened && !isEmpty}>
         <Box pt="0.2em">
-          <GuiComponentContext.Provider
-            value={{
-              ...guiContext,
-              folderDepth: guiContext.folderDepth + 1,
-            }}
-          >
+          <GuiComponentContext.Provider value={childContext}>
             <guiContext.GuiContainer containerUuid={uuid} />
           </GuiComponentContext.Provider>
         </Box>

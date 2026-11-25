@@ -152,6 +152,12 @@ export interface GuiState {
 }
 
 export interface GuiActions {
+  /** Group modifications. Subscribers are only notified at the end of the
+   * outermost batch, and collections that are modified repeatedly are only copied
+   * once. */
+  batch: <T>(fn: () => T) => T;
+  /** Whether a batch is being run, or subscribers are being notified of one. */
+  isBatching: () => boolean;
   setTheme: (theme: ThemeConfigurationMessage) => void;
   setShareUrl: (share_url: string | null) => void;
   addGui: (config: GuiComponentMessage) => void;
@@ -299,6 +305,11 @@ export function applyGuiConfigUpdate(
   return newConfig;
 }
 
+function isEmptyObject(obj: object): boolean {
+  for (const _ in obj) return false;
+  return true;
+}
+
 export function useGuiState(initialServer: string) {
   return React.useState(() => {
     const store = createStore<GuiState>({
@@ -328,26 +339,52 @@ export function useGuiState(initialServer: string) {
           } as NonNullable<PanelPlacementState[A]>),
         );
 
+    // Collections that were copied in the current batch. Nobody has been notified
+    // about them yet, so they can be modified in-place. Without this, adding or
+    // removing N elements would be quadratic.
+    let ownedByBatch: WeakSet<object> | null = null;
+    let batchDepth = 0;
+    function copyForWrite<T extends object>(obj: T): T {
+      if (ownedByBatch?.has(obj)) return obj;
+      const out = { ...obj };
+      ownedByBatch?.add(out);
+      return out;
+    }
+
     const actions: GuiActions = {
+      batch: (fn) => {
+        batchDepth += 1;
+        try {
+          return store.batch(() =>
+            configStore.batch(() => {
+              ownedByBatch ??= new WeakSet();
+              try {
+                return fn();
+              } finally {
+                if (batchDepth === 1) ownedByBatch = null;
+              }
+            }),
+          );
+        } finally {
+          batchDepth -= 1;
+        }
+      },
+      isBatching: () => batchDepth > 0,
       setTheme: (theme) => store.set({ theme }),
       setShareUrl: (shareUrl) => store.set({ shareUrl }),
       addGui: (guiConfig) => {
         const state = store.get();
-        const containerSet =
-          state.guiUuidSetFromContainerUuid[guiConfig.container_uuid] ?? {};
-        store.set({
-          guiOrderFromUuid: {
-            ...state.guiOrderFromUuid,
-            [guiConfig.uuid]: guiConfig.props.order,
-          },
-          guiUuidSetFromContainerUuid: {
-            ...state.guiUuidSetFromContainerUuid,
-            [guiConfig.container_uuid]: {
-              ...containerSet,
-              [guiConfig.uuid]: true as const,
-            },
-          },
-        });
+        const guiOrderFromUuid = copyForWrite(state.guiOrderFromUuid);
+        const guiUuidSetFromContainerUuid = copyForWrite(
+          state.guiUuidSetFromContainerUuid,
+        );
+        const containerSet = copyForWrite(
+          guiUuidSetFromContainerUuid[guiConfig.container_uuid] ?? {},
+        );
+        guiOrderFromUuid[guiConfig.uuid] = guiConfig.props.order;
+        containerSet[guiConfig.uuid] = true;
+        guiUuidSetFromContainerUuid[guiConfig.container_uuid] = containerSet;
+        store.set({ guiOrderFromUuid, guiUuidSetFromContainerUuid });
         configStore.set({ [guiConfig.uuid]: guiConfig });
       },
       addModal: (modalConfig) => {
@@ -424,27 +461,27 @@ export function useGuiState(initialServer: string) {
           return;
         }
         const state = store.get();
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { [id]: _2, ...remainingOrders } = state.guiOrderFromUuid;
-        const dirtyFormUuids = { ...state.dirtyFormUuids };
+        const guiOrderFromUuid = copyForWrite(state.guiOrderFromUuid);
+        delete guiOrderFromUuid[id];
+        const dirtyFormUuids = copyForWrite(state.dirtyFormUuids);
         delete dirtyFormUuids[id];
         const containerUuid = guiConfig.container_uuid;
-        const containerSet = {
-          ...state.guiUuidSetFromContainerUuid[containerUuid],
-        };
+        const guiUuidSetFromContainerUuid = copyForWrite(
+          state.guiUuidSetFromContainerUuid,
+        );
+        const containerSet = copyForWrite(
+          guiUuidSetFromContainerUuid[containerUuid] ?? {},
+        );
         delete containerSet[id];
-        const newContainerMap = {
-          ...state.guiUuidSetFromContainerUuid,
-        };
-        if (Object.keys(containerSet).length === 0) {
-          delete newContainerMap[containerUuid];
+        if (isEmptyObject(containerSet)) {
+          delete guiUuidSetFromContainerUuid[containerUuid];
         } else {
-          newContainerMap[containerUuid] = containerSet;
+          guiUuidSetFromContainerUuid[containerUuid] = containerSet;
         }
         store.set({
-          guiOrderFromUuid: remainingOrders,
+          guiOrderFromUuid,
           dirtyFormUuids,
-          guiUuidSetFromContainerUuid: newContainerMap,
+          guiUuidSetFromContainerUuid,
         });
         configStore.set({ [id]: undefined });
       },
