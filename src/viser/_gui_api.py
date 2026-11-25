@@ -39,6 +39,7 @@ from viser import theme
 from viser._backwards_compat_shims import deprecated_positional_shim
 
 from . import _messages, uplot
+from ._assignable_props_api import cast_vector
 from ._gui_handles import (
     CONTROL_PANEL_ID,
     CommandEvent,
@@ -85,7 +86,6 @@ from ._gui_handles import (
 from ._icons import svg_from_icon
 from ._icons_enum import IconName
 from ._messages import FileTransferPartAck, GuiBaseProps, GuiSliderMark
-from ._scene_api import cast_vector
 from ._threadpool_exceptions import print_threadpool_errors
 
 if TYPE_CHECKING:

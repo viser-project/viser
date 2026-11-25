@@ -22,11 +22,12 @@ from typing_extensions import Literal, deprecated
 
 from . import _client_autobuild, _messages, infra
 from . import transforms as tf
+from ._assignable_props_api import cast_vector
 from ._backwards_compat_shims import DeprecatedAttributeShim
 from ._gui_api import GuiApi, LiteralColor
 from ._gui_handles import _make_uuid
 from ._notification_handle import NotificationHandle, _NotificationHandleState
-from ._scene_api import SceneApi, cast_vector
+from ._scene_api import SceneApi
 from ._threadpool_exceptions import (
     print_awaited_callback_error,
     print_task_error,
