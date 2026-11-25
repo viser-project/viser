@@ -324,10 +324,20 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                     had_drag=bool(old_handle._impl.drag_cb),
                 )
 
+            # If a node with this name was just removed, then the create below
+            # will coalesce with the removal. Clients that haven't received the
+            # removal yet never will. To them, this is a replacement.
+            assert isinstance(message, _messages.Message)
+            may_replace = (
+                old_handle is not None
+                or api._websock_interface.get_message_buffer().has_unseen_removal(
+                    message.redundancy_key()
+                )
+            )
+
             # Send message, stamped with this scope's owner id -- and marked
             # virtual when this create is an auto-generated ancestor anchor
             # (see SceneApi._creating_virtual_anchors).
-            assert isinstance(message, _messages.Message)
             if api._creating_virtual_anchors:
                 message.virtual = True  # type: ignore[attr-defined]
             api._queue_scene_message(message)
@@ -344,7 +354,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
         out.wxyz = wxyz
         out.position = position
-        if old_handle is not None:
+        if may_replace:
             # Replacement: force-broadcast the new node's pose even when it
             # equals the fresh-handle default (the setters above no-op on
             # equality). A live client that applied the OLD node's pose keeps

@@ -125,7 +125,8 @@ export const CameraFrustumComponent = React.forwardRef<
   );
 
   // Wireframe lines are drawn as part of a batch, if there are many frustums.
-  // Except for hovered ones, which have thicker lines.
+  // Except for hovered ones, which have thicker lines, and for filled ones, whose
+  // transparent faces need to be sorted relative to the lines.
   const lineColor = rgbToInt(message.props.color);
   const worldUnits = message.props.thickness_units === "world";
   const { thickness } = message.props;
@@ -135,7 +136,7 @@ export const CameraFrustumComponent = React.forwardRef<
   );
   const { sourceRef, drawIndividually } = useInstanceSource(
     ref,
-    isHovered
+    isHovered || message.props.variant === "filled"
       ? null
       : {
           key: `lines|${frustumPoints.length}|${thickness}|${worldUnits}`,

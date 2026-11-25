@@ -593,3 +593,27 @@ def test_children_bookkeeping_does_not_leak(server: viser.ViserServer) -> None:
         parent.remove()
     assert server.scene.get_handle_by_name("/p/c/d") is None
     assert server.scene._children_from_node_name == before
+
+
+def test_readd_after_remove_resets_pose(server: viser.ViserServer) -> None:
+    """A create coalesces with a removal of the same name. Clients that haven't
+    received the removal treat the create as a replacement and keep the old pose,
+    unless it's explicitly reset."""
+    buffer = server._websock_server._broadcast_buffer
+    for client_is_behind in (True, False):
+        handle = server.scene.add_frame("/f", position=(1.0, 2.0, 3.0))
+        handle.wxyz = (0.0, 1.0, 0.0, 0.0)
+        buffer.generator_cursors[0] = buffer.message_counter
+        handle.remove()
+        if not client_is_behind:
+            buffer.generator_cursors[0] = buffer.message_counter
+        server.scene.add_frame("/f")
+        assert _positions(server, "/f") == [(0.0, 0.0, 0.0)] * client_is_behind
+        assert [
+            m.wxyz
+            for m in broadcast_messages(server)
+            if isinstance(m, vm.SetOrientationMessage) and m.name == "/f"
+        ] == [(1.0, 0.0, 0.0, 0.0)] * client_is_behind
+        server.scene.remove_by_name("/f")
+        buffer.generator_cursors.clear()
+        server._run_garbage_collector(force=True)

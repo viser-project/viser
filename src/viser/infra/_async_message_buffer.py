@@ -182,6 +182,15 @@ class AsyncMessageBuffer:
             for message_id in tuple(ids):
                 self.pop_message_locked(message_id)
 
+    def has_unseen_removal(self, redundancy_key: str) -> bool:
+        """True if the buffered message for a redundancy key is a removal that
+        some active consumer hasn't reached yet."""
+        with self.buffer_lock:
+            message_id = self.id_from_redundancy_key.get(redundancy_key)
+            return message_id in self.tombstone_ids and any(
+                cursor < message_id for cursor in tuple(self.generator_cursors.values())
+            )
+
     def push(self, message: Message) -> None:
         """Push a new message to our buffer, and remove old redundant ones."""
 

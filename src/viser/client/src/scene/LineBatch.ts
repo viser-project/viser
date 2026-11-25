@@ -82,6 +82,9 @@ export class LineBatch extends DenseBatch {
       const line = new LineSegments2(geometry, material);
       line.frustumCulled = false;
       line.raycast = () => undefined;
+      // The antialiasing skirt is transparent. There's no single depth that it
+      // could be sorted by, so draw it on top of other transparent objects.
+      if (material.transparent) line.renderOrder = 1;
       this.object.add(line);
     }
   }
