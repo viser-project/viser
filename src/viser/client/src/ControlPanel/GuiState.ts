@@ -156,8 +156,6 @@ export interface GuiActions {
    * outermost batch, and collections that are modified repeatedly are only copied
    * once. */
   batch: <T>(fn: () => T) => T;
-  /** Whether a batch is being run, or subscribers are being notified of one. */
-  isBatching: () => boolean;
   setTheme: (theme: ThemeConfigurationMessage) => void;
   setShareUrl: (share_url: string | null) => void;
   addGui: (config: GuiComponentMessage) => void;
@@ -310,395 +308,386 @@ function isEmptyObject(obj: object): boolean {
   return true;
 }
 
-export function useGuiState(initialServer: string) {
-  return React.useState(() => {
-    const store = createStore<GuiState>({
-      ...cleanGuiState,
-      server: initialServer,
-    });
+export function createGuiState(initialServer: string) {
+  const store = createStore<GuiState>({
+    ...cleanGuiState,
+    server: initialServer,
+  });
 
-    // Per-component config store, keyed by UUID.
-    const configStore = createKeyedStore<GuiComponentMessage>();
+  // Per-component config store, keyed by UUID.
+  const configStore = createKeyedStore<GuiComponentMessage>();
 
-    // One setter per placement axis, differing only in the axis name: the
-    // factory keeps the (value, counter, runId) -> mergePlacement wiring in a
-    // single place, fully typed per axis.
-    const setPanelAxis =
-      <A extends PlacementAxisName>(axis: A) =>
-      (
-        uuid: string,
-        value: NonNullable<PanelPlacementState[A]>["value"],
-        counter: number,
-        runId: string,
-      ) =>
-        store.set((state) =>
-          mergePlacement(state, uuid, axis, {
-            value,
-            counter,
-            runId,
-          } as NonNullable<PanelPlacementState[A]>),
-        );
+  // One setter per placement axis, differing only in the axis name: the
+  // factory keeps the (value, counter, runId) -> mergePlacement wiring in a
+  // single place, fully typed per axis.
+  const setPanelAxis =
+    <A extends PlacementAxisName>(axis: A) =>
+    (
+      uuid: string,
+      value: NonNullable<PanelPlacementState[A]>["value"],
+      counter: number,
+      runId: string,
+    ) =>
+      store.set((state) =>
+        mergePlacement(state, uuid, axis, {
+          value,
+          counter,
+          runId,
+        } as NonNullable<PanelPlacementState[A]>),
+      );
 
-    // Collections that were copied in the current batch. Nobody has been notified
-    // about them yet, so they can be modified in-place. Without this, adding or
-    // removing N elements would be quadratic.
-    let ownedByBatch: WeakSet<object> | null = null;
-    let batchDepth = 0;
-    function copyForWrite<T extends object>(obj: T): T {
-      if (ownedByBatch?.has(obj)) return obj;
-      const out = { ...obj };
-      ownedByBatch?.add(out);
-      return out;
-    }
+  // Collections that were copied in the current batch. Nobody has been notified
+  // about them yet, so they can be modified in-place. Without this, adding or
+  // removing N elements would be quadratic.
+  let ownedByBatch: WeakSet<object> | null = null;
+  function copyForWrite<T extends object>(obj: T): T {
+    if (ownedByBatch?.has(obj)) return obj;
+    const out = { ...obj };
+    ownedByBatch?.add(out);
+    return out;
+  }
 
-    const actions: GuiActions = {
-      batch: (fn) => {
-        batchDepth += 1;
-        try {
-          return store.batch(() =>
-            configStore.batch(() => {
-              ownedByBatch ??= new WeakSet();
-              try {
-                return fn();
-              } finally {
-                if (batchDepth === 1) ownedByBatch = null;
-              }
-            }),
-          );
-        } finally {
-          batchDepth -= 1;
-        }
-      },
-      isBatching: () => batchDepth > 0,
-      setTheme: (theme) => store.set({ theme }),
-      setShareUrl: (shareUrl) => store.set({ shareUrl }),
-      addGui: (guiConfig) => {
-        const state = store.get();
-        const guiOrderFromUuid = copyForWrite(state.guiOrderFromUuid);
-        const guiUuidSetFromContainerUuid = copyForWrite(
-          state.guiUuidSetFromContainerUuid,
-        );
-        const containerSet = copyForWrite(
-          guiUuidSetFromContainerUuid[guiConfig.container_uuid] ?? {},
-        );
-        guiOrderFromUuid[guiConfig.uuid] = guiConfig.props.order;
-        containerSet[guiConfig.uuid] = true;
-        guiUuidSetFromContainerUuid[guiConfig.container_uuid] = containerSet;
-        store.set({ guiOrderFromUuid, guiUuidSetFromContainerUuid });
-        configStore.set({ [guiConfig.uuid]: guiConfig });
-      },
-      addModal: (modalConfig) => {
-        store.set((state) => ({
-          modals: [...state.modals, modalConfig],
-        }));
-      },
-      removeModal: (id) => {
-        store.set((state) => ({
-          modals: state.modals.filter((m) => m.uuid !== id),
-        }));
-      },
-      addPanel: (config) => {
-        store.set((state) => ({
-          panels: { ...state.panels, [config.uuid]: config },
-        }));
-      },
-      updatePanel: (id, updates) => {
-        store.set((state) => {
-          const panel = state.panels[id];
-          if (panel === undefined) {
-            console.error(
-              `Tried to update non-existent panel '${id}'`,
-              updates,
-            );
-            return {};
+  const actions: GuiActions = {
+    batch: (fn) =>
+      store.batch(() =>
+        configStore.batch(() => {
+          // Ownership ends before subscribers are notified, because they may
+          // hold on to what they read.
+          const outermost = ownedByBatch === null;
+          if (outermost) ownedByBatch = new WeakSet();
+          try {
+            return fn();
+          } finally {
+            if (outermost) ownedByBatch = null;
           }
-          return {
-            panels: {
-              ...state.panels,
-              [id]: { ...panel, props: { ...panel.props, ...updates } },
-            },
-          };
-        });
-      },
-      removePanel: (id) => {
-        store.set((state) => {
-          if (state.panels[id] === undefined) return {};
+        }),
+      ),
+    setTheme: (theme) => store.set({ theme }),
+    setShareUrl: (shareUrl) => store.set({ shareUrl }),
+    addGui: (guiConfig) => {
+      const state = store.get();
+      const guiOrderFromUuid = copyForWrite(state.guiOrderFromUuid);
+      const guiUuidSetFromContainerUuid = copyForWrite(
+        state.guiUuidSetFromContainerUuid,
+      );
+      const containerSet = copyForWrite(
+        guiUuidSetFromContainerUuid[guiConfig.container_uuid] ?? {},
+      );
+      guiOrderFromUuid[guiConfig.uuid] = guiConfig.props.order;
+      containerSet[guiConfig.uuid] = true;
+      guiUuidSetFromContainerUuid[guiConfig.container_uuid] = containerSet;
+      store.set({ guiOrderFromUuid, guiUuidSetFromContainerUuid });
+      configStore.set({ [guiConfig.uuid]: guiConfig });
+    },
+    addModal: (modalConfig) => {
+      store.set((state) => ({
+        modals: [...state.modals, modalConfig],
+      }));
+    },
+    removeModal: (id) => {
+      store.set((state) => ({
+        modals: state.modals.filter((m) => m.uuid !== id),
+      }));
+    },
+    addPanel: (config) => {
+      store.set((state) => ({
+        panels: { ...state.panels, [config.uuid]: config },
+      }));
+    },
+    updatePanel: (id, updates) => {
+      store.set((state) => {
+        const panel = state.panels[id];
+        if (panel === undefined) {
+          console.error(`Tried to update non-existent panel '${id}'`, updates);
+          return {};
+        }
+        return {
+          panels: {
+            ...state.panels,
+            [id]: { ...panel, props: { ...panel.props, ...updates } },
+          },
+        };
+      });
+    },
+    removePanel: (id) => {
+      store.set((state) => {
+        if (state.panels[id] === undefined) return {};
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [id]: _removed, ...rest } = state.panels;
+        // Drop its client-owned placement entry too (avoid a leak).
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [id]: _placement, ...restPlacement } = state.panelPlacement;
+        // A server-REMOVED panel's layout tracking dies with it -- its uuid
+        // never comes back. (Reconnect goes through resetGui, which
+        // deliberately KEEPS tracking: the replayed panels carry the SAME
+        // uuids, and their remembered arrangement must survive.)
+        let tracking = state.panelLayoutTracking;
+        if (id in tracking) {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { [id]: _removed, ...rest } = state.panels;
-          // Drop its client-owned placement entry too (avoid a leak).
+          const { [id]: _tracked, ...restTracking } = tracking;
+          tracking = restTracking;
+        }
+        let mobile = state.mobilePanelSections;
+        if (id in mobile) {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { [id]: _placement, ...restPlacement } = state.panelPlacement;
-          // A server-REMOVED panel's layout tracking dies with it -- its uuid
-          // never comes back. (Reconnect goes through resetGui, which
-          // deliberately KEEPS tracking: the replayed panels carry the SAME
-          // uuids, and their remembered arrangement must survive.)
-          let tracking = state.panelLayoutTracking;
-          if (id in tracking) {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { [id]: _tracked, ...restTracking } = tracking;
-            tracking = restTracking;
-          }
-          let mobile = state.mobilePanelSections;
-          if (id in mobile) {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { [id]: _mobile, ...restMobile } = mobile;
-            mobile = restMobile;
-          }
-          return {
-            panels: rest,
-            panelPlacement: restPlacement,
-            panelLayoutTracking: tracking,
-            mobilePanelSections: mobile,
-          };
-        });
-      },
-      removeGui: (id) => {
-        const guiConfig = configStore.get(id);
-        if (guiConfig == undefined) {
-          // TODO: this will currently happen when GUI elements are removed
-          // and then a new client connects. Needs to be revisited.
-          console.warn("(OK) Tried to remove non-existent component", id);
-          return;
+          const { [id]: _mobile, ...restMobile } = mobile;
+          mobile = restMobile;
         }
-        const state = store.get();
-        const guiOrderFromUuid = copyForWrite(state.guiOrderFromUuid);
-        delete guiOrderFromUuid[id];
-        const dirtyFormUuids = copyForWrite(state.dirtyFormUuids);
-        delete dirtyFormUuids[id];
-        const containerUuid = guiConfig.container_uuid;
-        const guiUuidSetFromContainerUuid = copyForWrite(
-          state.guiUuidSetFromContainerUuid,
+        return {
+          panels: rest,
+          panelPlacement: restPlacement,
+          panelLayoutTracking: tracking,
+          mobilePanelSections: mobile,
+        };
+      });
+    },
+    removeGui: (id) => {
+      const guiConfig = configStore.get(id);
+      if (guiConfig == undefined) {
+        // TODO: this will currently happen when GUI elements are removed
+        // and then a new client connects. Needs to be revisited.
+        console.warn("(OK) Tried to remove non-existent component", id);
+        return;
+      }
+      const state = store.get();
+      const guiOrderFromUuid = copyForWrite(state.guiOrderFromUuid);
+      delete guiOrderFromUuid[id];
+      const dirtyFormUuids = copyForWrite(state.dirtyFormUuids);
+      delete dirtyFormUuids[id];
+      const containerUuid = guiConfig.container_uuid;
+      const guiUuidSetFromContainerUuid = copyForWrite(
+        state.guiUuidSetFromContainerUuid,
+      );
+      const containerSet = copyForWrite(
+        guiUuidSetFromContainerUuid[containerUuid] ?? {},
+      );
+      delete containerSet[id];
+      if (isEmptyObject(containerSet)) {
+        delete guiUuidSetFromContainerUuid[containerUuid];
+      } else {
+        guiUuidSetFromContainerUuid[containerUuid] = containerSet;
+      }
+      store.set({
+        guiOrderFromUuid,
+        dirtyFormUuids,
+        guiUuidSetFromContainerUuid,
+      });
+      configStore.set({ [id]: undefined });
+    },
+    resetGui: () => {
+      // No need to overwrite the theme or label. The former especially
+      // can be jarring.
+      store.set({
+        shareUrl: cleanGuiState.shareUrl,
+        guiUuidSetFromContainerUuid: cleanGuiState.guiUuidSetFromContainerUuid,
+        modals: cleanGuiState.modals,
+        panels: cleanGuiState.panels,
+        guiOrderFromUuid: cleanGuiState.guiOrderFromUuid,
+        dirtyFormUuids: cleanGuiState.dirtyFormUuids,
+        uploadsInProgress: cleanGuiState.uploadsInProgress,
+        commands: cleanGuiState.commands,
+        panelPlacement: cleanGuiState.panelPlacement,
+        // The (re)connect replay is now in flight. Reconnect-sensitive
+        // consumers (the dock's pane registry, the main-panel width effect)
+        // hold their teardown/apply until `replayDone` -- the store being
+        // momentarily empty means "replay incoming", never "everything was
+        // removed".
+        replayActive: true,
+      });
+      configStore.setAll({}, true);
+    },
+    replayDone: () => {
+      // The server's end-of-replay marker (ReplayDoneMessage): the panels
+      // store is now COMPLETE for this connection, so this is the one safe
+      // point to prune layout tracking for uuids the replay did not revive
+      // (a mid-replay prune raced the message windows and could drop a
+      // still-loading panel's applied high-water marks).
+      store.set((state) => {
+        const live = new Set(Object.keys(state.panels));
+        live.add(CONTROL_PANEL_ID);
+        const entries = Object.entries(state.panelLayoutTracking).filter(
+          ([uuid]) => live.has(uuid),
         );
-        const containerSet = copyForWrite(
-          guiUuidSetFromContainerUuid[containerUuid] ?? {},
+        const mobile = Object.entries(state.mobilePanelSections).filter(
+          ([uuid]) => live.has(uuid),
         );
-        delete containerSet[id];
-        if (isEmptyObject(containerSet)) {
-          delete guiUuidSetFromContainerUuid[containerUuid];
-        } else {
-          guiUuidSetFromContainerUuid[containerUuid] = containerSet;
-        }
-        store.set({
-          guiOrderFromUuid,
-          dirtyFormUuids,
-          guiUuidSetFromContainerUuid,
-        });
-        configStore.set({ [id]: undefined });
-      },
-      resetGui: () => {
-        // No need to overwrite the theme or label. The former especially
-        // can be jarring.
-        store.set({
-          shareUrl: cleanGuiState.shareUrl,
-          guiUuidSetFromContainerUuid:
-            cleanGuiState.guiUuidSetFromContainerUuid,
-          modals: cleanGuiState.modals,
-          panels: cleanGuiState.panels,
-          guiOrderFromUuid: cleanGuiState.guiOrderFromUuid,
-          dirtyFormUuids: cleanGuiState.dirtyFormUuids,
-          uploadsInProgress: cleanGuiState.uploadsInProgress,
-          commands: cleanGuiState.commands,
-          panelPlacement: cleanGuiState.panelPlacement,
-          // The (re)connect replay is now in flight. Reconnect-sensitive
-          // consumers (the dock's pane registry, the main-panel width effect)
-          // hold their teardown/apply until `replayDone` -- the store being
-          // momentarily empty means "replay incoming", never "everything was
-          // removed".
-          replayActive: true,
-        });
-        configStore.setAll({}, true);
-      },
-      replayDone: () => {
-        // The server's end-of-replay marker (ReplayDoneMessage): the panels
-        // store is now COMPLETE for this connection, so this is the one safe
-        // point to prune layout tracking for uuids the replay did not revive
-        // (a mid-replay prune raced the message windows and could drop a
-        // still-loading panel's applied high-water marks).
-        store.set((state) => {
-          const live = new Set(Object.keys(state.panels));
-          live.add(CONTROL_PANEL_ID);
-          const entries = Object.entries(state.panelLayoutTracking).filter(
-            ([uuid]) => live.has(uuid),
-          );
-          const mobile = Object.entries(state.mobilePanelSections).filter(
-            ([uuid]) => live.has(uuid),
-          );
-          return {
-            replayActive: false,
-            replayDoneNonce: state.replayDoneNonce + 1,
-            panelLayoutTracking:
-              entries.length === Object.keys(state.panelLayoutTracking).length
-                ? state.panelLayoutTracking
-                : Object.fromEntries(entries),
-            mobilePanelSections:
-              mobile.length === Object.keys(state.mobilePanelSections).length
-                ? state.mobilePanelSections
-                : Object.fromEntries(mobile),
-          };
-        });
-      },
-      updateUploadState: (uploadState) => {
-        const state = store.get();
-        const { componentId, ...rest } = uploadState;
-        store.set({
-          uploadsInProgress: {
-            ...state.uploadsInProgress,
-            [componentId]: {
-              ...state.uploadsInProgress[componentId],
-              ...rest,
+        return {
+          replayActive: false,
+          replayDoneNonce: state.replayDoneNonce + 1,
+          panelLayoutTracking:
+            entries.length === Object.keys(state.panelLayoutTracking).length
+              ? state.panelLayoutTracking
+              : Object.fromEntries(entries),
+          mobilePanelSections:
+            mobile.length === Object.keys(state.mobilePanelSections).length
+              ? state.mobilePanelSections
+              : Object.fromEntries(mobile),
+        };
+      });
+    },
+    updateUploadState: (uploadState) => {
+      const state = store.get();
+      const { componentId, ...rest } = uploadState;
+      store.set({
+        uploadsInProgress: {
+          ...state.uploadsInProgress,
+          [componentId]: {
+            ...state.uploadsInProgress[componentId],
+            ...rest,
+          },
+        },
+      });
+    },
+    setFormDirty: (uuid) => {
+      store.set((state) => ({
+        dirtyFormUuids: { ...state.dirtyFormUuids, [uuid]: true },
+      }));
+    },
+    clearFormDirty: (uuid) => {
+      store.set((state) => {
+        const next = { ...state.dirtyFormUuids };
+        delete next[uuid];
+        return { dirtyFormUuids: next };
+      });
+    },
+    addCommand: (command) => {
+      store.set((state) => {
+        // Skip if an identical command is already registered (e.g. server
+        // reconnect replaying RegisterCommandMessage for every existing
+        // command). Prevents churning the whole subscriber set.
+        if (Object.is(state.commands[command.uuid], command)) return state;
+        return { commands: { ...state.commands, [command.uuid]: command } };
+      });
+    },
+    updateCommand: (uuid, updates) => {
+      store.set((state) => {
+        const existing = state.commands[uuid];
+        if (existing === undefined) return state;
+        const existingProps = existing.props as Record<string, unknown>;
+        const changed = Object.entries(updates).some(
+          ([k, v]) => !Object.is(existingProps[k], v),
+        );
+        if (!changed) return state;
+        const merged: RegisterCommandMessage = {
+          ...existing,
+          props: { ...existing.props, ...updates },
+        };
+        return { commands: { ...state.commands, [uuid]: merged } };
+      });
+    },
+    removeCommand: (uuid) => {
+      store.set((state) => {
+        if (!(uuid in state.commands)) return state;
+        const next = { ...state.commands };
+        delete next[uuid];
+        return { commands: next };
+      });
+    },
+    // The four write-only GuiSetPanel* messages each merge their single AXIS
+    // here, with the sending command's (counter, runId) stamp. One factory,
+    // one axis apiece.
+    setPanelPosition: setPanelAxis("position"),
+    setPanelWidth: setPanelAxis("width"),
+    setPanelHeight: setPanelAxis("height"),
+    setPanelCollapsed: setPanelAxis("collapsed"),
+    setMobileSectionExpanded: (uuid, expanded) => {
+      store.set((state) => {
+        const prev = state.mobilePanelSections[uuid];
+        if (prev?.expanded === expanded) return {};
+        return {
+          mobilePanelSections: {
+            ...state.mobilePanelSections,
+            [uuid]: {
+              expanded,
+              collapsedApplied: prev?.collapsedApplied ?? {},
             },
           },
-        });
-      },
-      setFormDirty: (uuid) => {
-        store.set((state) => ({
-          dirtyFormUuids: { ...state.dirtyFormUuids, [uuid]: true },
-        }));
-      },
-      clearFormDirty: (uuid) => {
-        store.set((state) => {
-          const next = { ...state.dirtyFormUuids };
-          delete next[uuid];
-          return { dirtyFormUuids: next };
-        });
-      },
-      addCommand: (command) => {
-        store.set((state) => {
-          // Skip if an identical command is already registered (e.g. server
-          // reconnect replaying RegisterCommandMessage for every existing
-          // command). Prevents churning the whole subscriber set.
-          if (Object.is(state.commands[command.uuid], command)) return state;
-          return { commands: { ...state.commands, [command.uuid]: command } };
-        });
-      },
-      updateCommand: (uuid, updates) => {
-        store.set((state) => {
-          const existing = state.commands[uuid];
-          if (existing === undefined) return state;
-          const existingProps = existing.props as Record<string, unknown>;
-          const changed = Object.entries(updates).some(
-            ([k, v]) => !Object.is(existingProps[k], v),
-          );
-          if (!changed) return state;
-          const merged: RegisterCommandMessage = {
-            ...existing,
-            props: { ...existing.props, ...updates },
-          };
-          return { commands: { ...state.commands, [uuid]: merged } };
-        });
-      },
-      removeCommand: (uuid) => {
-        store.set((state) => {
-          if (!(uuid in state.commands)) return state;
-          const next = { ...state.commands };
-          delete next[uuid];
-          return { commands: next };
-        });
-      },
-      // The four write-only GuiSetPanel* messages each merge their single AXIS
-      // here, with the sending command's (counter, runId) stamp. One factory,
-      // one axis apiece.
-      setPanelPosition: setPanelAxis("position"),
-      setPanelWidth: setPanelAxis("width"),
-      setPanelHeight: setPanelAxis("height"),
-      setPanelCollapsed: setPanelAxis("collapsed"),
-      setMobileSectionExpanded: (uuid, expanded) => {
-        store.set((state) => {
-          const prev = state.mobilePanelSections[uuid];
-          if (prev?.expanded === expanded) return {};
-          return {
-            mobilePanelSections: {
-              ...state.mobilePanelSections,
-              [uuid]: {
-                expanded,
-                collapsedApplied: prev?.collapsedApplied ?? {},
-              },
-            },
-          };
-        });
-      },
-      applyMobileCollapsedAxis: (uuid, axis) => {
-        store.set((state) => {
-          const next = mobileSectionAfterAxis(
-            state.mobilePanelSections[uuid],
-            axis,
-          );
-          if (next === null) return {};
-          return {
-            mobilePanelSections: {
-              ...state.mobilePanelSections,
-              [uuid]: next,
-            },
-          };
-        });
-      },
-      recordPanelLayoutApplied: (uuid, applied) => {
-        store.set((state) => {
-          const prev = state.panelLayoutTracking[uuid];
-          // No-op when every stamp is already at or below the recorded
-          // high-water marks: record runs on every placement application, and
-          // an identical write would churn a new tracking object through
-          // every subscriber for nothing.
-          if (
-            prev !== undefined &&
-            Object.entries(applied).every(([axis, runMap]) =>
-              Object.entries(runMap).every(
-                ([rid, counter]) =>
-                  (prev[axis as PlacementAxisName]?.[rid] ?? -1) >= counter,
-              ),
-            )
+        };
+      });
+    },
+    applyMobileCollapsedAxis: (uuid, axis) => {
+      store.set((state) => {
+        const next = mobileSectionAfterAxis(
+          state.mobilePanelSections[uuid],
+          axis,
+        );
+        if (next === null) return {};
+        return {
+          mobilePanelSections: {
+            ...state.mobilePanelSections,
+            [uuid]: next,
+          },
+        };
+      });
+    },
+    recordPanelLayoutApplied: (uuid, applied) => {
+      store.set((state) => {
+        const prev = state.panelLayoutTracking[uuid];
+        // No-op when every stamp is already at or below the recorded
+        // high-water marks: record runs on every placement application, and
+        // an identical write would churn a new tracking object through
+        // every subscriber for nothing.
+        if (
+          prev !== undefined &&
+          Object.entries(applied).every(([axis, runMap]) =>
+            Object.entries(runMap).every(
+              ([rid, counter]) =>
+                (prev[axis as PlacementAxisName]?.[rid] ?? -1) >= counter,
+            ),
           )
-            return {};
-          // Merge per-axis, per-run, keeping the high-water mark (an
-          // out-of-order replay can't regress a run's recorded counter).
-          const merged: AppliedAxes = { ...prev };
-          for (const [axis, runMap] of Object.entries(applied)) {
-            const axisName = axis as PlacementAxisName;
-            const axisMap: AppliedAxisRecord = { ...prev?.[axisName] };
-            for (const [rid, counter] of Object.entries(runMap))
-              axisMap[rid] = Math.max(axisMap[rid] ?? -1, counter);
-            merged[axisName] = axisMap;
-          }
-          return {
-            panelLayoutTracking: {
-              ...state.panelLayoutTracking,
-              [uuid]: merged,
-            },
-          };
-        });
-      },
-      resetPanelLayout: () => {
-        store.set((state) => ({
-          panelLayoutTracking: {},
-          // Mobile sections rebuild from the latest stored collapsed axes
-          // (the "layout the server set"), discarding user taps and
-          // watermarks -- reset must reach BOTH surfaces, and the mobile
-          // command effect can't do it (it re-runs on axis changes; reset
-          // re-applies axes without changing them).
-          mobilePanelSections: mobileSectionsFromPlacement(
-            state.panelPlacement,
-          ),
-          layoutResetNonce: state.layoutResetNonce + 1,
-        }));
-      },
-      updateGuiProps: (id, updates) => {
-        const config = configStore.get(id);
-        if (config === undefined) {
-          console.error(
-            `Tried to update non-existent component '${id}' with`,
-            updates,
-          );
-          return;
+        )
+          return {};
+        // Merge per-axis, per-run, keeping the high-water mark (an
+        // out-of-order replay can't regress a run's recorded counter).
+        const merged: AppliedAxes = { ...prev };
+        for (const [axis, runMap] of Object.entries(applied)) {
+          const axisName = axis as PlacementAxisName;
+          const axisMap: AppliedAxisRecord = { ...prev?.[axisName] };
+          for (const [rid, counter] of Object.entries(runMap))
+            axisMap[rid] = Math.max(axisMap[rid] ?? -1, counter);
+          merged[axisName] = axisMap;
         }
-        const newConfig = applyGuiConfigUpdate(config, updates);
-        if (newConfig !== config) {
-          configStore.set({ [id]: newConfig });
-        }
-      },
-    };
+        return {
+          panelLayoutTracking: {
+            ...state.panelLayoutTracking,
+            [uuid]: merged,
+          },
+        };
+      });
+    },
+    resetPanelLayout: () => {
+      store.set((state) => ({
+        panelLayoutTracking: {},
+        // Mobile sections rebuild from the latest stored collapsed axes
+        // (the "layout the server set"), discarding user taps and
+        // watermarks -- reset must reach BOTH surfaces, and the mobile
+        // command effect can't do it (it re-runs on axis changes; reset
+        // re-applies axes without changing them).
+        mobilePanelSections: mobileSectionsFromPlacement(state.panelPlacement),
+        layoutResetNonce: state.layoutResetNonce + 1,
+      }));
+    },
+    updateGuiProps: (id, updates) => {
+      const config = configStore.get(id);
+      if (config === undefined) {
+        console.error(
+          `Tried to update non-existent component '${id}' with`,
+          updates,
+        );
+        return;
+      }
+      const newConfig = applyGuiConfigUpdate(config, updates);
+      if (newConfig !== config) {
+        configStore.set({ [id]: newConfig });
+      }
+    },
+  };
 
-    return { store, configStore, actions };
-  })[0];
+  return { store, configStore, actions };
+}
+
+export function useGuiState(initialServer: string) {
+  return React.useState(() => createGuiState(initialServer))[0];
 }
 
 /** Type corresponding to the useGuiState hook return. */

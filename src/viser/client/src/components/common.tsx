@@ -1,7 +1,6 @@
 import * as React from "react";
 import { Box, Flex, Text, NumberInput, Tooltip } from "@mantine/core";
 import { GuiComponentContext } from "../ControlPanel/GuiComponentContext";
-import { useOffscreenRef } from "../ControlPanel/offscreenInputs";
 import { finiteNumberOrNull } from "./numberInputUtils";
 
 export function ViserInputComponent({
@@ -18,7 +17,6 @@ export function ViserInputComponent({
   hintDisabled?: boolean;
 }) {
   const { folderDepth } = React.useContext(GuiComponentContext)!;
-  const ref = useOffscreenRef(uuid);
   if (hint !== undefined && hint !== null) {
     children = // We need to add <Box /> for inputs that we can't assign refs to.
       (
@@ -48,7 +46,7 @@ export function ViserInputComponent({
     );
 
   return (
-    <Box ref={ref} pb="0.5em" px="xs">
+    <Box pb="0.5em" px="xs">
       {children}
     </Box>
   );

@@ -623,3 +623,41 @@ describe("effective visibility of new nodes", () => {
     expect(store.get("/a/b")!.effectiveVisibility).toBe(true);
   });
 });
+
+describe("children in batches", () => {
+  it("aren't inherited when a node is removed and re-added", () => {
+    const { store, actions } = setup();
+    actions.batch(() => {
+      for (const name of ["/a", "/a/b"])
+        actions.addSceneNode(makeFrameMessage(name));
+      actions.removeSceneNodeVariant("/a", "");
+      actions.addSceneNode(makeFrameMessage("/a"));
+    });
+    expect(store.get("/a")!.children).toEqual([]);
+  });
+
+  it("are cleared by resets", () => {
+    const { store, actions } = setup();
+    actions.batch(() => {
+      actions.addSceneNode(makeFrameMessage("/a"));
+      actions.resetScene();
+    });
+    expect(store.get("")!.children).toEqual(["/WorldAxes"]);
+    expect(store.get("/a")).toBeUndefined();
+  });
+
+  it("are updated when re-adding changes effective visibility", () => {
+    const { store, actions } = setup();
+    actions.addSceneNode(makeFrameMessage("/a"));
+    actions.addSceneNode(makeFrameMessage("/a/b"));
+    actions.addSceneNode(makeFrameMessage("/a/b/c"));
+    // Orphan the subtree, and bring its root back hidden.
+    actions.removeSceneNodeVariant("/a", "");
+    actions.addSceneNode(makeFrameMessage("/a"));
+    actions.updateNodeAttributes("/a", { visibility: false });
+    expect(store.get("/a/b")!.effectiveVisibility).toBe(true);
+    actions.addSceneNode(makeFrameMessage("/a/b"));
+    expect(store.get("/a/b")!.effectiveVisibility).toBe(false);
+    expect(store.get("/a/b/c")!.effectiveVisibility).toBe(false);
+  });
+});
