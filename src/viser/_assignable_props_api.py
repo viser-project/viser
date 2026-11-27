@@ -138,7 +138,9 @@ class AssignablePropsBase(Generic[TImpl]):
         # are already immutable snapshots don't need another copy; see
         # `array_snapshot()`.
         for k, v in vars(impl.props).items():
-            if isinstance(v, np.ndarray) and v.flags.writeable:
+            if isinstance(v, np.ndarray) and not (
+                v.flags.owndata and not v.flags.writeable
+            ):
                 setattr(impl.props, k, array_snapshot(v))
 
         # Store the implementation object.
@@ -152,6 +154,9 @@ class AssignablePropsBase(Generic[TImpl]):
             non_none = [a for a in get_args(hint) if a is not type(None)]
             if len(non_none) == 1:
                 hint = non_none[0]
+            elif all(a in _NDARRAY_DTYPES for a in non_none):
+                # The dtype will be matched to the current value's.
+                return np.asarray(value)
         dtype = _NDARRAY_DTYPES.get(hint)
         if dtype is not None:
             if dtype is np.uint8 and "color" in prop_name:
@@ -191,6 +196,13 @@ class AssignablePropsBase(Generic[TImpl]):
         """Hook called after a props field is assigned and its update is queued.
         Subclasses can override to enforce cross-field invariants (e.g. keeping
         an array's dtype in sync with another field). No-op by default."""
+
+
+def forget_readable_copy(handle: Any, name: str) -> None:
+    """Free the copy that was handed out for a property, see `props_getattr()`."""
+    copies = handle.__dict__.get("_readable_copies")
+    if copies is not None:
+        copies.pop(name, None)
 
 
 def props_setattr(self, name: str, value: Any) -> None:
@@ -236,12 +248,11 @@ def props_setattr(self, name: str, value: Any) -> None:
                 # Ensure consistent dtype.
                 if value.dtype != current_value.dtype:
                     value = value.astype(current_value.dtype)
-                # If the caller is assigning the array that we handed out, it
-                # may have been modified in-place (`handle.points += 1.0`) and
-                # there's nothing left to compare against.
-                if raw_value is not current_value and arrays_equal(
-                    current_value, value
-                ):
+                # Stored snapshots are immutable. So even if the caller is
+                # assigning an array that we handed out, which may have been
+                # modified in-place (`handle.points += 1.0`), this compares
+                # against what was last sent.
+                if arrays_equal(current_value, value):
                     return
 
             # Store and queue one immutable snapshot. It must not alias the
@@ -259,6 +270,7 @@ def props_setattr(self, name: str, value: Any) -> None:
             else:
                 value = array_snapshot(value)
             setattr(self._impl.props, name, value)
+            forget_readable_copy(self, name)
             queued: Any = value
         else:
             # Non-array properties (immutable / already a fresh cast).
@@ -282,9 +294,17 @@ def props_getattr(self, name: str) -> Any:
         value = getattr(self._impl.props, name)
         if isinstance(value, np.ndarray) and not value.flags.writeable:
             # Stored arrays are snapshots shared with queued messages. User code
-            # gets a private copy, which stays stable across reads.
-            value = value.copy()
-            setattr(self._impl.props, name, value)
+            # gets a private copy, which stays the same until the next
+            # assignment. It's kept separate from the snapshot: reads must never
+            # replace what a concurrent assignment stores.
+            copies = self.__dict__.get("_readable_copies")
+            if copies is None:
+                copies = self.__dict__.setdefault("_readable_copies", {})
+            entry = copies.get(name)
+            if entry is None or entry[0] is not value:
+                entry = (value, value.copy())
+                copies[name] = entry
+            return entry[1]
         return value
     else:
         raise AttributeError(

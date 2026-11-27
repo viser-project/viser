@@ -456,6 +456,7 @@ class _FakeWebsocket:
             assert isinstance(f, (bytes, memoryview))
             self.largest_fragment = max(self.largest_fragment, len(f))
         self.payloads.append(b"".join(fragments))
+        await asyncio.sleep(0)  # Let other producers run.
 
 
 def _decode(payload: bytes) -> list[dict]:
@@ -617,3 +618,312 @@ def test_readd_after_remove_resets_pose(server: viser.ViserServer) -> None:
         server.scene.remove_by_name("/f")
         buffer.generator_cursors.clear()
         server._run_garbage_collector(force=True)
+
+
+# --- Found in adversarial review --------------------------------------------
+
+
+def test_all_inplace_patterns_are_sent(server: viser.ViserServer) -> None:
+    cloud = server.scene.add_point_cloud(
+        "/p", np.zeros((4, 3)), (1, 2, 3), precision="float32"
+    )
+
+    def latest() -> np.ndarray:
+        return _updates(server, "/p", "points")[-1]
+
+    view = cloud.points[:]
+    view += 1
+    cloud.points = view
+    assert (latest() == 1).all()
+    cloud.points[:] = 7  # Not assigned; has no effect on clients.
+    assert (latest() == 1).all()
+    cloud.points = np.full((4, 3), 7.0)
+    assert (latest() == 7).all()
+    cloud.points[0] = 9
+    cloud.points = cloud.points.copy()
+    assert (latest()[0] == 9).all()
+    # Reads reflect assignments made through any path.
+    cloud.points = np.zeros((4, 3))
+    assert (cloud.points == 0).all()
+
+
+def test_point_cloud_points_accept_lists(server: viser.ViserServer) -> None:
+    cloud = server.scene.add_point_cloud("/p", np.zeros((1, 3)), (1, 2, 3))
+    cloud.points = [[1, 2, 3], [4, 5, 6]]  # type: ignore
+    (update,) = _updates(server, "/p", "points")
+    assert update.dtype == np.float16 and update.shape == (2, 3)
+
+
+def test_concurrent_splat_attributes(server: viser.ViserServer) -> None:
+    n = 5000
+    splats = server.scene.add_gaussian_splats(
+        "/s",
+        centers=np.zeros((n, 3)),
+        covariances=np.tile(np.eye(3), (n, 1, 1)),
+        rgbs=np.zeros((n, 3)),
+        opacities=np.ones((n, 1)),
+    )
+    for i in range(1, 60):
+        barrier = threading.Barrier(2)
+
+        def set_centers() -> None:
+            barrier.wait()
+            splats.centers = np.full((n, 3), i, dtype=np.float32)
+
+        def set_rgbs() -> None:
+            barrier.wait()
+            splats.rgbs = np.full((n, 3), i, dtype=np.uint8)
+
+        threads = [threading.Thread(target=f) for f in (set_centers, set_rgbs)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert (splats.centers == i).all() and (splats.rgbs == i).all()
+
+
+def test_reads_do_not_revert_assignments(server: viser.ViserServer) -> None:
+    cloud = server.scene.add_point_cloud(
+        "/p", np.zeros((10, 3)), (1, 2, 3), precision="float32"
+    )
+    before = cloud._impl.props.points
+
+    class AssignDuringCopy(np.ndarray):
+        def copy(self, *args: Any, **kwargs: Any) -> np.ndarray:
+            cloud.points = np.ones((10, 3))
+            return np.array(self)
+
+    stored = before.view(AssignDuringCopy)
+    cloud._impl.props.points = stored  # type: ignore
+    cloud.points  # A write lands in the middle of this read.
+    assert (cloud._impl.props.points == 1).all()
+    assert (cloud.points == 1).all()
+
+
+def _array_update(i: int, num_bytes: int) -> vm.SceneNodeUpdateMessage:
+    return vm.SceneNodeUpdateMessage(f"/{i}", {"x": np.zeros(num_bytes, np.uint8)})
+
+
+def test_split_windows_reach_every_client() -> None:
+    def push(buffer: AsyncMessageBuffer) -> None:
+        for i in range(12):
+            buffer.push(_array_update(i, 3 << 20))
+
+    _, received = _run_producers(push, 2, vm.ReplayDoneMessage())
+    expected = [f"/{i}" for i in range(12)] + [None, "/live", "/live2"]
+    assert [[m.get("name") for m in r] for r in received] == [expected] * 2
+
+
+def test_similar_windows_are_not_shared() -> None:
+    """Windows that start with the same message may differ after it."""
+    buffer = AsyncMessageBuffer(None, persistent_messages=True)  # type: ignore
+    buffer.generator_cursors = {0: 0, 1: 0}
+    a, b, c = [vm.SetPositionMessage(n, (0.0, 0.0, 0.0)) for n in ("/a", "/b", "/c")]
+    buffer.cache_encoding([a, b], [b"payload"])
+    assert buffer.get_cached_encoding([a, b]) == [b"payload"]
+    for other in ([a, c], [a], [a, b, c], [b, a]):
+        assert buffer.get_cached_encoding(other) is None
+    # Equal, but not the same.
+    copy = vm.SetPositionMessage("/b", (0.0, 0.0, 0.0))
+    assert buffer.get_cached_encoding([a, copy]) is None
+    buffer.cache_encoding([a, b], [b"x" * (5 << 20)])
+    assert buffer.get_cached_encoding([a, b]) is None
+
+
+def test_atomic_blocks_are_delivered_whole() -> None:
+    """Nothing is sent while a block is open, and then everything in it arrives
+    in one payload -- including blocks that are larger than replay payloads, and
+    when no other message follows to wake up the producer."""
+
+    async def scenario() -> list[list[str]]:
+        loop = asyncio.get_running_loop()
+        buffer = AsyncMessageBuffer(loop, persistent_messages=True)
+        ws = _FakeWebsocket()
+        buffer.push(_array_update(-1, 1 << 20))
+        tasks = [
+            asyncio.create_task(
+                _infra._message_producer(
+                    w,  # type: ignore
+                    buffer,
+                    i,
+                    vm.ReplayDoneMessage(),
+                )
+            )
+            # A second consumer, so that encodings are shared.
+            for i, w in enumerate((ws, _FakeWebsocket()))
+        ]
+        await asyncio.sleep(0.1)
+        num_before = len(ws.payloads)
+
+        buffer.atomic_start()
+        for i in range(10):
+            buffer.push(_array_update(i, 3 << 20))
+            await asyncio.sleep(0.02)
+        assert len(ws.payloads) == num_before
+        buffer.atomic_end()
+        await asyncio.sleep(0.2)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        return [[m["name"] for m in _decode(p)] for p in ws.payloads[num_before:]]
+
+    payloads = run_isolated(lambda: asyncio.run(scenario()))
+    assert payloads == [[f"/{i}" for i in range(10)]]
+
+
+def test_open_atomic_block_holds_back_awake_consumers() -> None:
+    """Consumers that were woken up by an earlier message shouldn't pick up
+    messages from a block that's still open."""
+
+    async def scenario() -> None:
+        buffer = AsyncMessageBuffer(
+            asyncio.get_running_loop(), persistent_messages=True
+        )
+        ws = _FakeWebsocket()
+        task = asyncio.create_task(
+            _infra._message_producer(ws, buffer, 0)  # type: ignore
+        )
+        await asyncio.sleep(0.05)
+        buffer.push(vm.SetPositionMessage("/before", (0.0, 0.0, 0.0)))
+        buffer.atomic_start()
+        buffer.push(vm.SetPositionMessage("/a", (0.0, 0.0, 0.0)))
+        await asyncio.sleep(0.1)
+        buffer.push(vm.SetPositionMessage("/b", (0.0, 0.0, 0.0)))
+        await asyncio.sleep(0.1)
+        assert len(ws.payloads) == 0
+        buffer.atomic_end()
+        await asyncio.sleep(0.1)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        names = [[m["name"] for m in _decode(p)] for p in ws.payloads]
+        assert names == [["/before", "/a", "/b"]]
+
+    run_isolated(lambda: asyncio.run(scenario()))
+
+
+def test_live_pushes_during_sparse_replay() -> None:
+    """Large gaps in message ids, on both sides of the replay boundary."""
+
+    async def scenario() -> list[Any]:
+        buffer = AsyncMessageBuffer(
+            asyncio.get_running_loop(), persistent_messages=True
+        )
+
+        def push(prefix: str, n: int) -> None:
+            for i in range(n):
+                buffer.push(vm.SetPositionMessage(f"/{prefix}{i}", (0.0, 0.0, 0.0)))
+                buffer.message_counter += 5000
+
+        push("a", 1500)
+        marker = vm.ReplayDoneMessage()
+        gen = buffer.window_generator(0, backlog_done_message=marker)
+        push("b", 10)  # Live, but pushed before the first window.
+        seen = list(await gen.__anext__())
+        push("c", 1500)
+        while getattr(seen[-1], "name", None) != "/c1499":
+            seen.extend(await asyncio.wait_for(gen.__anext__(), timeout=5.0))
+        await gen.aclose()
+        return [getattr(m, "name", None) for m in seen]
+
+    assert run_isolated(lambda: asyncio.run(scenario())) == (
+        [f"/a{i}" for i in range(1500)]
+        + [None]
+        + [f"/b{i}" for i in range(10)]
+        + [f"/c{i}" for i in range(1500)]
+    )
+
+
+def test_client_messages_are_not_starved_by_broadcasts(
+    server: viser.ViserServer,
+) -> None:
+    """Per-client messages used to wait for the whole replay, or forever if large
+    broadcasts kept coming."""
+    from websockets.sync.client import connect
+
+    for i in range(60):
+        server.scene.add_mesh_simple(
+            f"/m{i}", np.zeros((250_000, 3), np.float32), np.zeros((1, 3), np.uint32)
+        )
+    num_payloads = 0
+    last_client_message = -1
+
+    def on_connect(client: Any) -> None:
+        def push() -> None:
+            while not done.wait(0.02):
+                client.queue_message(vm.SetPositionMessage("/mine", (0.0, 0.0, 0.0)))
+
+        threading.Thread(target=push, daemon=True).start()
+
+    done = threading.Event()
+    server._websock_server.on_client_connect(on_connect)
+    first_client_message = -1
+    with connect(
+        f"ws://localhost:{server.get_port()}",
+        max_size=None,
+        compression=None,
+        subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
+    ) as ws:
+        while True:
+            payload = ws.recv()
+            assert isinstance(payload, bytes)
+            messages = _decode(payload)
+            num_payloads += 1
+            if any(m.get("name") == "/mine" for m in messages):
+                last_client_message = num_payloads
+                if first_client_message < 0:
+                    first_client_message = num_payloads
+            if any(m["type"] == "ReplayDoneMessage" for m in messages):
+                break
+            done.wait(0.05)  # Slow reader.
+    done.set()
+    # Early, and not just once.
+    assert 0 < first_client_message < num_payloads / 2
+    assert last_client_message > num_payloads / 2
+
+
+def test_incoming_messages_reach_client_handlers(server: viser.ViserServer) -> None:
+    """Handlers may be registered on the server, on a connection, or both."""
+    from websockets.sync.client import connect
+
+    received: list[str] = []
+    events = {"server": threading.Event(), "client": threading.Event()}
+
+    def make_handler(name: str) -> Any:
+        def handler(client_id: Any, message: Any) -> None:
+            received.append(name)
+            events[name].set()
+
+        return handler
+
+    server._websock_server.on_client_connect(
+        lambda c: c.register_handler(vm.ShareUrlRequest, make_handler("client"))
+    )
+    server._websock_server.register_handler(vm.ShareUrlRequest, make_handler("server"))
+    server.request_share_url = lambda *_: None  # type: ignore
+    with connect(
+        f"ws://localhost:{server.get_port()}",
+        subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
+    ) as ws:
+        ws.recv()
+        ws.send(msgspec.msgpack.encode({"type": "ShareUrlRequest"}))
+        for event in events.values():
+            assert event.wait(5.0)
+    assert sorted(received) == ["client", "server"]
+
+
+def test_encoding_cache_is_released() -> None:
+    async def scenario() -> None:
+        buffer = AsyncMessageBuffer(
+            asyncio.get_running_loop(), persistent_messages=True
+        )
+        gens = [buffer.window_generator(i) for i in range(2)]
+        buffer.push(_array_update(0, 10))
+        window = list(await gens[0].__anext__())
+        await gens[1].__anext__()
+        buffer.cache_encoding(window, [b"payload"])
+        assert buffer.get_cached_encoding(window) is not None
+        for gen in gens:
+            await gen.aclose()
+        assert buffer._encoding_cache is None
+
+    run_isolated(lambda: asyncio.run(scenario()))

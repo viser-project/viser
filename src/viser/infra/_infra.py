@@ -637,6 +637,7 @@ class WebsockServer(WebsockMessageHandler):
             # window generator's finally (which releases the GC cursor) then
             # ran only when the NEXT broadcast woke it, and on a quiet server
             # the stale cursor pinned the GC deletion floor indefinitely.
+            send_lock = asyncio.Lock()
             producer_consumer_tasks = [
                 asyncio.create_task(coro)
                 for coro in (
@@ -644,6 +645,7 @@ class WebsockServer(WebsockMessageHandler):
                         connection,
                         client_state.message_buffer,
                         client_id,
+                        send_lock=send_lock,
                     ),
                     _message_producer(
                         connection,
@@ -652,6 +654,7 @@ class WebsockServer(WebsockMessageHandler):
                         # End-of-replay marker: rides the BROADCAST buffer only
                         # (the per-client buffer has no persistent backlog).
                         backlog_done_message=self._backlog_done_message,
+                        send_lock=send_lock,
                     ),
                     _message_consumer(connection, handle_incoming, message_class),
                 )
@@ -974,12 +977,20 @@ def _fragments_from_parts(
 
 
 async def _send_parts(
-    websocket: ServerConnection, parts: list[bytes | memoryview]
+    websocket: ServerConnection,
+    parts: list[bytes | memoryview],
+    send_lock: asyncio.Lock,
 ) -> None:
-    if sum(len(p) for p in parts) <= _FRAGMENT_BYTES:
-        await websocket.send(b"".join(parts))
-    else:
-        await websocket.send(_fragments_from_parts(parts))
+    # A connection has two producers: one for broadcasted messages, and one for
+    # its own. websockets makes other sends wait while a fragmented message is
+    # being sent, but isn't fair about who goes next. Without this lock, which is
+    # first-come first-served, a steady stream of large broadcasts would starve
+    # per-client messages.
+    async with send_lock:
+        if sum(len(p) for p in parts) <= _FRAGMENT_BYTES:
+            await websocket.send(b"".join(parts))
+        else:
+            await websocket.send(_fragments_from_parts(parts))
 
 
 def _append_aligned_buffers(
@@ -1002,6 +1013,7 @@ async def _message_producer(
     buffer: AsyncMessageBuffer,
     client_id: int,
     backlog_done_message: Message | None = None,
+    send_lock: asyncio.Lock | None = None,
 ) -> None:
     """Infinite loop to broadcast windows of messages from a buffer.
 
@@ -1027,6 +1039,8 @@ async def _message_producer(
     window_generator = buffer.window_generator(
         client_id, backlog_done_message=backlog_done_message
     )
+    if send_lock is None:
+        send_lock = asyncio.Lock()
     zstd = zstandard.ZstdCompressor(level=1)
     replaying = backlog_done_message is not None
     try:
@@ -1042,7 +1056,7 @@ async def _message_producer(
             if cached_parts is not None:
                 if replaying and outgoing[-1] is backlog_done_message:
                     replaying = False
-                await _send_parts(websocket, cached_parts)
+                await _send_parts(websocket, cached_parts, send_lock)
                 continue
 
             split_bytes = _REPLAY_SPLIT_BYTES if replaying else _LIVE_SPLIT_BYTES
@@ -1050,6 +1064,7 @@ async def _message_producer(
             serialized_messages: list[dict[str, Any]] = []
             binary_bytes = 0
             split = False
+            message = outgoing[0]
             for message in outgoing:
                 prev_num_buffers = len(binary_buffers)
                 serialized_messages.append(message.as_serializable_dict(binary_buffers))
@@ -1063,13 +1078,17 @@ async def _message_producer(
                     await _send_parts(
                         websocket,
                         _encode_payload(serialized_messages, binary_buffers, zstd),
+                        send_lock,
                     )
                     serialized_messages, binary_buffers = [], []
                     binary_bytes = 0
                     split = True
             parts = _encode_payload(serialized_messages, binary_buffers, zstd)
             buffer.cache_encoding(outgoing, None if split else parts)
-            await _send_parts(websocket, parts)
+            await _send_parts(websocket, parts, send_lock)
+
+            # Don't keep arrays alive while waiting for the next window.
+            del outgoing, message, parts, serialized_messages, binary_buffers
 
             # send() only yields to the event loop under backpressure. Let
             # other connections and incoming messages interleave with long

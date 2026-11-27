@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import inspect
+import threading
 import warnings
 from collections.abc import Coroutine
 from typing import (
@@ -31,6 +32,7 @@ from ._assignable_props_api import (
     array_snapshot,
     cast_vector,
     colors_to_uint8,
+    forget_readable_copy,
 )
 from .infra._infra import (
     WebsockClientConnection,
@@ -1223,6 +1225,11 @@ class BatchedGlbHandle(
     """Handle for batched GLB objects."""
 
 
+_splat_update_lock = threading.Lock()
+"""Held while updating part of a splat buffer. Each update replaces the whole
+buffer, so concurrent ones would otherwise lose attributes."""
+
+
 class GaussianSplatHandle(
     _RaycastSupportedSceneNodeHandle,
     _messages.GaussianSplatsProps,
@@ -1262,6 +1269,7 @@ class GaussianSplatHandle(
         ownership of the buffer."""
         buffer.flags.writeable = False
         self._impl.props.buffer = buffer
+        forget_readable_copy(self, "buffer")
         self._queue_update("buffer", buffer)
 
     @staticmethod
@@ -1324,7 +1332,8 @@ class GaussianSplatHandle(
         self._pack_centers(buffer, centers)
         self._pack_covariances(buffer, covariances)
         self._pack_rgba(buffer, rgbs=rgbs, opacities=opacities)
-        self.buffer = buffer
+        with _splat_update_lock:
+            self.buffer = buffer
 
     @property
     def centers(self) -> npt.NDArray[np.float32]:
@@ -1336,9 +1345,10 @@ class GaussianSplatHandle(
         assert centers.ndim == 2 and centers.shape[1] == 3, (
             f"centers must have shape (N, 3), got {centers.shape}"
         )
-        buffer = self._make_update_buffer(centers.shape[0])
-        self._pack_centers(buffer, centers)
-        self._commit_update_buffer(buffer)
+        with _splat_update_lock:
+            buffer = self._make_update_buffer(centers.shape[0])
+            self._pack_centers(buffer, centers)
+            self._commit_update_buffer(buffer)
 
     @property
     def rgbs(self) -> npt.NDArray[np.uint8]:
@@ -1351,9 +1361,10 @@ class GaussianSplatHandle(
         assert rgbs.ndim == 2 and rgbs.shape[1] == 3, (
             f"rgbs must have shape (N, 3), got {rgbs.shape}"
         )
-        buffer = self._make_update_buffer(rgbs.shape[0])
-        self._pack_rgba(buffer, rgbs=rgbs)
-        self._commit_update_buffer(buffer)
+        with _splat_update_lock:
+            buffer = self._make_update_buffer(rgbs.shape[0])
+            self._pack_rgba(buffer, rgbs=rgbs)
+            self._commit_update_buffer(buffer)
 
     @property
     def opacities(self) -> npt.NDArray[np.uint8]:
@@ -1367,9 +1378,10 @@ class GaussianSplatHandle(
         assert opacities.ndim == 2 and opacities.shape[1] == 1, (
             f"opacities must have shape (N, 1), got {opacities.shape}"
         )
-        buffer = self._make_update_buffer(opacities.shape[0])
-        self._pack_rgba(buffer, opacities=opacities)
-        self._commit_update_buffer(buffer)
+        with _splat_update_lock:
+            buffer = self._make_update_buffer(opacities.shape[0])
+            self._pack_rgba(buffer, opacities=opacities)
+            self._commit_update_buffer(buffer)
 
     @property
     def covariances(self) -> npt.NDArray[np.float32]:
@@ -1396,9 +1408,10 @@ class GaussianSplatHandle(
         assert covariances.ndim == 3 and covariances.shape[1:] == (3, 3), (
             f"covariances must have shape (N, 3, 3), got {covariances.shape}"
         )
-        buffer = self._make_update_buffer(covariances.shape[0])
-        self._pack_covariances(buffer, covariances)
-        self._commit_update_buffer(buffer)
+        with _splat_update_lock:
+            buffer = self._make_update_buffer(covariances.shape[0])
+            self._pack_covariances(buffer, covariances)
+            self._commit_update_buffer(buffer)
 
 
 class MeshSkinnedHandle(

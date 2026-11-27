@@ -483,6 +483,8 @@ class AsyncMessageBuffer:
             # Drop this connection's GC cursor: a departed client must not
             # hold the deletion floor down forever.
             self.generator_cursors.pop(client_id, None)
+            # There may be nobody left to share this with.
+            self._encoding_cache = None
             # And reap the CURRENT flush waiter (a plain local, so the latest
             # re-armed task is the one cancelled): an un-awaited Event.wait()
             # task otherwise lingers until a future flush, accumulating one
