@@ -186,7 +186,8 @@ export function matrixRelativeTo(
 function cellSize(source: InstanceSource): number {
   const radius = source.appearance?.radius ?? 0;
   if (!(radius > 0 && radius < Infinity)) return 1024;
-  return 2 ** Math.round(Math.log2(radius * 4096));
+  // Coarse, so objects with slightly different sizes share a cell.
+  return 2048 * 8 ** Math.round(Math.log2(radius) / 3);
 }
 
 type Cell = {

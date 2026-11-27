@@ -61,7 +61,7 @@ def rss_mb() -> float:
 
 
 def peak_rss_mb() -> float:
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e3
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024 / 1e6
 
 
 @contextlib.contextmanager
