@@ -10,7 +10,9 @@ import { HoverableContext } from "../HoverContext";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import {
   InstanceSource,
+  geometryRadius,
   MeshBatch,
+  MIN_INSTANCE_SCALE,
   raycastOnlyLayers,
   raycastOnlyMaterials,
 } from "./AutoInstancer";
@@ -53,12 +55,14 @@ export const PrimitiveMesh = React.forwardRef<
   const eligible =
     (material.opacity === null || material.opacity >= 1.0) &&
     typeof receiveShadow !== "number" &&
-    sx > 0 &&
-    sy > 0 &&
-    sz > 0;
+    Math.min(sx, sy, sz) > MIN_INSTANCE_SCALE;
   const appearance = React.useMemo(
-    () => ({ color, scale: [sx, sy, sz] as [number, number, number] }),
-    [color, sx, sy, sz],
+    () => ({
+      color,
+      scale: [sx, sy, sz],
+      radius: geometryRadius(geometry) * Math.max(sx, sy, sz),
+    }),
+    [geometry, color, sx, sy, sz],
   );
   const spec: InstancingSpec | null = eligible
     ? {

@@ -17,8 +17,10 @@ import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
 import { ViewerContext } from "./ViewerContext";
 import { HoverableContext } from "./HoverContext";
 import {
+  geometryRadius,
   InstanceSource,
   MeshBatch,
+  MIN_INSTANCE_SCALE,
   raycastOnlyLayers,
 } from "./scene/AutoInstancer";
 import { useInstanceSource } from "./scene/useInstanceSource";
@@ -401,14 +403,18 @@ function FrameAxes(props: {
 
   const [sx, sy, sz] = props.scale;
   const appearance = React.useMemo(
-    () => ({ color: 0xffffff, scale: [sx, sy, sz] }),
-    [sx, sy, sz],
+    () => ({
+      color: 0xffffff,
+      scale: [sx, sy, sz],
+      radius: geometryRadius(geometry) * Math.max(sx, sy, sz),
+    }),
+    [geometry, sx, sy, sz],
   );
   const drawIndividually = useInstanceSource(
     props.source,
     // Mirrored meshes can't be instanced: front faces are determined for all
     // instances at once.
-    sx > 0 && sy > 0 && sz > 0
+    Math.min(sx, sy, sz) > MIN_INSTANCE_SCALE
       ? {
           key: `frame|${geometry.uuid}`,
           makeBatch: () =>

@@ -11,6 +11,9 @@ export const raycastOnlyMaterials = {
   double: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
 };
 
+/** Smaller scales are drawn individually: shaders would underflow. */
+export const MIN_INSTANCE_SCALE = 1e-12;
+
 /** Groups of primitives are instanced when they have this many members. Below
  * this, the benefits don't outweigh the costs of an extra shader program. */
 const ACTIVATE_AT = 64;
@@ -19,6 +22,7 @@ const DEACTIVATE_BELOW = 32;
 
 /** Objects that can be drawn together. */
 export interface InstanceBatch {
+  /** Transforms are drawn relative to this object's position. */
   readonly object: THREE.Object3D;
   add(source: InstanceSource): void;
   remove(source: InstanceSource): void;
@@ -26,8 +30,15 @@ export interface InstanceBatch {
   updateTransform(source: InstanceSource): void;
   /** Called when a source's appearance changes. */
   updateAppearance(source: InstanceSource): void;
+  /** Called before each render, after world matrices have been updated. */
+  flush(): void;
   setViewportSize(width: number, height: number): void;
   dispose(): void;
+}
+
+export interface InstanceAppearance {
+  /** Distance of the furthest point from the source's origin. */
+  radius: number;
 }
 
 /** Root object for a scene node that may be drawn as part of a batch. */
@@ -36,7 +47,7 @@ export class InstanceSource extends THREE.Group {
   /** Index in the batch; managed by the batch. */
   batchIndex = -1;
   /** Appearance of this source. The type depends on the batch. */
-  appearance: unknown = null;
+  appearance: InstanceAppearance | null = null;
   /** Whether this source and all of its ancestors are visible. */
   displayed = false;
 
@@ -81,11 +92,13 @@ export function markRange(
   attribute.needsUpdate = true;
 }
 
-/** Keeps displayed sources in a dense array. `batchIndex` is a source's position
- * in it, or -1. */
+/** Draws displayed sources from a dense array, in the order that they were added.
+ * The order matters for objects that are in the same place. */
 export abstract class DenseBatch implements InstanceBatch {
   abstract readonly object: THREE.Object3D;
-  private readonly dense: InstanceSource[] = [];
+  private readonly members = new Set<InstanceSource>();
+  /** Set when sources need to be assigned to different positions in the array. */
+  private needsRebuild = false;
   private capacity = 0;
 
   /** (Re)allocate buffers. All contents are written afterwards. */
@@ -97,64 +110,200 @@ export abstract class DenseBatch implements InstanceBatch {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   setViewportSize(_width: number, _height: number): void {}
 
-  private write(source: InstanceSource): void {
-    this.writeTransform(source);
-    this.writeAppearance(source);
-  }
-
-  private insert(source: InstanceSource): void {
-    source.batchIndex = this.dense.length;
-    this.dense.push(source);
-    if (this.dense.length > this.capacity) {
-      this.capacity = Math.max(ACTIVATE_AT * 2, this.capacity * 2);
-      this.allocate(this.capacity);
-      this.dense.forEach((s) => this.write(s));
-    } else {
-      this.write(source);
-    }
-    this.setCount(this.dense.length);
-  }
-
-  private evict(source: InstanceSource): void {
-    // Move the last source into the hole.
-    const last = this.dense.pop()!;
-    if (last !== source) {
-      this.dense[source.batchIndex] = last;
-      last.batchIndex = source.batchIndex;
-      this.write(last);
-    }
-    source.batchIndex = -1;
-    this.setCount(this.dense.length);
-  }
-
   add(source: InstanceSource): void {
     source.batch = this;
-    if (source.displayed) this.insert(source);
+    source.batchIndex = -1;
+    this.members.add(source);
+    if (source.displayed) this.needsRebuild = true;
   }
 
   remove(source: InstanceSource): void {
-    if (source.batchIndex !== -1) this.evict(source);
+    this.members.delete(source);
+    if (source.batchIndex !== -1) this.needsRebuild = true;
+    source.batchIndex = -1;
     source.batch = null;
   }
 
   updateTransform(source: InstanceSource): void {
     if (source.displayed !== (source.batchIndex !== -1)) {
-      if (source.displayed) this.insert(source);
-      else this.evict(source);
-    } else if (source.displayed) {
+      this.needsRebuild = true;
+    } else if (source.displayed && !this.needsRebuild) {
       this.writeTransform(source);
     }
   }
 
   updateAppearance(source: InstanceSource): void {
-    if (source.batchIndex !== -1) this.write(source);
+    if (source.batchIndex === -1 || this.needsRebuild) return;
+    this.writeTransform(source);
+    this.writeAppearance(source);
+  }
+
+  flush(): void {
+    if (!this.needsRebuild) return;
+    this.needsRebuild = false;
+
+    let count = 0;
+    this.members.forEach((source) => {
+      source.batchIndex = source.displayed ? count++ : -1;
+    });
+    if (count > this.capacity) {
+      this.capacity = Math.max(16, this.capacity);
+      while (this.capacity < count) this.capacity *= 2;
+      this.allocate(this.capacity);
+      this.object.updateMatrixWorld(true);
+    }
+    if (this.capacity === 0) return;
+    this.members.forEach((source) => {
+      if (source.batchIndex === -1) return;
+      this.writeTransform(source);
+      this.writeAppearance(source);
+    });
+    this.setCount(count);
   }
 }
 
-export type MeshAppearance = {
+/** Copy of a matrix, relative to a batch's origin. Both are in double precision;
+ * this is what keeps batches precise when they're far from the world origin. */
+export function matrixRelativeTo(
+  matrixWorld: THREE.Matrix4,
+  origin: THREE.Vector3,
+  out: THREE.Matrix4,
+): THREE.Matrix4 {
+  out.copy(matrixWorld);
+  out.elements[12] -= origin.x;
+  out.elements[13] -= origin.y;
+  out.elements[14] -= origin.z;
+  return out;
+}
+
+/** Size of a source's cell. Errors from storing a position in single precision are
+ * proportional to its distance from the origin of the cell. So cells are sized
+ * relative to the objects in them. */
+function cellSize(source: InstanceSource): number {
+  const radius = source.appearance?.radius ?? 0;
+  if (!(radius > 0 && radius < Infinity)) return 1024;
+  return 2 ** Math.round(Math.log2(radius * 4096));
+}
+
+type Cell = {
+  key: string;
+  size: number;
+  center: THREE.Vector3;
+  batch: InstanceBatch;
+  numMembers: number;
+};
+
+/** Splits sources into batches that are spatially local, for precision. All of
+ * them usually end up in the same batch. */
+export class SpatialBatch implements InstanceBatch {
+  readonly object = new THREE.Group();
+  private readonly cells = new Map<string, Cell>();
+  private readonly cellFromSource = new Map<InstanceSource, Cell>();
+  private viewportSize: [number, number] = [1, 1];
+
+  constructor(private readonly makeBatch: () => InstanceBatch) {}
+
+  private getCell(source: InstanceSource): Cell {
+    const size = cellSize(source);
+    const e = source.matrixWorld.elements;
+    const index = [12, 13, 14].map((i) => {
+      const value = Math.round(e[i] / size);
+      return Number.isFinite(value) ? value : 0;
+    });
+    const key = `${size}|${index.join("|")}`;
+    let cell = this.cells.get(key);
+    if (cell === undefined) {
+      const batch = this.makeBatch();
+      const center = new THREE.Vector3(
+        index[0] * size,
+        index[1] * size,
+        index[2] * size,
+      );
+      batch.setViewportSize(...this.viewportSize);
+      batch.object.position.copy(center);
+      this.object.add(batch.object);
+      batch.object.updateMatrixWorld(true);
+      cell = { key, size, center, batch, numMembers: 0 };
+      this.cells.set(key, cell);
+    }
+    return cell;
+  }
+
+  add(source: InstanceSource): void {
+    const cell = this.getCell(source);
+    cell.numMembers += 1;
+    this.cellFromSource.set(source, cell);
+    cell.batch.add(source);
+    source.batch = this;
+  }
+
+  remove(source: InstanceSource): void {
+    const cell = this.cellFromSource.get(source);
+    if (cell === undefined) return;
+    this.cellFromSource.delete(source);
+    cell.batch.remove(source);
+    source.batch = null;
+    cell.numMembers -= 1;
+    if (cell.numMembers === 0) {
+      this.cells.delete(cell.key);
+      this.object.remove(cell.batch.object);
+      cell.batch.dispose();
+    }
+  }
+
+  updateTransform(source: InstanceSource): void {
+    const cell = this.cellFromSource.get(source)!;
+    const e = source.matrixWorld.elements;
+    const { center } = cell;
+    // Hysteresis: cells extend to 0.5 in each direction.
+    const limit = 0.75 * cell.size;
+    if (
+      Math.abs(e[12] - center.x) > limit ||
+      Math.abs(e[13] - center.y) > limit ||
+      Math.abs(e[14] - center.z) > limit
+    ) {
+      this.remove(source);
+      this.add(source);
+    } else {
+      cell.batch.updateTransform(source);
+    }
+  }
+
+  updateAppearance(source: InstanceSource): void {
+    const cell = this.cellFromSource.get(source)!;
+    if (cellSize(source) !== cell.size) {
+      this.remove(source);
+      this.add(source);
+    } else {
+      cell.batch.updateAppearance(source);
+    }
+  }
+
+  flush(): void {
+    this.cells.forEach((cell) => cell.batch.flush());
+  }
+
+  setViewportSize(width: number, height: number): void {
+    this.viewportSize = [width, height];
+    this.cells.forEach((cell) => cell.batch.setViewportSize(width, height));
+  }
+
+  dispose(): void {
+    this.cells.forEach((cell) => cell.batch.dispose());
+  }
+}
+
+export type MeshAppearance = InstanceAppearance & {
   color: number;
   scale: [number, number, number];
 };
+
+/** Distance of the furthest point from a geometry's origin. */
+export function geometryRadius(geometry: THREE.BufferGeometry): number {
+  if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
+  const { center, radius } = geometry.boundingSphere!;
+  return center.length() + radius;
+}
 
 const tempMatrix = /* @__PURE__ */ new THREE.Matrix4();
 const tempScale = /* @__PURE__ */ new THREE.Vector3();
@@ -203,8 +352,7 @@ export class MeshBatch extends DenseBatch {
   protected writeTransform(source: InstanceSource): void {
     const attribute = this.mesh!.instanceMatrix;
     const { scale } = source.appearance as MeshAppearance;
-    tempMatrix
-      .copy(source.matrixWorld)
+    matrixRelativeTo(source.matrixWorld, this.object.position, tempMatrix)
       .scale(tempScale.set(scale[0], scale[1], scale[2]))
       .toArray(attribute.array, source.batchIndex * 16);
     markRange(attribute, source.batchIndex * 16, 16);
@@ -262,7 +410,7 @@ export class BatchEntry {
     if (this.batch !== null) {
       this.batch.add(source);
     } else if (this.members.size >= ACTIVATE_AT) {
-      const batch = this.makeBatch();
+      const batch = new SpatialBatch(this.makeBatch);
       batch.setViewportSize(...this.instancer.viewportSize);
       this.batch = batch;
       this.members.forEach((member) => batch.add(member));
@@ -287,6 +435,10 @@ export class BatchEntry {
 
   setViewportSize(width: number, height: number): void {
     this.batch?.setViewportSize(width, height);
+  }
+
+  flush(): void {
+    this.batch?.flush();
   }
 }
 
@@ -322,4 +474,38 @@ export class AutoInstancer {
     this.viewportSize = [width, height];
     this.entries.forEach((entry) => entry.setViewportSize(width, height));
   }
+
+  /** Should be called before each render, after world matrices have been
+   * updated. */
+  flush(): void {
+    this.entries.forEach((entry) => entry.flush());
+  }
+
+  // The antialiasing skirts of world-space lines can't be sorted relative to
+  // transparent objects once they're batched. That's a problem for surfaces that
+  // don't write depth, which need to cover lines that are behind them.
+  private numDepthlessSurfaces = 0;
+  private readonly depthlessListeners = new Set<() => void>();
+
+  /** Declare a transparent surface that doesn't write depth. Returns a cleanup
+   * function. */
+  addDepthlessSurface(): () => void {
+    this.numDepthlessSurfaces += 1;
+    if (this.numDepthlessSurfaces === 1)
+      this.depthlessListeners.forEach((listener) => listener());
+    return () => {
+      this.numDepthlessSurfaces -= 1;
+      if (this.numDepthlessSurfaces === 0)
+        this.depthlessListeners.forEach((listener) => listener());
+    };
+  }
+
+  hasDepthlessSurfaces = (): boolean => this.numDepthlessSurfaces > 0;
+
+  subscribeDepthless = (listener: () => void): (() => void) => {
+    this.depthlessListeners.add(listener);
+    return () => {
+      this.depthlessListeners.delete(listener);
+    };
+  };
 }

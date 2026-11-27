@@ -109,14 +109,16 @@ def _add_frustum(server: viser.ViserServer, name: str, i: int, group: int) -> An
     )
 
 
-def _render(client: viser.ClientHandle) -> np.ndarray:
+def _render(
+    client: viser.ClientHandle, origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
+) -> np.ndarray:
     # Explicit camera: looking down along -Z, with X to the right, and tilted.
     tilt = 0.5
     return client.get_render(
         height=200,
         width=300,
         wxyz=(np.cos((np.pi + tilt) / 2), np.sin((np.pi + tilt) / 2), 0.0, 0.0),
-        position=(0.0, -3.5, 6.0),
+        position=(origin[0], origin[1] - 3.5, origin[2] + 6.0),
         fov=1.0,
         transport_format="png",
     ).astype(np.int32)
@@ -191,6 +193,100 @@ def test_batched_matches_individual(
     for step, (a, b) in enumerate(zip(batched, individual)):
         # Allow for differences in how ties in depth are resolved.
         assert (np.abs(a - b).max(axis=-1) > 16).mean() < 0.002, step
+
+
+@pytest.mark.parametrize("add", [_add_box, _add_mesh, _add_frame, _add_frustum])
+def test_batches_are_precise_far_from_origin(
+    viser_server: viser.ViserServer, viser_page: Page, add: AddFn
+) -> None:
+    """Like geographic coordinates, in meters. Single precision isn't enough."""
+    client = get_client_handle(viser_server)
+    viser_page.evaluate("window.__viserTestpoints.devSettings.set({ fixedDpr: 1 })")
+    origin = (500_000.0, 4_100_000.0, 100.0)
+
+    def render(batched: bool) -> np.ndarray:
+        prefix = f"/batched_{batched}"
+        root = viser_server.scene.add_frame(prefix, show_axes=False, position=origin)
+        for i in range(NUM_NODES):
+            add(viser_server, f"{prefix}/{i}", i, 0 if batched else i % 2)
+        wait_for_scene_node(viser_page, f"{prefix}/{NUM_NODES - 1}")
+        out = _render(client, origin)
+        assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == batched
+        root.remove()
+        return out
+
+    a, b = render(True), render(False)
+    assert (a[..., 3] > 0).mean() > 0.01
+    assert (np.abs(a - b).max(axis=-1) > 16).mean() < 0.002
+
+
+def test_visibility_does_not_change_draw_order(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """The order that coincident objects are drawn in determines which is visible."""
+    client = get_client_handle(viser_server)
+    handles = [
+        viser_server.scene.add_box(
+            f"/boxes/{i}",
+            color=(i * 3, 255 - i * 3, 100),
+            material="unlit",
+            cast_shadow=False,
+        )
+        for i in range(NUM_NODES)
+    ]
+    wait_for_scene_node(viser_page, f"/boxes/{NUM_NODES - 1}")
+    before = _render(client)
+    assert viser_page.evaluate(JS_NUM_BATCHES) > 0
+    for hidden in (handles[:40], handles[40:], handles[::3]):
+        for handle in hidden:
+            handle.visible = False
+        _render(client)
+        for handle in hidden:
+            handle.visible = True
+        np.testing.assert_array_equal(_render(client), before)
+
+
+def test_invalid_faces_are_not_batched(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """Indices that are out of range would refer to vertices of other meshes."""
+    client = get_client_handle(viser_server)
+    for i in range(NUM_NODES):
+        viser_server.scene.add_mesh_simple(
+            f"/meshes/{i}", np.eye(3), np.array([[0, 1, 2], [0, 1, 9]])
+        )
+    wait_for_scene_node(viser_page, f"/meshes/{NUM_NODES - 1}")
+    _render(client)
+    assert viser_page.evaluate(JS_NUM_BATCHES) == 0
+
+
+def test_lines_are_not_batched_with_filled_frustums(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """Antialiased edges need to be sorted relative to transparent surfaces."""
+    client = get_client_handle(viser_server)
+    for i in range(NUM_NODES):
+        viser_server.scene.add_camera_frustum(
+            f"/frustums/{i}",
+            fov=1.0,
+            aspect=1.0,
+            scale=0.2,
+            thickness=0.01,
+            thickness_units="world",
+            position=_position(i),
+        )
+    wait_for_scene_node(viser_page, f"/frustums/{NUM_NODES - 1}")
+    _render(client)
+    assert viser_page.evaluate(JS_NUM_BATCHES) > 0
+    filled = viser_server.scene.add_camera_frustum(
+        "/filled", fov=1.0, aspect=1.0, variant="filled"
+    )
+    wait_for_scene_node(viser_page, "/filled")
+    _render(client)
+    assert viser_page.evaluate(JS_NUM_BATCHES) == 0
+    filled.remove()
+    _render(client)
+    assert viser_page.evaluate(JS_NUM_BATCHES) > 0
 
 
 def _click_until(

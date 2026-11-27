@@ -2,6 +2,7 @@ import { Line } from "./Line";
 import React from "react";
 import { HoverableContext, useIsHovered } from "./HoverContext";
 import { InstanceSource } from "./scene/AutoInstancer";
+import { ViewerContext } from "./ViewerContext";
 import { LineBatch } from "./scene/LineBatch";
 import { useDrawable, useMarkTransformsDirty } from "./scene/SceneNodeContext";
 import { useInstanceSource } from "./scene/useInstanceSource";
@@ -132,13 +133,26 @@ export const CameraFrustumComponent = React.forwardRef<
   const worldUnits = message.props.thickness_units === "world";
   const { thickness } = message.props;
   const appearance = React.useMemo(
-    () => ({ color: lineColor, points: frustumPoints }),
+    () => ({
+      color: lineColor,
+      points: frustumPoints,
+      radius: frustumPoints.reduce((max, v) => Math.max(max, Math.abs(v)), 0),
+    }),
     [lineColor, frustumPoints],
+  );
+  const { autoInstancer } = React.useContext(ViewerContext)!;
+  const filled = message.props.variant === "filled";
+  React.useLayoutEffect(() => {
+    if (filled) return autoInstancer.addDepthlessSurface();
+  }, [autoInstancer, filled]);
+  const hasDepthlessSurfaces = React.useSyncExternalStore(
+    autoInstancer.subscribeDepthless,
+    autoInstancer.hasDepthlessSurfaces,
   );
   const [source] = React.useState(() => new InstanceSource());
   const drawIndividually = useInstanceSource(
     source,
-    isHovered || message.props.variant === "filled"
+    isHovered || filled || (worldUnits && hasDepthlessSurfaces)
       ? null
       : {
           key: `lines|${frustumPoints.length}|${thickness}|${worldUnits}`,
@@ -148,7 +162,7 @@ export const CameraFrustumComponent = React.forwardRef<
         },
   );
   const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
-  useDrawable(message.props.variant === "filled" || imageTexture !== undefined);
+  useDrawable(filled || imageTexture !== undefined);
   useMarkTransformsDirty([imageTexture]);
 
   return (

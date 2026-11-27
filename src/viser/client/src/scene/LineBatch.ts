@@ -5,9 +5,15 @@ import {
   LineSegments2,
   LineSegmentsGeometry,
 } from "three-stdlib";
-import { DenseBatch, InstanceSource, markRange } from "./AutoInstancer";
+import {
+  DenseBatch,
+  InstanceAppearance,
+  InstanceSource,
+  markRange,
+  matrixRelativeTo,
+} from "./AutoInstancer";
 
-export type LineAppearance = {
+export type LineAppearance = InstanceAppearance & {
   color: number;
   /** Endpoints of line segments, in the source's frame. The number of segments
    * needs to be the same for all members of a batch. */
@@ -15,6 +21,7 @@ export type LineAppearance = {
 };
 
 const tempColor = /* @__PURE__ */ new THREE.Color();
+const tempMatrix = /* @__PURE__ */ new THREE.Matrix4();
 const tempVector = /* @__PURE__ */ new THREE.Vector3();
 
 /** Sets of line segments, merged into a single object. The materials here should
@@ -98,10 +105,11 @@ export class LineBatch extends DenseBatch {
     const buffer = this.positions!;
     const array = buffer.array as Float32Array;
     const start = source.batchIndex * points.length;
+    matrixRelativeTo(source.matrixWorld, this.object.position, tempMatrix);
     for (let i = 0; i < points.length; i += 3) {
       tempVector
         .fromArray(points, i)
-        .applyMatrix4(source.matrixWorld)
+        .applyMatrix4(tempMatrix)
         .toArray(array, start + i);
     }
     markRange(buffer, start, points.length);

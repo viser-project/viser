@@ -138,6 +138,15 @@ function RendererSetup() {
 function AutoInstancedObjects() {
   const { autoInstancer } = React.useContext(ViewerContext)!;
   const size = useThree((state) => state.size);
+  const scene = useThree((state) => state.scene);
+  React.useLayoutEffect(() => {
+    // Runs after three.js updates world matrices, and before it decides what to
+    // draw. This includes renders to images.
+    scene.onBeforeRender = () => autoInstancer.flush();
+    return () => {
+      scene.onBeforeRender = () => {};
+    };
+  }, [scene, autoInstancer]);
   React.useLayoutEffect(() => {
     autoInstancer.setViewportSize(size.width, size.height);
   }, [autoInstancer, size]);

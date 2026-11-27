@@ -3,9 +3,14 @@ import {
   computeBoundingSphere,
   computeVertexNormals,
 } from "../utils/meshGeometry";
-import { InstanceBatch, InstanceSource } from "./AutoInstancer";
+import {
+  InstanceAppearance,
+  InstanceBatch,
+  InstanceSource,
+  matrixRelativeTo,
+} from "./AutoInstancer";
 
-export type GeometryAppearance = {
+export type GeometryAppearance = InstanceAppearance & {
   vertices: Float32Array;
   faces: Uint32Array;
   color: number;
@@ -14,8 +19,9 @@ export type GeometryAppearance = {
 
 /** Vertices that are drawn together. Bounds the cost of growing buffers. */
 const MAX_SHARD_VERTICES = 1 << 20;
-const INITIAL_SHARD_VERTICES = 1 << 15;
-const INITIAL_INSTANCES = 128;
+const MAX_SHARD_MEMBERS = 1 << 14;
+const INITIAL_SHARD_VERTICES = 1 << 12;
+const INITIAL_INSTANCES = 32;
 
 const tempMatrix = /* @__PURE__ */ new THREE.Matrix4();
 const tempScale = /* @__PURE__ */ new THREE.Vector3();
@@ -63,6 +69,7 @@ class Shard {
 
   /** Make space for a geometry. Returns false if there isn't any. */
   reserve(numVertices: number, numIndices: number): boolean {
+    if (this.numMembers >= MAX_SHARD_MEMBERS) return false;
     const fits = () =>
       this.endVertices + numVertices <= this.maxVertices &&
       this.endIndices + numIndices <= this.maxIndices;
@@ -144,6 +151,7 @@ export class GeometryBatch implements InstanceBatch {
       );
       this.shards.add(shard);
       this.object.add(shard.mesh);
+      shard.mesh.updateMatrixWorld(true);
     }
 
     // Temporary: contents are copied into the batch.
@@ -186,9 +194,11 @@ export class GeometryBatch implements InstanceBatch {
     const { scale } = source.appearance as GeometryAppearance;
     mesh.setMatrixAt(
       member.instanceId,
-      tempMatrix
-        .copy(source.matrixWorld)
-        .scale(tempScale.set(scale[0], scale[1], scale[2])),
+      matrixRelativeTo(
+        source.matrixWorld,
+        this.object.position,
+        tempMatrix,
+      ).scale(tempScale.set(scale[0], scale[1], scale[2])),
     );
   }
 
@@ -202,6 +212,8 @@ export class GeometryBatch implements InstanceBatch {
     this.writeColor(source, this.members.get(source)!);
     this.updateTransform(source);
   }
+
+  flush(): void {}
 
   setViewportSize(): void {}
 

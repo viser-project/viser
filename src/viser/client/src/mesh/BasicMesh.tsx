@@ -7,6 +7,7 @@ import { MeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import {
   InstanceSource,
+  MIN_INSTANCE_SCALE,
   raycastOnlyLayers,
   raycastOnlyMaterials,
 } from "../scene/AutoInstancer";
@@ -18,6 +19,12 @@ import {
   computeBoundingSphere,
   computeVertexNormals,
 } from "../utils/meshGeometry";
+
+function indicesAreValid(indices: Uint32Array, numVertices: number): boolean {
+  for (let i = 0; i < indices.length; i++)
+    if (indices[i] >= numVertices) return false;
+  return true;
+}
 
 /** Only small meshes are batched. Batches hold a copy of their contents in JS
  * memory, and draw calls aren't a bottleneck for large ones. */
@@ -63,14 +70,28 @@ export const BasicMesh = React.forwardRef<
     !props.wireframe &&
     (props.opacity === null || props.opacity >= 1.0) &&
     typeof props.receive_shadow !== "number" &&
-    sx > 0 &&
-    sy > 0 &&
-    sz > 0;
-  const appearance = React.useMemo<GeometryAppearance>(
-    () => ({ vertices, faces, color, scale: [sx, sy, sz] }),
-    [vertices, faces, color, sx, sy, sz],
+    Math.min(sx, sy, sz) > MIN_INSTANCE_SCALE;
+  // In a batch, invalid indices would refer to vertices of other meshes.
+  const hasValidFaces = React.useMemo(
+    () => eligible && indicesAreValid(faces, vertices.length / 3),
+    [eligible, faces, vertices],
   );
-  const spec: InstancingSpec | null = eligible
+  const radius = React.useMemo(() => {
+    if (!hasValidFaces) return 0;
+    const { center, radius } = computeBoundingSphere(vertices);
+    return center.length() + radius;
+  }, [hasValidFaces, vertices]);
+  const appearance = React.useMemo<GeometryAppearance>(
+    () => ({
+      vertices,
+      faces,
+      color,
+      scale: [sx, sy, sz],
+      radius: radius * Math.max(sx, sy, sz),
+    }),
+    [vertices, faces, color, sx, sy, sz, radius],
+  );
+  const spec: InstancingSpec | null = hasValidFaces
     ? {
         key: [
           "geometry",

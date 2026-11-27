@@ -1,6 +1,11 @@
 import React from "react";
 import { ViewerContext } from "../ViewerContext";
-import { BatchEntry, InstanceBatch, InstanceSource } from "./AutoInstancer";
+import {
+  BatchEntry,
+  InstanceAppearance,
+  InstanceBatch,
+  InstanceSource,
+} from "./AutoInstancer";
 import { HoverableContext } from "../HoverContext";
 import { useDrawable, useMarkTransformsDirty } from "./SceneNodeContext";
 
@@ -11,7 +16,7 @@ export type InstancingSpec = {
   makeBatch: () => InstanceBatch;
   /** Appearance of this instance, which needs to match the kind of batch. Should
    * be memoized. */
-  appearance: unknown;
+  appearance: InstanceAppearance;
 };
 
 const subscribeToNothing = () => () => undefined;
