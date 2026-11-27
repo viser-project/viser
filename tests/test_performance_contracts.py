@@ -705,13 +705,33 @@ def _array_update(i: int, num_bytes: int) -> vm.SceneNodeUpdateMessage:
 
 
 def test_split_windows_reach_every_client() -> None:
-    def push(buffer: AsyncMessageBuffer) -> None:
+    """Including clients that connect after a window was split for another one."""
+
+    async def scenario() -> list[list[Any]]:
+        buffer = AsyncMessageBuffer(
+            asyncio.get_running_loop(), persistent_messages=True
+        )
         for i in range(12):
             buffer.push(_array_update(i, 3 << 20))
+        marker = vm.ReplayDoneMessage()
+        sockets = [_FakeWebsocket() for _ in range(3)]
+        tasks = []
+        for i, ws in enumerate(sockets):
+            tasks.append(
+                asyncio.create_task(
+                    _infra._message_producer(ws, buffer, i, marker)  # type: ignore
+                )
+            )
+            await asyncio.sleep(0.3)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        return [
+            [m.get("name") for p in ws.payloads for m in _decode(p)] for ws in sockets
+        ]
 
-    _, received = _run_producers(push, 2, vm.ReplayDoneMessage())
-    expected = [f"/{i}" for i in range(12)] + [None, "/live", "/live2"]
-    assert [[m.get("name") for m in r] for r in received] == [expected] * 2
+    received = run_isolated(lambda: asyncio.run(scenario()))
+    assert received == [[f"/{i}" for i in range(12)] + [None]] * 3
 
 
 def test_similar_windows_are_not_shared() -> None:
