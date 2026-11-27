@@ -170,6 +170,69 @@ describe("MeshBatch", () => {
   });
 });
 
+describe("culling", () => {
+  it("uses bounds that contain all instances", () => {
+    const geometry = new THREE.IcosahedronGeometry(1, 3);
+    const batch = new MeshBatch(
+      geometry,
+      new THREE.MeshBasicMaterial(),
+      true,
+      false,
+    );
+    const parent = new THREE.Group();
+    parent.scale.set(1, 5, 2);
+    parent.rotation.set(1, 2, 3);
+    const sources = Array.from({ length: 100 }, (_, i) =>
+      makeSource(i, meshAppearance),
+    );
+    sources.forEach((source) => {
+      parent.add(source);
+      source.rotation.set(source.position.x, 1, 0);
+      source.updateMatrix();
+      batch.add(source);
+    });
+    const check = () => {
+      parent.updateMatrixWorld(true);
+      batch.flush();
+      const mesh = batch.object.children[0] as THREE.InstancedMesh;
+      expect(mesh.frustumCulled).toBe(true);
+      const matrix = new THREE.Matrix4();
+      const point = new THREE.Vector3();
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, matrix);
+        for (let j = 0; j < geometry.attributes.position.count; j += 7) {
+          point
+            .fromBufferAttribute(geometry.attributes.position, j)
+            .applyMatrix4(matrix);
+          expect(mesh.boundingSphere!.containsPoint(point)).toBe(true);
+        }
+      }
+      return mesh;
+    };
+    check();
+    sources[3].position.y = 1000;
+    sources[3].updateMatrix();
+    check();
+    sources[4].appearance = { ...meshAppearance, scale: [50, 1, 1] } as any;
+    batch.updateAppearance(sources[4]);
+    const mesh = check();
+
+    // Never culled when bounds are unknown.
+    sources[5].position.x = NaN;
+    sources[5].updateMatrix();
+    parent.updateMatrixWorld(true);
+    batch.flush();
+    expect(mesh.frustumCulled).toBe(false);
+  });
+
+  it("isn't used when drawing is cheap", () => {
+    const batch = makeMeshBatch();
+    for (let i = 0; i < 100; i++) batch.add(makeSource(i, meshAppearance));
+    batch.flush();
+    expect(batch.object.children[0].frustumCulled).toBe(false);
+  });
+});
+
 describe("draw order", () => {
   it("is unaffected by hiding, showing, and removing", () => {
     const batch = makeMeshBatch();

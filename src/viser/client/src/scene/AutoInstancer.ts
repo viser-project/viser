@@ -11,6 +11,10 @@ export const raycastOnlyMaterials = {
   double: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
 };
 
+/** Geometries with more vertices are drawn individually. Draw calls aren't a
+ * bottleneck for them, and each object can be culled. */
+export const MAX_INSTANCED_VERTICES = 4096;
+
 /** Smaller scales are drawn individually: shaders would underflow. */
 export const MIN_INSTANCE_SCALE = 1e-12;
 
@@ -305,6 +309,7 @@ export function geometryRadius(geometry: THREE.BufferGeometry): number {
   return center.length() + radius;
 }
 
+const tempBox = /* @__PURE__ */ new THREE.Box3();
 const tempMatrix = /* @__PURE__ */ new THREE.Matrix4();
 const tempScale = /* @__PURE__ */ new THREE.Vector3();
 const tempColor = /* @__PURE__ */ new THREE.Color();
@@ -313,6 +318,7 @@ const tempColor = /* @__PURE__ */ new THREE.Color();
 export class MeshBatch extends DenseBatch {
   readonly object = new THREE.Group();
   private mesh: THREE.InstancedMesh | null = null;
+  private needsBounds = true;
 
   constructor(
     private readonly geometry: THREE.BufferGeometry,
@@ -337,9 +343,10 @@ export class MeshBatch extends DenseBatch {
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.castShadow = this.castShadow;
     mesh.receiveShadow = this.receiveShadow;
-    // Culling and sorting would both use bounds that are expensive to compute.
+    // Set by updateBounds().
     mesh.frustumCulled = false;
     mesh.boundingSphere = new THREE.Sphere();
+    this.needsBounds = true;
     mesh.raycast = () => undefined;
     this.mesh = mesh;
     this.object.add(mesh);
@@ -347,9 +354,59 @@ export class MeshBatch extends DenseBatch {
 
   protected setCount(count: number): void {
     this.mesh!.count = count;
+    this.needsBounds = true;
+  }
+
+  flush(): void {
+    super.flush();
+    if (this.needsBounds) {
+      this.needsBounds = false;
+      this.updateBounds();
+    }
+  }
+
+  /** Cull the entire batch when it's out of view. Batches that are cheap to draw
+   * aren't worth computing bounds for. */
+  private updateBounds(): void {
+    const { mesh, geometry } = this;
+    if (mesh === null) return;
+    const numVertices =
+      geometry.index?.count ?? geometry.attributes.position.count;
+    mesh.frustumCulled = mesh.count * numVertices > 50_000;
+    if (!mesh.frustumCulled) return;
+
+    const radius = geometryRadius(geometry);
+    const array = mesh.instanceMatrix.array;
+    tempBox.makeEmpty();
+    for (let i = 0; i < mesh.count * 16; i += 16) {
+      // Frobenius norm: an upper bound for the largest singular value, including
+      // when matrices have shear.
+      let scaleSq = 0;
+      for (let j = 0; j < 11; j++)
+        if (j % 4 !== 3) scaleSq += array[i + j] * array[i + j];
+      const r = Math.sqrt(scaleSq) * radius;
+      const [x, y, z] = [array[i + 12], array[i + 13], array[i + 14]];
+      if (!Number.isFinite(x + y + z + r)) {
+        mesh.frustumCulled = false;
+        return;
+      }
+      tempBox.min.set(
+        Math.min(tempBox.min.x, x - r),
+        Math.min(tempBox.min.y, y - r),
+        Math.min(tempBox.min.z, z - r),
+      );
+      tempBox.max.set(
+        Math.max(tempBox.max.x, x + r),
+        Math.max(tempBox.max.y, y + r),
+        Math.max(tempBox.max.z, z + r),
+      );
+    }
+    tempBox.getBoundingSphere(mesh.boundingSphere!);
+    mesh.boundingSphere!.radius *= 1.0 + 1e-5; // Roundoff.
   }
 
   protected writeTransform(source: InstanceSource): void {
+    this.needsBounds = true;
     const attribute = this.mesh!.instanceMatrix;
     const { scale } = source.appearance as MeshAppearance;
     matrixRelativeTo(source.matrixWorld, this.object.position, tempMatrix)

@@ -12,6 +12,7 @@ import {
   InstanceSource,
   geometryRadius,
   MeshBatch,
+  MAX_INSTANCED_VERTICES,
   MIN_INSTANCE_SCALE,
   raycastOnlyLayers,
   raycastOnlyMaterials,
@@ -55,7 +56,8 @@ export const PrimitiveMesh = React.forwardRef<
   const eligible =
     (material.opacity === null || material.opacity >= 1.0) &&
     typeof receiveShadow !== "number" &&
-    Math.min(sx, sy, sz) > MIN_INSTANCE_SCALE;
+    Math.min(sx, sy, sz) > MIN_INSTANCE_SCALE &&
+    geometry.attributes.position.count <= MAX_INSTANCED_VERTICES;
   const appearance = React.useMemo(
     () => ({
       color,
