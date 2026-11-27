@@ -412,9 +412,12 @@ class AsyncMessageBuffer:
                         and most_recent_message_id - last_sent_id > self.max_window_size
                     ):
                         with self.buffer_lock:
-                            pending_ids.extend(
-                                i for i in self.message_from_id if i > last_sent_id
-                            )
+                            # From newest to oldest: the cost shouldn't depend
+                            # on how much older state there is.
+                            for i in reversed(self.message_from_id):
+                                if i <= last_sent_id:
+                                    break
+                                pending_ids.appendleft(i)
                         if not pending_ids:
                             last_sent_id = most_recent_message_id
                             break

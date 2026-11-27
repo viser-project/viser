@@ -62,7 +62,8 @@ class Shard {
     // bounds for the batch.
     mesh.frustumCulled = false;
     mesh.boundingSphere = new THREE.Sphere();
-    mesh.sortObjects = false;
+    // Front to back, like individual meshes. This reduces overdraw.
+    mesh.sortObjects = true;
     mesh.raycast = () => undefined;
     this.mesh = mesh;
   }

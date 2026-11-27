@@ -28,8 +28,8 @@ function indicesAreValid(indices: Uint32Array, numVertices: number): boolean {
 
 /** Only small meshes are batched. Batches hold a copy of their contents in JS
  * memory, and draw calls aren't a bottleneck for large ones. */
-const MAX_BATCHED_VERTICES = 4096;
-const MAX_BATCHED_FACES = 8192;
+const MAX_BATCHED_VERTICES = 1024;
+const MAX_BATCHED_FACES = 2048;
 
 /**
  * Component for rendering basic THREE.js meshes

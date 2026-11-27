@@ -353,6 +353,50 @@ def test_replay_cost_is_independent_of_history() -> None:
     run_isolated(lambda: asyncio.run(scenario()))
 
 
+def test_updates_do_not_rescan_older_state() -> None:
+    """Large updates used to scan all buffered messages, for each client."""
+    num_static, num_updates = 20_000, 3_000
+
+    class CountingDict(dict):
+        visited = 0
+
+        def __iter__(self):
+            for key in super().__iter__():
+                self.visited += 1
+                yield key
+
+        def __reversed__(self):
+            for key in super().__reversed__():
+                self.visited += 1
+                yield key
+
+    async def scenario() -> None:
+        buffer = AsyncMessageBuffer(
+            asyncio.get_running_loop(), persistent_messages=True
+        )
+        for i in range(num_static):
+            buffer.push(vm.SetPositionMessage(f"/{i}", (0.0, 0.0, 0.0)))
+        gen = buffer.window_generator(0)
+
+        async def receive(count: int) -> list[str]:
+            names: list[str] = []
+            while len(names) < count:
+                window = await asyncio.wait_for(gen.__anext__(), timeout=5.0)
+                names.extend(m.name for m in window)  # type: ignore
+            return names
+
+        await receive(num_static)
+        counting = buffer.message_from_id = CountingDict(buffer.message_from_id)
+        for i in range(num_updates):
+            buffer.push(vm.SetPositionMessage(f"/{i}", (1.0, 0.0, 0.0)))
+        counting.visited = 0
+        assert await receive(num_updates) == [f"/{i}" for i in range(num_updates)]
+        assert 0 < counting.visited < 2 * num_updates
+        await gen.aclose()
+
+    run_isolated(lambda: asyncio.run(scenario()))
+
+
 def test_replay_preserves_order_with_concurrent_changes() -> None:
     """Messages pushed or superseded while a large backlog is being replayed are
     delivered exactly once and in order."""
