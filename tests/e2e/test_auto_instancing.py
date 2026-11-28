@@ -367,7 +367,6 @@ def test_batched_nodes_are_clickable(
     viser_page.wait_for_timeout(500)
     assert viser_page.evaluate(JS_NUM_BATCHES) == 1
 
-    canvas = viser_page.locator("canvas").first
     center = canvas_center(viser_page)
     _click_until(viser_page, center, event)
     assert set(clicked) == {"/center"}
