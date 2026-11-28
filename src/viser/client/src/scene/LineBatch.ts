@@ -27,16 +27,24 @@ const tempColor = /* @__PURE__ */ new THREE.Color();
 const tempMatrix = /* @__PURE__ */ new THREE.Matrix4();
 const tempVector = /* @__PURE__ */ new THREE.Vector3();
 const tempBox = /* @__PURE__ */ new THREE.Box3();
+const tempSphere = /* @__PURE__ */ new THREE.Sphere();
+const tempFrustum = /* @__PURE__ */ new THREE.Frustum();
 
-/** Centers of bounding boxes, which are used for sorting. */
-const centerFromPoints = new WeakMap<Float32Array, THREE.Vector3>();
-function getCenter(points: Float32Array): THREE.Vector3 {
-  let center = centerFromPoints.get(points);
-  if (center === undefined) {
-    center = tempBox.setFromArray(points).getCenter(new THREE.Vector3());
-    centerFromPoints.set(points, center);
+/** Bounding spheres, computed like LineSegmentsGeometry.computeBoundingSphere(). */
+const boundsFromPoints = new WeakMap<Float32Array, THREE.Sphere>();
+function getBounds(points: Float32Array): THREE.Sphere {
+  let bounds = boundsFromPoints.get(points);
+  if (bounds === undefined) {
+    const center = tempBox.setFromArray(points).getCenter(new THREE.Vector3());
+    let radiusSq = 0;
+    for (let i = 0; i < points.length; i += 3) {
+      tempVector.fromArray(points, i);
+      radiusSq = Math.max(radiusSq, center.distanceToSquared(tempVector));
+    }
+    bounds = new THREE.Sphere(center, Math.sqrt(radiusSq));
+    boundsFromPoints.set(points, bounds);
   }
-  return center;
+  return bounds;
 }
 
 /** Sets of line segments, merged into a single object. This includes ones with
@@ -48,8 +56,9 @@ export class LineBatch extends DenseBatch {
   /** Antialiasing skirts, for lines in world units. They're transparent, so they
    * have their own geometry which is sorted for each camera. */
   private readonly fringe: LinePass | null = null;
-  private fringeOrder: InstanceSource[] = [];
-  private needsFringeUpdate = true;
+  private positions = new Float32Array(0);
+  private colors = new Float32Array(0);
+  private widths = new Float32Array(0);
 
   constructor(
     private readonly numSegments: number,
@@ -69,101 +78,113 @@ export class LineBatch extends DenseBatch {
   }
 
   protected allocate(capacity: number): void {
+    const numSegments = capacity * this.numSegments;
+    this.positions = new Float32Array(numSegments * 6);
+    this.colors = new Float32Array(numSegments * 6);
+    this.widths = new Float32Array(numSegments);
     this.object.clear();
-    this.object.add(this.core.allocate(capacity * this.numSegments));
+    this.object.add(this.core.allocate(numSegments));
     if (this.fringe !== null) {
-      const line = this.fringe.allocate(capacity * this.numSegments);
+      const line = this.fringe.allocate(numSegments);
       line.renderOrder = LINE_FRINGE_RENDER_ORDER;
       this.object.add(line);
     }
   }
 
-  protected setCount(count: number): void {
-    this.core.geometry!.instanceCount = count * this.numSegments;
-    if (this.fringe !== null)
-      this.fringe.geometry!.instanceCount = count * this.numSegments;
-    this.needsFringeUpdate = true;
+  private markDirty(): void {
+    this.core.needsUpdate = true;
+    if (this.fringe !== null) this.fringe.needsUpdate = true;
+  }
+
+  protected setCount(): void {
+    this.markDirty();
   }
 
   protected writeTransform(source: InstanceSource): void {
     const { points } = source.appearance as LineAppearance;
-    const buffer = this.core.positions!;
     const start = source.batchIndex * points.length;
     matrixRelativeTo(source.matrixWorld, this.object.position, tempMatrix);
     for (let i = 0; i < points.length; i += 3) {
       tempVector
         .fromArray(points, i)
         .applyMatrix4(tempMatrix)
-        .toArray(buffer.array, start + i);
+        .toArray(this.positions, start + i);
     }
-    markRange(buffer, start, points.length);
-    this.needsFringeUpdate = true;
+    this.markDirty();
   }
 
   protected writeAppearance(source: InstanceSource): void {
     const { color, points, thickness } = source.appearance as LineAppearance;
-    const widths = this.core.widths!;
     const firstSegment = source.batchIndex * this.numSegments;
-    widths.array.fill(thickness, firstSegment, firstSegment + this.numSegments);
-    markRange(widths, firstSegment, this.numSegments);
-    const buffer = this.core.colors!;
+    this.widths.fill(thickness, firstSegment, firstSegment + this.numSegments);
     const start = source.batchIndex * points.length;
     tempColor.setHex(color);
     for (let i = 0; i < points.length; i += 3) {
-      tempColor.toArray(buffer.array, start + i);
+      tempColor.toArray(this.colors, start + i);
     }
-    markRange(buffer, start, points.length);
-    this.needsFringeUpdate = true;
+    this.markDirty();
   }
 
   flush(camera: THREE.Camera): void {
     super.flush(camera);
-    if (this.fringe !== null && this.core.geometry !== null)
-      this.sortFringe(this.fringe, camera);
-  }
+    if (this.core.geometry === null) return;
 
-  /** Sort skirts in the same way that three.js would if they were separate
-   * transparent objects. */
-  private sortFringe(fringe: LinePass, camera: THREE.Camera): void {
+    // Cull lines, and sort skirts, in the same way that three.js would if they
+    // were separate objects.
     tempMatrix.multiplyMatrices(
       camera.projectionMatrix,
       camera.matrixWorldInverse,
+    );
+    tempFrustum.setFromProjectionMatrix(
+      tempMatrix,
+      THREE.WebGLCoordinateSystem,
+      camera.reversedDepth,
     );
     const e = tempMatrix.elements;
     const items: { source: InstanceSource; z: number }[] = [];
     this.members.forEach((source) => {
       if (source.batchIndex === -1) return;
       const { points } = source.appearance as LineAppearance;
-      const { x, y, z } = tempVector
-        .copy(getCenter(points))
+      const bounds = tempSphere
+        .copy(getBounds(points))
         .applyMatrix4(source.matrixWorld);
+      if (!tempFrustum.intersectsSphere(bounds)) return;
+      const { x, y, z } = bounds.center;
       const depth = e[2] * x + e[6] * y + e[10] * z + e[14];
       items.push({ source, z: camera.reversedDepth ? -depth : depth });
     });
+    this.updatePass(this.core, items);
+    if (this.fringe === null) return;
     items.sort((a, b) => b.z - a.z || a.source.id - b.source.id);
+    this.updatePass(this.fringe, items);
+  }
 
-    const order = this.fringeOrder;
+  private updatePass(
+    pass: LinePass,
+    items: { source: InstanceSource }[],
+  ): void {
+    const { order } = pass;
+    pass.geometry!.instanceCount = items.length * this.numSegments;
     if (
-      !this.needsFringeUpdate &&
+      !pass.needsUpdate &&
       items.length === order.length &&
       items.every(({ source }, i) => source === order[i])
     )
       return;
-    this.needsFringeUpdate = false;
-    this.fringeOrder = items.map(({ source }) => source);
+    pass.needsUpdate = false;
+    pass.order = items.map(({ source }) => source);
     for (const [from, to, size] of [
-      [this.core.positions!, fringe.positions!, this.numSegments * 6],
-      [this.core.colors!, fringe.colors!, this.numSegments * 6],
-      [this.core.widths!, fringe.widths!, this.numSegments],
+      [this.positions, pass.positions!, this.numSegments * 6],
+      [this.colors, pass.colors!, this.numSegments * 6],
+      [this.widths, pass.widths!, this.numSegments],
     ] as const) {
-      const array = from.array as Float32Array;
       items.forEach(({ source: { batchIndex } }, i) =>
         (to.array as Float32Array).set(
-          array.subarray(batchIndex * size, (batchIndex + 1) * size),
+          from.subarray(batchIndex * size, (batchIndex + 1) * size),
           i * size,
         ),
       );
-      markRange(to, 0, items.length * size);
+      if (items.length > 0) markRange(to, 0, items.length * size);
     }
   }
 
@@ -182,6 +203,9 @@ export class LineBatch extends DenseBatch {
 /** Geometry and material for line segments that are drawn together. */
 class LinePass {
   readonly material: LineMaterial;
+  /** Sources that are drawn, in order. */
+  order: InstanceSource[] = [];
+  needsUpdate = true;
   geometry: LineSegmentsGeometry | null = null;
   positions: THREE.InstancedInterleavedBuffer | null = null;
   colors: THREE.InstancedInterleavedBuffer | null = null;
@@ -244,7 +268,7 @@ class LinePass {
     );
     this.widths.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute("instanceWidth", this.widths);
-    // Not culled; only used for sorting.
+    // Only used for sorting.
     geometry.boundingSphere = new THREE.Sphere();
     this.geometry = geometry;
 

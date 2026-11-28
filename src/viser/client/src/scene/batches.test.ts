@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
+import { LineSegments2, LineSegmentsGeometry } from "three-stdlib";
 import {
   AutoInstancer,
   InstanceAppearance,
@@ -8,7 +9,8 @@ import {
   InstanceSource,
   markRange,
 } from "./AutoInstancer";
-import { MeshAppearance, MeshBatch } from "./MeshBatch";
+import { CulledInstances } from "./CulledInstances";
+import { geometryRadius, MeshAppearance, MeshBatch } from "./MeshBatch";
 import { GeometryAppearance, GeometryBatch } from "./GeometryBatch";
 import { LineBatch } from "./LineBatch";
 
@@ -25,16 +27,37 @@ function makeSource(x: number, appearance: InstanceAppearance): InstanceSource {
   return source;
 }
 
+/** Contains everything. */
+const everything = new THREE.Frustum();
+everything.planes.forEach((plane) => plane.set(new THREE.Vector3(), Infinity));
+
+/** What three.js would draw. */
+function drawnMeshes(
+  object: THREE.Object3D,
+  frustum = everything,
+): THREE.InstancedMesh[] {
+  const out: THREE.InstancedMesh[] = [];
+  const project = (child: THREE.Object3D) => {
+    if (child instanceof CulledInstances)
+      expect(child.intersectsFrustum(frustum)).toBe(false);
+    if (child instanceof THREE.InstancedMesh) out.push(child);
+    child.children.forEach(project);
+  };
+  project(object);
+  return out;
+}
+
 /** Positions that a mesh batch draws, sorted. */
 function drawnPositions(batch: MeshBatch): number[] {
   batch.flush(camera);
-  const mesh = batch.object.children[0] as THREE.InstancedMesh;
   const matrix = new THREE.Matrix4();
-  const out = [];
-  for (let i = 0; i < mesh.count; i++) {
-    mesh.getMatrixAt(i, matrix);
-    out.push(matrix.elements[12]);
-  }
+  const out: number[] = [];
+  drawnMeshes(batch.object).forEach((mesh) => {
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, matrix);
+      out.push(matrix.elements[12]);
+    }
+  });
   return out.sort((a, b) => a - b);
 }
 
@@ -199,7 +222,7 @@ describe("MeshBatch", () => {
     const source = makeSource(0, meshAppearance);
     batch.add(source);
     batch.flush(camera);
-    const mesh = batch.object.children[0] as THREE.InstancedMesh;
+    const [mesh] = drawnMeshes(batch.object);
     const matrix = new THREE.Matrix4();
     const color = new THREE.Color();
     mesh.getMatrixAt(0, matrix);
@@ -215,13 +238,22 @@ describe("MeshBatch", () => {
       radius: 1,
     } as MeshAppearance;
     batch.updateAppearance(source);
+    batch.flush(camera);
+    expect(drawnMeshes(batch.object)).toEqual([mesh]);
     mesh.getColorAt(0, color);
     expect(color.getHex()).toBe(0x00ff00);
   });
 });
 
 describe("culling", () => {
-  it("uses bounds that contain all instances", () => {
+  it("matches a reference, across cameras and changes", () => {
+    let seed = 1;
+    const random = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const randomPosition = (out: THREE.Vector3) =>
+      out.set(random(), random(), random()).multiplyScalar(20).subScalar(10);
     const geometry = new THREE.IcosahedronGeometry(1, 3);
     const batch = new MeshBatch(
       geometry,
@@ -229,60 +261,173 @@ describe("culling", () => {
       true,
       false,
     );
+    batch.object.position.set(1, 2, 3);
+    batch.object.updateMatrixWorld();
     const parent = new THREE.Group();
-    parent.scale.set(1, 5, 2);
+    parent.scale.set(1, 0.5, 2);
     parent.rotation.set(1, 2, 3);
-    const sources = Array.from({ length: 100 }, (_, i) =>
-      makeSource(i, meshAppearance),
-    );
-    sources.forEach((source) => {
+    parent.updateMatrix();
+    parent.updateMatrixWorld();
+    const sources = Array.from({ length: 200 }, (_, i) => {
+      const source = makeSource(i, meshAppearance);
       parent.add(source);
-      source.rotation.set(source.position.x, 1, 0);
+      randomPosition(source.position);
       source.updateMatrix();
+      source.updateMatrixWorld();
       batch.add(source);
+      return source;
     });
-    const check = () => {
-      parent.updateMatrixWorld(true);
-      batch.flush(camera);
-      const mesh = batch.object.children[0] as THREE.InstancedMesh;
-      expect(mesh.frustumCulled).toBe(true);
-      const matrix = new THREE.Matrix4();
-      const point = new THREE.Vector3();
-      for (let i = 0; i < mesh.count; i++) {
-        mesh.getMatrixAt(i, matrix);
-        for (let j = 0; j < geometry.attributes.position.count; j += 7) {
-          point
-            .fromBufferAttribute(geometry.attributes.position, j)
-            .applyMatrix4(matrix);
-          expect(mesh.boundingSphere!.containsPoint(point)).toBe(true);
+    const makeFrustum = () => {
+      const camera = new THREE.PerspectiveCamera(40);
+      randomPosition(camera.position);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld();
+      return new THREE.Frustum().setFromProjectionMatrix(
+        camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse),
+      );
+    };
+    const frustums = [makeFrustum(), makeFrustum(), makeFrustum()];
+
+    // What's on the GPU, for each attribute.
+    const uploaded = new Map<THREE.BufferAttribute, Float32Array>();
+    const upload = (attribute: THREE.BufferAttribute) => {
+      const array = attribute.array as Float32Array;
+      const buffer = uploaded.get(attribute);
+      if (buffer === undefined) {
+        uploaded.set(attribute, array.slice());
+      } else {
+        attribute.updateRanges.forEach(({ start, count }) =>
+          buffer.set(array.subarray(start, start + count), start),
+        );
+      }
+      attribute.clearUpdateRanges();
+    };
+
+    const reference = new THREE.Mesh(geometry);
+    const matrix = new THREE.Matrix4();
+    const color = new THREE.Color();
+    let numCulled = 0;
+    for (let step = 0; step < 200; step++) {
+      for (let i = 0; i < Math.floor(random() * 4); i++) {
+        const source = sources[Math.floor(random() * 200)];
+        const action = Math.floor(random() * 5);
+        if (action === 0) {
+          source.setDisplayed(!source.displayed);
+        } else if (action === 1) {
+          source.appearance = {
+            color: Math.floor(random() * 0xffffff),
+            scale: [random(), random(), random()],
+            radius: 1,
+          } as MeshAppearance;
+          batch.updateAppearance(source);
+        } else {
+          randomPosition(source.position);
+          source.updateMatrix();
+          source.updateMatrixWorld();
         }
       }
-      return mesh;
-    };
-    check();
-    sources[3].position.y = 1000;
-    sources[3].updateMatrix();
-    check();
-    sources[4].appearance = {
-      ...meshAppearance,
-      scale: [50, 1, 1],
-    } as MeshAppearance;
-    batch.updateAppearance(sources[4]);
-    const mesh = check();
+      if (step % 10 === 0) frustums[step % 3] = makeFrustum();
+      batch.flush(camera);
+      frustums.forEach((frustum) => {
+        const [mesh] = drawnMeshes(batch.object, frustum);
+        upload(mesh.instanceMatrix);
+        upload(mesh.instanceColor!);
+        const matrices = uploaded.get(mesh.instanceMatrix)!;
+        const colors = uploaded.get(mesh.instanceColor!)!;
+        let slot = 0;
+        sources.forEach((source) => {
+          const { scale, color: hex } = source.appearance as MeshAppearance;
+          reference.matrixWorld
+            .copy(source.matrixWorld)
+            .scale(new THREE.Vector3(...scale));
+          const drawn =
+            slot < mesh.count &&
+            matrix
+              .fromArray(matrices, slot * 16)
+              .premultiply(batch.object.matrixWorld)
+              .elements.every(
+                (v, i) =>
+                  Math.abs(v - reference.matrixWorld.elements[i]) < 1e-5,
+              );
+          if (!source.displayed) expect(drawn).toBe(false);
+          else if (frustum.intersectsObject(reference))
+            expect(drawn).toBe(true);
+          else if (!drawn) numCulled += 1;
+          if (!drawn) return;
+          color.fromArray(colors, slot * 3);
+          expect(color.getHex()).toBe(hex);
+          slot += 1;
+        });
+        expect(mesh.count).toBe(slot);
+      });
+    }
+    expect(numCulled / (200 * 3 * 200)).toBeGreaterThan(0.3);
+  });
 
-    // Never culled when bounds are unknown.
-    sources[5].position.x = NaN;
-    sources[5].updateMatrix();
-    parent.updateMatrixWorld(true);
+  it("doesn't cull when bounds are unknown", () => {
+    const batch = new MeshBatch(
+      new THREE.IcosahedronGeometry(1, 3),
+      new THREE.MeshBasicMaterial(),
+      true,
+      false,
+    );
+    const sources = Array.from({ length: 100 }, (_, i) =>
+      makeSource(i === 5 ? NaN : i, meshAppearance),
+    );
+    sources.forEach((source) => batch.add(source));
+    const frustum = new THREE.Frustum();
+    frustum.planes.forEach((plane) =>
+      plane.set(new THREE.Vector3(1, 0, 0), -90),
+    );
     batch.flush(camera);
-    expect(mesh.frustumCulled).toBe(false);
+    const [mesh] = drawnMeshes(batch.object, frustum);
+    // In addition to the ones at x >= 90 - radius.
+    const radius = 1.001 * Math.sqrt(1 + 4 + 9) * geometryRadius(mesh.geometry);
+    expect(mesh.count).toBe(1 + 10 + Math.floor(radius));
   });
 
   it("isn't used when drawing is cheap", () => {
     const batch = makeMeshBatch();
     for (let i = 0; i < 100; i++) batch.add(makeSource(i, meshAppearance));
+    const nothing = new THREE.Frustum();
+    nothing.planes.forEach((plane) =>
+      plane.set(new THREE.Vector3(), -Infinity),
+    );
     batch.flush(camera);
-    expect(batch.object.children[0].frustumCulled).toBe(false);
+    expect(drawnMeshes(batch.object, nothing)[0].count).toBe(100);
+  });
+
+  it("has separate buffers for each camera, and frees them", () => {
+    const batch = makeMeshBatch();
+    batch.add(makeSource(0, meshAppearance));
+    batch.flush(camera);
+    const meshes = [0, 1, 2].map(() => drawnMeshes(batch.object)[0]);
+    expect(new Set(meshes).size).toBe(3);
+    batch.flush(camera);
+    expect(drawnMeshes(batch.object)).toEqual([meshes[0]]);
+    const onDispose = vi.fn();
+    meshes.forEach((mesh) => mesh.addEventListener("dispose", onDispose));
+    batch.dispose();
+    expect(onDispose).toHaveBeenCalledTimes(3);
+  });
+
+  it("doesn't accumulate changes when there are no renders", () => {
+    const batch = makeMeshBatch();
+    const source = makeSource(0, meshAppearance);
+    batch.add(source);
+    batch.flush(camera);
+    const [mesh] = drawnMeshes(batch.object);
+    mesh.instanceColor!.clearUpdateRanges();
+    for (let i = 1; i <= 1000; i++) {
+      source.appearance = { ...meshAppearance, color: i } as MeshAppearance;
+      batch.updateAppearance(source);
+    }
+    batch.flush(camera);
+    drawnMeshes(batch.object);
+    const color = new THREE.Color();
+    mesh.getColorAt(0, color);
+    expect(color.getHex()).toBe(1000);
+    expect(mesh.instanceColor!.updateRanges.length).toBe(1);
   });
 });
 
@@ -316,9 +461,7 @@ describe("SpatialBatch", () => {
     batch.flush(camera);
     batch.object.updateMatrixWorld();
     const drawn: number[] = [];
-    batch.object.traverse((object) => {
-      const mesh = object as THREE.InstancedMesh;
-      if (!mesh.isInstancedMesh) return;
+    drawnMeshes(batch.object).forEach((mesh) => {
       const matrix = new THREE.Matrix4();
       for (let i = 0; i < mesh.count; i++) {
         mesh.getMatrixAt(i, matrix);
@@ -474,6 +617,9 @@ describe("LineBatch", () => {
     };
     const sources = [makeSource(10, appearance), makeSource(20, appearance)];
     sources.forEach((source) => batch.add(source));
+    const camera = new THREE.PerspectiveCamera();
+    camera.position.set(15, 0, 50);
+    camera.updateMatrixWorld();
     batch.flush(camera);
     // Core and antialiasing passes.
     expect(batch.object.children.length).toBe(2);
@@ -490,6 +636,49 @@ describe("LineBatch", () => {
     batch.flush(camera);
     expect(geometry.instanceCount).toBe(1);
     expect([...positions.slice(0, 6)]).toEqual([20, 0, 0, 21, 1, 1]);
+  });
+
+  it("culls the same lines as three.js", () => {
+    const points = Float32Array.of(0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 0, 0);
+    const batch = new LineBatch(2, true);
+    const sources = Array.from({ length: 200 }, (_, i) =>
+      makeSource(i - 100, {
+        color: 0xffffff,
+        thickness: 0.1,
+        points,
+        radius: 2,
+      } as InstanceAppearance),
+    );
+    sources.forEach((source) => batch.add(source));
+    const line = new LineSegments2(new LineSegmentsGeometry());
+    line.geometry.setPositions(points);
+    const camera = new THREE.PerspectiveCamera();
+    const frustum = new THREE.Frustum();
+    for (let i = 0; i < 20; i++) {
+      camera.position.set(9.7 * i - 100, i % 3, 5);
+      camera.rotation.y = i;
+      camera.updateMatrixWorld();
+      frustum.setFromProjectionMatrix(
+        camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse),
+      );
+      batch.flush(camera);
+      const expected = sources.filter(({ matrixWorld }) => {
+        line.matrixWorld.copy(matrixWorld);
+        return frustum.intersectsObject(line);
+      });
+      const [core, fringe] = batch.object.children.map(
+        (child) =>
+          (child as THREE.Mesh).geometry as THREE.InstancedBufferGeometry,
+      );
+      expect(core.instanceCount).toBe(2 * expected.length);
+      expect(fringe.instanceCount).toBe(2 * expected.length);
+      const positions = (
+        core.attributes.instanceStart as THREE.InterleavedBufferAttribute
+      ).data.array;
+      expect(expected.map((_, j) => positions[j * 12])).toEqual(
+        expected.map((source) => source.position.x),
+      );
+    }
   });
 });
 
