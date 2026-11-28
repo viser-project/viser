@@ -919,49 +919,65 @@ def test_live_pushes_during_sparse_replay() -> None:
 def test_client_messages_are_not_starved_by_broadcasts(
     server: viser.ViserServer,
 ) -> None:
-    """Per-client messages used to wait for the whole replay, or forever if large
-    broadcasts kept coming."""
+    """Per-client messages wait for the replay, so renders that are requested when
+    a client connects have the entire scene. Afterwards, they shouldn't have to
+    wait for a steady stream of large broadcasts."""
     from websockets.sync.client import connect
 
+    vertices = np.zeros((250_000, 3), np.float32)
     for i in range(30):
-        server.scene.add_mesh_simple(
-            f"/m{i}", np.zeros((250_000, 3), np.float32), np.zeros((1, 3), np.uint32)
-        )
-    num_payloads = 0
-    last_client_message = -1
+        server.scene.add_mesh_simple(f"/m{i}", vertices, np.zeros((1, 3), np.uint32))
     done = threading.Event()
 
-    def on_connect(client: Any) -> None:
-        def push() -> None:
-            while not done.wait(0.02):
-                client.queue_message(vm.SetPositionMessage("/mine", (0.0, 0.0, 0.0)))
+    def push_client_messages(client: Any) -> None:
+        while not done.wait(0.02):
+            client.queue_message(vm.SetPositionMessage("/mine", (0.0, 0.0, 0.0)))
 
-        threading.Thread(target=push, daemon=True).start()
+    def push_broadcasts() -> None:
+        while not done.wait(0.02):
+            # Multiple payloads per window.
+            for i in range(30):
+                server.scene.add_point_cloud(f"/pc{i}", vertices, colors=(0, 0, 0))
+
+    def on_connect(client: Any) -> None:
+        threading.Thread(target=push_client_messages, args=(client,)).start()
 
     server._websock_server.on_client_connect(on_connect)
-    first_client_message = -1
-    with connect(
-        f"ws://localhost:{server.get_port()}",
-        max_size=None,
-        compression=None,
-        subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
-    ) as ws:
-        while True:
-            payload = ws.recv()
-            assert isinstance(payload, bytes)
-            messages = _decode(payload)
-            num_payloads += 1
-            if any(m.get("name") == "/mine" for m in messages):
-                last_client_message = num_payloads
-                if first_client_message < 0:
-                    first_client_message = num_payloads
-            if any(m["type"] == "ReplayDoneMessage" for m in messages):
-                break
-            done.wait(0.05)  # Slow reader.
-    done.set()
-    # Early, and not just once.
-    assert 0 < first_client_message < num_payloads / 2
-    assert last_client_message > num_payloads / 2
+    broadcaster = threading.Thread(target=push_broadcasts)
+    replayed = False
+    num_live_payloads = 0
+    try:
+        with connect(
+            f"ws://localhost:{server.get_port()}",
+            max_size=None,
+            compression=None,
+            subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
+        ) as ws:
+            # There may be messages from before the replay started.
+            deadline = time.time() + 30.0
+            started = False
+            num_client_messages = 0
+            while num_client_messages < 3:
+                assert time.time() < deadline
+                payload = ws.recv()
+                assert isinstance(payload, bytes)
+                messages = _decode(payload)
+                is_client = any(m.get("name") == "/mine" for m in messages)
+                started |= any(m.get("name") == "/m0" for m in messages)
+                if started and not replayed:
+                    assert not is_client
+                    done.wait(0.05)  # Slow reader.
+                if replayed:
+                    num_live_payloads += 1
+                    num_client_messages += is_client
+                if any(m["type"] == "ReplayDoneMessage" for m in messages):
+                    replayed = True
+                    broadcaster.start()
+            assert num_live_payloads < 20
+    finally:
+        done.set()
+        if replayed:
+            broadcaster.join()
 
 
 def test_incoming_messages_reach_client_handlers(server: viser.ViserServer) -> None:

@@ -988,20 +988,12 @@ def _fragments_from_parts(
 
 
 async def _send_parts(
-    websocket: ServerConnection,
-    parts: list[bytes | memoryview],
-    send_lock: asyncio.Lock,
+    websocket: ServerConnection, parts: list[bytes | memoryview]
 ) -> None:
-    # A connection has two producers: one for broadcasted messages, and one for
-    # its own. websockets makes other sends wait while a fragmented message is
-    # being sent, but isn't fair about who goes next. Without this lock, which is
-    # first-come first-served, a steady stream of large broadcasts would starve
-    # per-client messages.
-    async with send_lock:
-        if sum(len(p) for p in parts) <= _FRAGMENT_BYTES:
-            await websocket.send(b"".join(parts))
-        else:
-            await websocket.send(_fragments_from_parts(parts))
+    if sum(len(p) for p in parts) <= _FRAGMENT_BYTES:
+        await websocket.send(b"".join(parts))
+    else:
+        await websocket.send(_fragments_from_parts(parts))
 
 
 async def _send_window(
@@ -1010,7 +1002,6 @@ async def _send_window(
     window: MessageWindow,
     split_bytes: int,
     zstd: zstandard.ZstdCompressor,
-    send_lock: asyncio.Lock,
 ) -> None:
     """Encode and send a window of messages, as multiple payloads if it contains
     more than `split_bytes` of arrays."""
@@ -1018,7 +1009,7 @@ async def _send_window(
     # windows: only encode those once.
     parts = buffer.get_cached_encoding(window)
     if parts is not None:
-        await _send_parts(websocket, parts, send_lock)
+        await _send_parts(websocket, parts)
         return
 
     messages: list[dict[str, Any]] = []
@@ -1031,13 +1022,13 @@ async def _send_window(
         binary_bytes += sum(map(len, binary_buffers[num_buffers:]))
         if binary_bytes >= split_bytes and message is not window[-1]:
             parts = _encode_payload(messages, binary_buffers, zstd)
-            await _send_parts(websocket, parts, send_lock)
+            await _send_parts(websocket, parts)
             messages, binary_buffers = [], []
             binary_bytes = 0
             split = True
     parts = _encode_payload(messages, binary_buffers, zstd)
     buffer.cache_encoding(window, None if split else parts)
-    await _send_parts(websocket, parts, send_lock)
+    await _send_parts(websocket, parts)
 
 
 async def _message_producer(
@@ -1073,6 +1064,7 @@ async def _message_producer(
     )
     zstd = zstandard.ZstdCompressor(level=1)
     replaying = backlog_done_message is not None
+    has_send_lock = False
     try:
         while not buffer.done:
             try:
@@ -1080,13 +1072,20 @@ async def _message_producer(
             except StopAsyncIteration:
                 break
 
+            # A connection has two producers: one for broadcasted messages, and
+            # one for its own. websockets isn't fair about who sends next; without
+            # this lock, which is first-come first-served, a steady stream of
+            # large broadcasts would starve per-client messages.
+            if not has_send_lock:
+                await send_lock.acquire()
+                has_send_lock = True
+
             await _send_window(
                 websocket,
                 buffer,
                 outgoing,
                 _REPLAY_SPLIT_BYTES if replaying else _LIVE_SPLIT_BYTES,
                 zstd,
-                send_lock,
             )
             # The end-of-replay marker is always last in its window.
             if outgoing[-1] is backlog_done_message:
@@ -1099,7 +1098,16 @@ async def _message_producer(
             # other connections and incoming messages interleave with long
             # replays.
             await asyncio.sleep(0)
+
+            # Keep the lock for the entire replay: renders requested by connect
+            # callbacks should contain the entire scene. Unless an atomic block
+            # makes us wait, because that block could be waiting for a render.
+            if not replaying or buffer.atomic_counter > 0:
+                send_lock.release()
+                has_send_lock = False
     finally:
+        if has_send_lock:
+            send_lock.release()
         # Close the generator DETERMINISTICALLY. A cancellation delivered at
         # `websocket.send` leaves the generator suspended at its yield --
         # exiting the async-for does NOT close it, so its finallys (the GC
