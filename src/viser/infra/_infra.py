@@ -20,7 +20,7 @@ from asyncio.events import AbstractEventLoop
 from collections import Counter
 from collections.abc import Coroutine
 from pathlib import Path
-from typing import Any, Callable, Generator, NewType, TypeVar
+from typing import Any, Callable, Generator, NewType, Sequence, TypeVar
 from urllib.parse import unquote as _url_unquote
 
 import msgspec.msgpack
@@ -909,6 +909,21 @@ def _remap_binary_placeholder_indices(obj: Any, index_remap: list[int]) -> None:
 _ALIGNMENT_PADDING = tuple(b"\x00" * i for i in range(8))
 
 
+def _append_aligned_buffers(
+    parts: list[bytes | memoryview],
+    binary_buffers: list[memoryview],
+    current_offset: int,
+) -> None:
+    """Append binary buffers to `parts` with 8-byte alignment padding."""
+    for buf in binary_buffers:
+        padding = (8 - (current_offset % 8)) % 8
+        if padding:
+            parts.append(_ALIGNMENT_PADDING[padding])
+            current_offset += padding
+        parts.append(buf)
+        current_offset += buf.nbytes
+
+
 _FRAGMENT_BYTES = 1 << 20
 """Payloads are sent as websocket fragments of about this size. Each fragment is
 copied into transport buffers, so fragmenting bounds how much memory a large
@@ -957,21 +972,17 @@ def _fragments_from_parts(
     pending: list[bytes | memoryview] = []
     pending_size = 0
     for part in parts:
-        if len(part) < _FRAGMENT_BYTES:
-            pending.append(part)
-            pending_size += len(part)
-            if pending_size >= _FRAGMENT_BYTES:
-                yield b"".join(pending)
-                pending = []
-                pending_size = 0
-            continue
-        if pending:
+        if pending and pending_size + len(part) > _FRAGMENT_BYTES:
             yield b"".join(pending)
             pending = []
             pending_size = 0
-        view = memoryview(part)
-        for start in range(0, len(view), _FRAGMENT_BYTES):
-            yield view[start : start + _FRAGMENT_BYTES]
+        if len(part) < _FRAGMENT_BYTES:
+            pending.append(part)
+            pending_size += len(part)
+        else:
+            view = memoryview(part)
+            for start in range(0, len(view), _FRAGMENT_BYTES):
+                yield view[start : start + _FRAGMENT_BYTES]
     if pending:
         yield b"".join(pending)
 
@@ -993,27 +1004,48 @@ async def _send_parts(
             await websocket.send(_fragments_from_parts(parts))
 
 
-def _append_aligned_buffers(
-    parts: list[bytes | memoryview],
-    binary_buffers: list[memoryview],
-    current_offset: int,
+async def _send_window(
+    websocket: ServerConnection,
+    buffer: AsyncMessageBuffer,
+    window: Sequence[Message],
+    split_bytes: int,
+    zstd: zstandard.ZstdCompressor,
+    send_lock: asyncio.Lock,
 ) -> None:
-    """Append binary buffers to `parts` with 8-byte alignment padding."""
-    for buf in binary_buffers:
-        padding = (8 - (current_offset % 8)) % 8
-        if padding:
-            parts.append(_ALIGNMENT_PADDING[padding])
-            current_offset += padding
-        parts.append(buf)
-        current_offset += buf.nbytes
+    """Encode and send a window of messages, as multiple payloads if it contains
+    more than `split_bytes` of arrays."""
+    # Clients that are caught up with a stream wake together and see identical
+    # windows: only encode those once.
+    parts = buffer.get_cached_encoding(window)
+    if parts is not None:
+        await _send_parts(websocket, parts, send_lock)
+        return
+
+    messages: list[dict[str, Any]] = []
+    binary_buffers: list[memoryview] = []
+    binary_bytes = 0
+    split = False
+    for message in window:
+        num_buffers = len(binary_buffers)
+        messages.append(message.as_serializable_dict(binary_buffers))
+        binary_bytes += sum(map(len, binary_buffers[num_buffers:]))
+        if binary_bytes >= split_bytes and message is not window[-1]:
+            parts = _encode_payload(messages, binary_buffers, zstd)
+            await _send_parts(websocket, parts, send_lock)
+            messages, binary_buffers = [], []
+            binary_bytes = 0
+            split = True
+    parts = _encode_payload(messages, binary_buffers, zstd)
+    buffer.cache_encoding(window, None if split else parts)
+    await _send_parts(websocket, parts, send_lock)
 
 
 async def _message_producer(
     websocket: ServerConnection,
     buffer: AsyncMessageBuffer,
     client_id: int,
+    send_lock: asyncio.Lock,
     backlog_done_message: Message | None = None,
-    send_lock: asyncio.Lock | None = None,
 ) -> None:
     """Infinite loop to broadcast windows of messages from a buffer.
 
@@ -1039,8 +1071,6 @@ async def _message_producer(
     window_generator = buffer.window_generator(
         client_id, backlog_done_message=backlog_done_message
     )
-    if send_lock is None:
-        send_lock = asyncio.Lock()
     zstd = zstandard.ZstdCompressor(level=1)
     replaying = backlog_done_message is not None
     try:
@@ -1050,45 +1080,20 @@ async def _message_producer(
             except StopAsyncIteration:
                 break
 
-            # Clients that are caught up with a stream wake together and see
-            # identical windows: only encode those once.
-            cached_parts = buffer.get_cached_encoding(outgoing)
-            if cached_parts is not None:
-                if replaying and outgoing[-1] is backlog_done_message:
-                    replaying = False
-                await _send_parts(websocket, cached_parts, send_lock)
-                continue
-
-            split_bytes = _REPLAY_SPLIT_BYTES if replaying else _LIVE_SPLIT_BYTES
-            binary_buffers: list[memoryview] = []
-            serialized_messages: list[dict[str, Any]] = []
-            binary_bytes = 0
-            split = False
-            message = outgoing[0]
-            for message in outgoing:
-                prev_num_buffers = len(binary_buffers)
-                serialized_messages.append(message.as_serializable_dict(binary_buffers))
-                if message is backlog_done_message:
-                    replaying = False
-                if len(binary_buffers) == prev_num_buffers:
-                    continue
-                for b in binary_buffers[prev_num_buffers:]:
-                    binary_bytes += len(b)
-                if binary_bytes >= split_bytes and message is not outgoing[-1]:
-                    await _send_parts(
-                        websocket,
-                        _encode_payload(serialized_messages, binary_buffers, zstd),
-                        send_lock,
-                    )
-                    serialized_messages, binary_buffers = [], []
-                    binary_bytes = 0
-                    split = True
-            parts = _encode_payload(serialized_messages, binary_buffers, zstd)
-            buffer.cache_encoding(outgoing, None if split else parts)
-            await _send_parts(websocket, parts, send_lock)
+            await _send_window(
+                websocket,
+                buffer,
+                outgoing,
+                _REPLAY_SPLIT_BYTES if replaying else _LIVE_SPLIT_BYTES,
+                zstd,
+                send_lock,
+            )
+            # The end-of-replay marker is always last in its window.
+            if outgoing[-1] is backlog_done_message:
+                replaying = False
 
             # Don't keep arrays alive while waiting for the next window.
-            del outgoing, message, parts, serialized_messages, binary_buffers
+            del outgoing
 
             # send() only yields to the event loop under backpressure. Let
             # other connections and incoming messages interleave with long

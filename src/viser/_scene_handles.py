@@ -382,6 +382,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
     def wxyz(self) -> npt.NDArray[np.float64]:
         """Orientation of the scene node. This is the quaternion representation of the R
         in `p_parent = [R | t] p_local`. Synchronized to clients automatically when assigned.
+        Reads return a copy.
         """
         return np.array(self._impl.wxyz)
 
@@ -402,6 +403,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
     def position(self) -> npt.NDArray[np.float64]:
         """Position of the scene node. This is equivalent to the t in
         `p_parent = [R | t] p_local`. Synchronized to clients automatically when assigned.
+        Reads return a copy.
         """
         return np.array(self._impl.position)
 
@@ -1158,7 +1160,7 @@ class PointCloudHandle(
     @override
     def _on_prop_assigned(self, name: str) -> None:
         # `points` is stored at the dtype named by `precision`, so re-cast the
-        # buffer in place whenever `precision` changes. This both keeps the
+        # buffer whenever `precision` changes. This both keeps the
         # cloud consistent and means a subsequent `points` assignment won't be
         # pinned back to the old dtype by the generic setter -- so `precision`
         # and `points` can be assigned in either order.
@@ -1170,8 +1172,10 @@ class PointCloudHandle(
         with state_lock(self._impl):
             points = self._impl.props.points
             if points.dtype != dtype:
-                new_points = array_snapshot(points.astype(dtype))
+                new_points = points.astype(dtype)
+                new_points.flags.writeable = False
                 self._impl.props.points = new_points
+                forget_readable_copy(self, "points")
                 self._queue_update("points", new_points)
 
 
@@ -1464,6 +1468,7 @@ class MeshSkinnedBoneHandle:
     def wxyz(self) -> npt.NDArray[np.float64]:
         """Orientation of the bone. This is the quaternion representation of the R
         in `p_parent = [R | t] p_local`. Synchronized to clients automatically when assigned.
+        Reads return a copy.
         """
         return np.array(self._impl.wxyz)
 
@@ -1486,6 +1491,7 @@ class MeshSkinnedBoneHandle:
     def position(self) -> npt.NDArray[np.float64]:
         """Position of the bone. This is equivalent to the t in
         `p_parent = [R | t] p_local`. Synchronized to clients automatically when assigned.
+        Reads return a copy.
         """
         return np.array(self._impl.position)
 

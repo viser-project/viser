@@ -23,6 +23,8 @@ from typing import (
 
 from ._messages import Message
 
+_MAX_CACHED_ENCODING_BYTES = 4 << 20
+
 
 @dataclasses.dataclass
 class AsyncMessageBuffer:
@@ -47,13 +49,13 @@ class AsyncMessageBuffer:
     O(buffer). Maintained under ``buffer_lock`` by every path that inserts
     into or deletes from ``message_from_id``."""
 
-    buffer_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
-    """Lock to prevent race conditions when pushing messages from different threads."""
-
     tombstone_ids: Set[int] = dataclasses.field(default_factory=set)
     """Ids of buffered ``lifecycle_phase == "remove"`` messages, so the
     connect-time GC doesn't scan the whole buffer for them. Maintained alongside
     the entity-state index."""
+
+    buffer_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    """Lock to prevent race conditions when pushing messages from different threads."""
 
     max_window_size: int = 1024
     """Cap on messages per window. This bounds how long the event loop spends
@@ -64,8 +66,7 @@ class AsyncMessageBuffer:
     atomic_counter: int = 0
     _wake_scheduled: bool = False
     """True while a ``_wake`` callback is queued on the event loop. Pushes
-    coalesce onto it: each ``call_soon_threadsafe`` costs a self-pipe write, and
-    one per message dominated the cost of streaming updates."""
+    coalesce onto it, since each ``call_soon_threadsafe`` costs a self-pipe write."""
 
     _warned_push_after_done: bool = False
     """One-shot latch for the dead-connection write warning in push()."""
@@ -110,7 +111,7 @@ class AsyncMessageBuffer:
         if (
             parts is not None
             and len(self.generator_cursors) > 1
-            and sum(map(len, parts)) <= 4 << 20
+            and sum(map(len, parts)) <= _MAX_CACHED_ENCODING_BYTES
         ):
             self._encoding_cache = (window, parts)
         else:
@@ -290,11 +291,10 @@ class AsyncMessageBuffer:
         try:
             self.event_loop.call_soon_threadsafe(self._wake)
         except RuntimeError:
-            self._wake_scheduled = False
             # Event loop already closed (write after stop()); messages are
             # buffered, and a closed loop has no consumer to wake -- same
             # tolerance as set_done().
-            pass
+            self._wake_scheduled = False
 
     def _wake(self) -> None:
         # Order matters: a push landing after the flag clears schedules a new
@@ -401,11 +401,10 @@ class AsyncMessageBuffer:
                     # in an atomic block.
                     and self.atomic_counter == 0
                 ):
-                    # Advance to the next id. Ids are never reused, so after a
-                    # long animation most of the range up to message_counter is
-                    # holes left by coalesced updates. Walking those one by one
-                    # made connecting O(messages ever sent); when the gap is
-                    # large, visit only the ids that are actually buffered.
+                    # Advance to the next id. Ids are never reused, so most of
+                    # the range up to message_counter can be holes left by
+                    # coalesced updates. When the gap is large, visit only the
+                    # ids that are actually buffered instead of walking it.
                     # (Dicts are insertion-ordered and ids are ascending.)
                     if (
                         not pending_ids

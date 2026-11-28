@@ -1452,9 +1452,7 @@ class ViserServer(DeprecatedAttributeShim if not TYPE_CHECKING else object):
             remove_message_ids: list[int] = []
             removed_ids_by_type: dict[str, set[str]] = {}
             for msg_id in buffer.tombstone_ids:
-                message = buffer.message_from_id.get(msg_id)
-                if message is None:
-                    continue
+                message = buffer.message_from_id[msg_id]
                 assert (
                     message.entity_type is not None
                     and message.entity_id_field is not None

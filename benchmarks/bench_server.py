@@ -86,22 +86,14 @@ with connect(
     subprotocols=[f"viser-v{viser.__version__}"],
 ) as ws:
     print("OPEN", flush=True)
-    ttfb = None
-    total = 0
     while True:
         data = ws.recv()
-        if ttfb is None:
-            ttfb = time.perf_counter() - start
-        total += len(data)
         size, csize = struct.unpack("<QQ", data[:16])
         inner = zstandard.ZstdDecompressor().decompress(
             data[16:16 + csize], max_output_size=size)
         if until in inner:
             break
-    print(time.perf_counter() - start, ttfb, total / 1e6, flush=True)
-    # Stay connected (and draining) until the parent closes stdin.
-    if len(sys.argv) > 3:
-        sys.stdin.read()
+    print(time.perf_counter() - start, flush=True)
 """
 
 
@@ -118,17 +110,17 @@ class Client:
         assert self.proc.stdout is not None
         assert self.proc.stdout.readline().strip() == "OPEN"
 
-    def wait(self) -> tuple[float, float, float]:
-        """Returns (total seconds, time to first batch, megabytes)."""
+    def wait(self) -> float:
+        """Returns seconds until the payload arrived."""
         assert self.proc.stdout is not None
-        total, ttfb, mb = map(float, self.proc.stdout.readline().split())
+        elapsed = float(self.proc.stdout.readline())
         self.proc.wait()
-        return total, ttfb, mb
+        return elapsed
 
 
 def replay(server, out: dict[str, float], name: str = "replay") -> None:
     cpu = time.process_time()
-    total, _, _ = Client(server.get_port()).wait()
+    total = Client(server.get_port()).wait()
     out[f"{name}_s"] = total
     out[f"{name}_cpu_s"] = time.process_time() - cpu
 
@@ -250,7 +242,7 @@ def pose_stream_clients() -> dict[str, float]:
 
 @case
 def prop_updates() -> dict[str, float]:
-    """50k scalar prop writes + 200 1M-point array writes."""
+    """50k scalar prop writes + 100 1M-point array writes."""
     server = make_server()
     out: dict[str, float] = {}
     handles = [server.scene.add_box(f"/b/{i}") for i in range(100)]

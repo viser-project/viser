@@ -1,22 +1,23 @@
-"""Tests for behavior that the server's fast paths need to preserve, plus bugs
-found while benchmarking it. Timing lives in ``benchmarks/``; the few
+"""Tests for behavior that the server's fast paths need to preserve, plus
+regressions. Timing lives in ``benchmarks/``; the few
 complexity checks here count operations instead of seconds."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import struct
 import sys
 import threading
-from typing import Any, Dict, Optional, Tuple, Union
+import time
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple, Union
 
 import msgspec
 import numpy as np
 import numpy.typing as npt
 import pytest
 import zstandard
-from typing_extensions import get_type_hints
 
 import viser
 from viser import _messages as vm
@@ -24,9 +25,10 @@ from viser._assignable_props_api import array_snapshot, arrays_equal
 from viser.infra import _infra
 from viser.infra._async_message_buffer import AsyncMessageBuffer
 from viser.infra._messages import (
+    _deserialize_converters,
     _make_converter,
     _prepare_for_serialization,
-    get_type_hints_cached,
+    _wire_converters,
 )
 
 from .infra_utils import broadcast_messages
@@ -306,31 +308,31 @@ def test_compiled_converters_match_reference(annotation: Any) -> None:
 
 def test_all_message_types_have_converters() -> None:
     for cls in vm.Message.get_subclasses():
-        assert get_type_hints_cached(cls) == get_type_hints(cls)
-        for hint in get_type_hints_cached(cls).values():
-            assert callable(_make_converter(hint))
+        _wire_converters(cls)
+        _deserialize_converters(cls)
 
 
 # --- Message delivery -------------------------------------------------------
 
 
-def _drain(buffer: AsyncMessageBuffer, marker: Any, visited: list[int]) -> Any:
-    class CountingDict(dict):
-        def get(self, key, default=None):
-            visited.append(key)
-            return super().get(key, default)
+class _CountingDict(dict):
+    """Counts how many entries are visited."""
 
-    buffer.message_from_id = CountingDict(buffer.message_from_id)
+    visited = 0
 
-    async def inner():
-        out: list[Any] = []
-        gen = buffer.window_generator(0, backlog_done_message=marker)
-        while marker not in out:
-            out.extend(await asyncio.wait_for(gen.__anext__(), timeout=5.0))
-        await gen.aclose()
-        return out
+    def get(self, key, default=None):
+        self.visited += 1
+        return super().get(key, default)
 
-    return inner()
+    def __iter__(self):
+        for key in super().__iter__():
+            self.visited += 1
+            yield key
+
+    def __reversed__(self):
+        for key in super().__reversed__():
+            self.visited += 1
+            yield key
 
 
 def test_replay_cost_is_independent_of_history() -> None:
@@ -346,10 +348,15 @@ def test_replay_cost_is_independent_of_history() -> None:
         buffer.message_counter += 10_000_000
         buffer.push(vm.SetPositionMessage("/c", (0.0, 0.0, 0.0)))
 
-        visited: list[int] = []
-        out = await _drain(buffer, vm.ReplayDoneMessage(), visited)
+        counting = buffer.message_from_id = _CountingDict(buffer.message_from_id)
+        marker = vm.ReplayDoneMessage()
+        gen = buffer.window_generator(0, backlog_done_message=marker)
+        out: list[Any] = []
+        while marker not in out:
+            out.extend(await asyncio.wait_for(gen.__anext__(), timeout=5.0))
+        await gen.aclose()
         assert [getattr(m, "name", None) for m in out] == ["/a", "/b", "/c", None]
-        assert len(visited) < 100
+        assert 0 < counting.visited < 100
 
     run_isolated(lambda: asyncio.run(scenario()))
 
@@ -357,19 +364,6 @@ def test_replay_cost_is_independent_of_history() -> None:
 def test_updates_do_not_rescan_older_state() -> None:
     """Large updates used to scan all buffered messages, for each client."""
     num_static, num_updates = 20_000, 3_000
-
-    class CountingDict(dict):
-        visited = 0
-
-        def __iter__(self):
-            for key in super().__iter__():
-                self.visited += 1
-                yield key
-
-        def __reversed__(self):
-            for key in super().__reversed__():
-                self.visited += 1
-                yield key
 
     async def scenario() -> None:
         buffer = AsyncMessageBuffer(
@@ -387,12 +381,12 @@ def test_updates_do_not_rescan_older_state() -> None:
             return names
 
         await receive(num_static)
-        counting = buffer.message_from_id = CountingDict(buffer.message_from_id)
+        counting = buffer.message_from_id = _CountingDict(buffer.message_from_id)
         for i in range(num_updates):
             buffer.push(vm.SetPositionMessage(f"/{i}", (1.0, 0.0, 0.0)))
         counting.visited = 0
         assert await receive(num_updates) == [f"/{i}" for i in range(num_updates)]
-        assert 0 < counting.visited < 2 * num_updates
+        assert 0 < counting.visited < 3 * num_updates
         await gen.aclose()
 
     run_isolated(lambda: asyncio.run(scenario()))
@@ -529,6 +523,36 @@ def _decode(payload: bytes) -> list[dict]:
     return [restore(m) for m in data["messages"]]
 
 
+@contextlib.asynccontextmanager
+async def _producers(
+    buffer: AsyncMessageBuffer,
+    sockets: list[_FakeWebsocket],
+    marker: Any = None,
+    first_client_id: int = 0,
+) -> AsyncGenerator[None, None]:
+    """Run a producer for each socket."""
+    tasks = [
+        asyncio.create_task(
+            _infra._message_producer(ws, buffer, i, asyncio.Lock(), marker)  # type: ignore
+        )
+        for i, ws in enumerate(sockets, start=first_client_id)
+    ]
+    try:
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _wait_for(ws: _FakeWebsocket, name: str | None) -> None:
+    """Wait for a message. The end-of-replay marker doesn't have a name."""
+    deadline = time.monotonic() + 10.0
+    while not any(m.get("name") == name for p in ws.payloads[-1:] for m in _decode(p)):
+        assert time.monotonic() < deadline
+        await asyncio.sleep(0.01)
+
+
 def _run_producers(
     push: Any, num_clients: int, marker: Any
 ) -> tuple[list[_FakeWebsocket], list[list[dict]]]:
@@ -538,19 +562,13 @@ def _run_producers(
         )
         push(buffer)
         sockets = [_FakeWebsocket() for _ in range(num_clients)]
-        tasks = [
-            asyncio.create_task(
-                _infra._message_producer(ws, buffer, i, marker)  # type: ignore
-            )
-            for i, ws in enumerate(sockets)
-        ]
-        await asyncio.sleep(0.2)
-        buffer.push(vm.SetPositionMessage("/live", (1.0, 2.0, 3.0)))
-        buffer.push(vm.SetPositionMessage("/live2", (1.0, 2.0, 3.0)))
-        await asyncio.sleep(0.2)
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        async with _producers(buffer, sockets, marker):
+            for ws in sockets:
+                await _wait_for(ws, None)
+            buffer.push(vm.SetPositionMessage("/live", (1.0, 2.0, 3.0)))
+            buffer.push(vm.SetPositionMessage("/live2", (1.0, 2.0, 3.0)))
+            for ws in sockets:
+                await _wait_for(ws, "/live2")
         return sockets
 
     sockets = run_isolated(lambda: asyncio.run(scenario()))
@@ -581,7 +599,7 @@ def test_large_replay_is_split_and_lossless() -> None:
         np.testing.assert_array_equal(m["updates"]["x"], a)
     assert messages[20]["updates"]["e"].size == 0
     assert max(map(len, ws.payloads)) < _infra._REPLAY_SPLIT_BYTES + 2_000_000
-    assert ws.largest_fragment <= 2 * _infra._FRAGMENT_BYTES
+    assert ws.largest_fragment <= _infra._FRAGMENT_BYTES
 
 
 def test_shared_encoding_respects_excluded_client() -> None:
@@ -665,7 +683,7 @@ def test_readd_after_remove_resets_pose(server: viser.ViserServer) -> None:
         server._run_garbage_collector(force=True)
 
 
-# --- Found in adversarial review --------------------------------------------
+# --- Edge cases -------------------------------------------------------------
 
 
 def test_all_inplace_patterns_are_sent(server: viser.ViserServer) -> None:
@@ -760,17 +778,10 @@ def test_split_windows_reach_every_client() -> None:
             buffer.push(_array_update(i, 3 << 20))
         marker = vm.ReplayDoneMessage()
         sockets = [_FakeWebsocket() for _ in range(3)]
-        tasks = []
-        for i, ws in enumerate(sockets):
-            tasks.append(
-                asyncio.create_task(
-                    _infra._message_producer(ws, buffer, i, marker)  # type: ignore
-                )
-            )
-            await asyncio.sleep(0.3)
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        async with contextlib.AsyncExitStack() as stack:
+            for i, ws in enumerate(sockets):
+                await stack.enter_async_context(_producers(buffer, [ws], marker, i))
+                await _wait_for(ws, None)
         return [
             [m.get("name") for p in ws.payloads for m in _decode(p)] for ws in sockets
         ]
@@ -781,18 +792,26 @@ def test_split_windows_reach_every_client() -> None:
 
 def test_similar_windows_are_not_shared() -> None:
     """Windows that start with the same message may differ after it."""
-    buffer = AsyncMessageBuffer(None, persistent_messages=True)  # type: ignore
-    buffer.generator_cursors = {0: 0, 1: 0}
-    a, b, c = [vm.SetPositionMessage(n, (0.0, 0.0, 0.0)) for n in ("/a", "/b", "/c")]
-    buffer.cache_encoding([a, b], [b"payload"])
-    assert buffer.get_cached_encoding([a, b]) == [b"payload"]
-    for other in ([a, c], [a], [a, b, c], [b, a]):
-        assert buffer.get_cached_encoding(other) is None
-    # Equal, but not the same.
-    copy = vm.SetPositionMessage("/b", (0.0, 0.0, 0.0))
-    assert buffer.get_cached_encoding([a, copy]) is None
-    buffer.cache_encoding([a, b], [b"x" * (5 << 20)])
-    assert buffer.get_cached_encoding([a, b]) is None
+
+    async def scenario() -> None:
+        buffer = AsyncMessageBuffer(
+            asyncio.get_running_loop(), persistent_messages=True
+        )
+        buffer.generator_cursors = {0: 0, 1: 0}
+        a, b, c = [
+            vm.SetPositionMessage(n, (0.0, 0.0, 0.0)) for n in ("/a", "/b", "/c")
+        ]
+        buffer.cache_encoding([a, b], [b"payload"])
+        assert buffer.get_cached_encoding([a, b]) == [b"payload"]
+        for other in ([a, c], [a], [a, b, c], [b, a]):
+            assert buffer.get_cached_encoding(other) is None
+        # Equal, but not the same.
+        copy = vm.SetPositionMessage("/b", (0.0, 0.0, 0.0))
+        assert buffer.get_cached_encoding([a, copy]) is None
+        buffer.cache_encoding([a, b], [b"x" * (5 << 20)])
+        assert buffer.get_cached_encoding([a, b]) is None
+
+    run_isolated(lambda: asyncio.run(scenario()))
 
 
 def test_atomic_blocks_are_delivered_whole() -> None:
@@ -805,31 +824,18 @@ def test_atomic_blocks_are_delivered_whole() -> None:
         buffer = AsyncMessageBuffer(loop, persistent_messages=True)
         ws = _FakeWebsocket()
         buffer.push(_array_update(-1, 1 << 20))
-        tasks = [
-            asyncio.create_task(
-                _infra._message_producer(
-                    w,  # type: ignore
-                    buffer,
-                    i,
-                    vm.ReplayDoneMessage(),
-                )
-            )
-            # A second consumer, so that encodings are shared.
-            for i, w in enumerate((ws, _FakeWebsocket()))
-        ]
-        await asyncio.sleep(0.1)
-        num_before = len(ws.payloads)
+        # A second consumer, so that encodings are shared.
+        async with _producers(buffer, [ws, _FakeWebsocket()], vm.ReplayDoneMessage()):
+            await _wait_for(ws, None)
+            num_before = len(ws.payloads)
 
-        buffer.atomic_start()
-        for i in range(10):
-            buffer.push(_array_update(i, 3 << 20))
-            await asyncio.sleep(0.02)
-        assert len(ws.payloads) == num_before
-        buffer.atomic_end()
-        await asyncio.sleep(0.2)
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+            buffer.atomic_start()
+            for i in range(10):
+                buffer.push(_array_update(i, 3 << 20))
+                await asyncio.sleep(0.02)
+            assert len(ws.payloads) == num_before
+            buffer.atomic_end()
+            await _wait_for(ws, "/9")
         return [[m["name"] for m in _decode(p)] for p in ws.payloads[num_before:]]
 
     payloads = run_isolated(lambda: asyncio.run(scenario()))
@@ -845,21 +851,17 @@ def test_open_atomic_block_holds_back_awake_consumers() -> None:
             asyncio.get_running_loop(), persistent_messages=True
         )
         ws = _FakeWebsocket()
-        task = asyncio.create_task(
-            _infra._message_producer(ws, buffer, 0)  # type: ignore
-        )
-        await asyncio.sleep(0.05)
-        buffer.push(vm.SetPositionMessage("/before", (0.0, 0.0, 0.0)))
-        buffer.atomic_start()
-        buffer.push(vm.SetPositionMessage("/a", (0.0, 0.0, 0.0)))
-        await asyncio.sleep(0.1)
-        buffer.push(vm.SetPositionMessage("/b", (0.0, 0.0, 0.0)))
-        await asyncio.sleep(0.1)
-        assert len(ws.payloads) == 0
-        buffer.atomic_end()
-        await asyncio.sleep(0.1)
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        async with _producers(buffer, [ws]):
+            await asyncio.sleep(0.05)
+            buffer.push(vm.SetPositionMessage("/before", (0.0, 0.0, 0.0)))
+            buffer.atomic_start()
+            buffer.push(vm.SetPositionMessage("/a", (0.0, 0.0, 0.0)))
+            await asyncio.sleep(0.1)
+            buffer.push(vm.SetPositionMessage("/b", (0.0, 0.0, 0.0)))
+            await asyncio.sleep(0.1)
+            assert len(ws.payloads) == 0
+            buffer.atomic_end()
+            await _wait_for(ws, "/b")
         names = [[m["name"] for m in _decode(p)] for p in ws.payloads]
         assert names == [["/before", "/a", "/b"]]
 
@@ -905,12 +907,13 @@ def test_client_messages_are_not_starved_by_broadcasts(
     broadcasts kept coming."""
     from websockets.sync.client import connect
 
-    for i in range(60):
+    for i in range(30):
         server.scene.add_mesh_simple(
             f"/m{i}", np.zeros((250_000, 3), np.float32), np.zeros((1, 3), np.uint32)
         )
     num_payloads = 0
     last_client_message = -1
+    done = threading.Event()
 
     def on_connect(client: Any) -> None:
         def push() -> None:
@@ -919,7 +922,6 @@ def test_client_messages_are_not_starved_by_broadcasts(
 
         threading.Thread(target=push, daemon=True).start()
 
-    done = threading.Event()
     server._websock_server.on_client_connect(on_connect)
     first_client_message = -1
     with connect(

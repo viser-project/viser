@@ -27,6 +27,7 @@ def test_edit_after_server_update_offscreen(
         box.scroll_into_view_if_needed()
         box.focus()
         last.evaluate("e => e.scrollIntoView()")
+        # Long enough for anything that depends on visibility to settle.
         viser_page.wait_for_timeout(900)
         handle.value = value  # type: ignore
         viser_page.wait_for_timeout(200)

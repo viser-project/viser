@@ -28,7 +28,12 @@ import numpy as np
 import psutil
 from bench_server import compare
 from playwright.sync_api import CDPSession, Page, sync_playwright
-from run_bench import _chromium_executable, print_top, summarize_cpuprofile
+from run_bench import (
+    _chromium_executable,
+    get_perf_metrics,
+    print_top,
+    summarize_cpuprofile,
+)
 
 import viser
 
@@ -174,8 +179,7 @@ class Meter:
         self.profile_dir = profile_dir
 
     def task_s(self) -> float:
-        metrics = self.cdp.send("Performance.getMetrics")["metrics"]
-        return {m["name"]: m["value"] for m in metrics}["TaskDuration"]
+        return get_perf_metrics(self.cdp)["TaskDuration"]
 
     def settle(self) -> None:
         """Wait until the main thread is (nearly) idle."""

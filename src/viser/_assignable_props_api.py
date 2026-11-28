@@ -15,7 +15,9 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import get_args, get_origin, get_type_hints
+from typing_extensions import get_args, get_origin
+
+from .infra._messages import get_type_hints_cached
 
 # Type variable for props.
 
@@ -38,8 +40,9 @@ def state_lock(impl: Any) -> threading.RLock:
     dropped as redundant, so clients never catch up.
 
     Locks are shared between handles, to avoid costing memory for each. So code
-    that holds one should never acquire another, or call user code."""
-    return _STATE_LOCKS[id(impl) >> 4 & 63]
+    that holds one should never acquire another state lock, or call user code."""
+    # The lowest bits of ids are always zero, because of alignment.
+    return _STATE_LOCKS[(id(impl) >> 4) % len(_STATE_LOCKS)]
 
 
 def colors_to_uint8(colors: np.ndarray) -> npt.NDArray[np.uint8]:
@@ -108,25 +111,11 @@ def arrays_equal(a: np.ndarray, b: np.ndarray) -> bool:
 
 
 @functools.lru_cache(maxsize=None)
-def _get_prop_hints(props_cls: type) -> Dict[str, Any]:
-    """Property type hints. Resolving these is expensive, so it's done once per
-    props class rather than once per handle."""
-    return get_type_hints(props_cls)
-
-
-_property_setters: Dict[type, Dict[str, Any]] = {}
-
-
 def _get_property_setter(cls: type, name: str) -> Any:
     """Setter for the `@property` with a given name, or `None` if there isn't
     one."""
-    setters = _property_setters.setdefault(cls, {})
-    try:
-        return setters[name]
-    except KeyError:
-        prop = getattr(cls, name, None)
-        setters[name] = prop.fset if isinstance(prop, property) else None
-        return setters[name]
+    prop = getattr(cls, name, None)
+    return prop.fset if isinstance(prop, property) else None
 
 
 _NDARRAY_DTYPES: Dict[Any, Any] = {
@@ -163,15 +152,16 @@ class AssignablePropsBase(Generic[TImpl]):
 
     def _cast_value_recursive(self, hint: Any, value: Any, prop_name: str) -> Any:
         """Recursively cast values to match type hints, handling arrays and tuples."""
-        # Handle numpy arrays. This may or may not alias the input.
+        # Optional[NDArray[...]], or a union of array types.
         if value is not None and get_origin(hint) is Union:
-            # Optional[NDArray[...]].
             non_none = [a for a in get_args(hint) if a is not type(None)]
             if len(non_none) == 1:
                 hint = non_none[0]
             elif all(a in _NDARRAY_DTYPES for a in non_none):
                 # The dtype will be matched to the current value's.
                 return np.asarray(value)
+
+        # Handle numpy arrays. This may or may not alias the input.
         dtype = _NDARRAY_DTYPES.get(hint)
         if dtype is not None:
             if dtype is np.uint8 and "color" in prop_name:
@@ -190,18 +180,18 @@ class AssignablePropsBase(Generic[TImpl]):
             and hint.__args__[1] is ...
         ):
             element_type = hint.__args__[0]
-            items = tuple(
+            items = (
                 self._cast_value_recursive(element_type, item, prop_name)
                 for item in value
             )
-            # Copies shouldn't alias the caller's arrays.
+            # Stored arrays shouldn't alias the caller's.
             return tuple(v.copy() if isinstance(v, np.ndarray) else v for v in items)
 
         return value
 
     @property
     def _prop_hints(self) -> Dict[str, Any]:
-        return _get_prop_hints(type(self._impl.props))
+        return get_type_hints_cached(type(self._impl.props))
 
     @abc.abstractmethod
     def _queue_update(self, name: str, value: Any) -> None:
@@ -215,9 +205,7 @@ class AssignablePropsBase(Generic[TImpl]):
 
 def forget_readable_copy(handle: Any, name: str) -> None:
     """Free the copy that was handed out for a property, see `props_getattr()`."""
-    copies = handle.__dict__.get("_readable_copies")
-    if copies is not None:
-        copies.pop(name, None)
+    handle.__dict__.get("_readable_copies", {}).pop(name, None)
 
 
 def props_setattr(self, name: str, value: Any) -> None:
@@ -277,7 +265,6 @@ def props_setattr(self, name: str, value: Any) -> None:
                 if (
                     isinstance(raw_value, np.ndarray)
                     and value is not raw_value
-                    and value.base is None
                     and value.flags.c_contiguous
                     and value.flags.owndata
                 ):
@@ -285,14 +272,10 @@ def props_setattr(self, name: str, value: Any) -> None:
                     value.flags.writeable = False
                 else:
                     value = array_snapshot(value)
-                setattr(self._impl.props, name, value)
                 forget_readable_copy(self, name)
-                queued: Any = value
-            else:
-                # Non-array properties (immutable / already a fresh cast).
-                setattr(self._impl.props, name, value)
-                queued = value
-            self._queue_update(name, queued)
+            # Non-array values are immutable, or were copied by the cast.
+            setattr(self._impl.props, name, value)
+            self._queue_update(name, value)
     else:
         return object.__setattr__(self, name, value)
 
@@ -313,9 +296,7 @@ def props_getattr(self, name: str) -> Any:
             # gets a private copy, which stays the same until the next
             # assignment. It's kept separate from the snapshot: reads must never
             # replace what a concurrent assignment stores.
-            copies = self.__dict__.get("_readable_copies")
-            if copies is None:
-                copies = self.__dict__.setdefault("_readable_copies", {})
+            copies = self.__dict__.setdefault("_readable_copies", {})
             entry = copies.get(name)
             if entry is None or entry[0] is not value:
                 entry = (value, value.copy())

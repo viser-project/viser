@@ -119,14 +119,7 @@ def _deserialize_converters(cls: Type[Any]) -> Dict[str, Callable[[Any], Any]]:
 def _flat_byte_view(array: np.ndarray) -> memoryview:
     """View an array's contents as flat, C-ordered bytes. Copies only if the
     array isn't C-contiguous."""
-    if array.size == 0:
-        # memoryview.cast() rejects shapes containing zeros.
-        return memoryview(b"")
-    if not array.flags.c_contiguous:
-        array = array.copy()
-    # datetime64 and friends don't support the buffer protocol directly; all the
-    # dtypes we put on the wire do.
-    return array.data.cast("B")
+    return np.ascontiguousarray(array).reshape(-1).view(np.uint8).data
 
 
 _PASSTHROUGH_TYPES = frozenset({str, int, float, bool, bytes, type(None)})
@@ -189,12 +182,8 @@ _SCALAR_CONVERTERS: Dict[Any, Any] = {
 def _make_converter(annotation: Any) -> Converter:
     """Resolve an annotation to a serialization function once, so that the
     annotation doesn't need to be inspected for every message."""
-    if annotation is float:
-        return _serialize_float
-    if annotation is int:
-        return _serialize_int
-    if annotation is bool:
-        return _serialize_bool
+    if annotation in _SCALAR_CONVERTERS:
+        return _SCALAR_CONVERTERS[annotation]
 
     if dataclasses.is_dataclass(annotation):
 
@@ -214,7 +203,7 @@ def _make_converter(annotation: Any) -> Converter:
 
     args = get_args(annotation)
     if get_origin(annotation) is tuple and all(
-        a in (float, int, bool) for a in args if a is not Ellipsis
+        a in _SCALAR_CONVERTERS for a in args if a is not Ellipsis
     ):
         converters = [_SCALAR_CONVERTERS[a] for a in args if a is not Ellipsis]
         variadic = len(args) == 2 and args[1] is Ellipsis
@@ -233,17 +222,14 @@ def _make_converter(annotation: Any) -> Converter:
 
         return serialize_scalar_tuple
 
-    if annotation is Any or annotation is str or get_origin(annotation) is not tuple:
+    if get_origin(annotation) is not tuple:
         # Scalar coercion only happens for float/int/bool annotations, so
         # anything else depends only on the runtime value.
         return _serialize_dynamic
 
-    def serialize_generic(
-        value: Any, binary_buffers: Optional[List[memoryview]]
-    ) -> Any:
-        return _prepare_for_serialization(value, annotation, binary_buffers)
-
-    return serialize_generic
+    return lambda value, binary_buffers: _prepare_for_serialization(
+        value, annotation, binary_buffers
+    )
 
 
 @functools.lru_cache(maxsize=None)
@@ -469,7 +455,7 @@ class Message(abc.ABC):
         mapping = msgspec.msgpack.decode(message)
 
         # List-to-tuple conversion is handled per-field in
-        # _prepare_for_deserialization (called from _from_serializable_dict),
+        # by _deserialize_converters() (called from _from_serializable_dict),
         # which uses type annotations to convert only where needed. This avoids
         # a blanket recursive traversal of the entire message tree.
         message_type = cls._subclass_from_type_string()[cast(str, mapping.pop("type"))]

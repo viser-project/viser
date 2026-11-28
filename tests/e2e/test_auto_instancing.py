@@ -12,7 +12,7 @@ from playwright.sync_api import Page
 
 import viser
 
-from .utils import get_client_handle, wait_for_scene_node
+from .utils import canvas_center, get_client_handle, wait_for_scene_node
 
 Q = (0.9238795, 0.3826834, 0.0, 0.0)
 
@@ -169,10 +169,8 @@ def test_batched_matches_individual(
         out.append(_render(client))
         root.visible = True
         # Added below a parent with a non-identity pose.
-        extra = [
+        for i in range(0, NUM_NODES, 7):
             add(viser_server, f"{prefix}/extra_{i}", i, 0 if batched else 1)
-            for i in range(0, NUM_NODES, 7)
-        ]
         out.append(_render(client))
 
         # Too few for batching.
@@ -181,7 +179,6 @@ def test_batched_matches_individual(
                 handle.remove()
         out.append(_render(client))
         assert viser_page.evaluate(JS_NUM_BATCHES) == 0
-        del extra
         root.remove()
         out.append(_render(client))
         return out
@@ -286,9 +283,9 @@ def test_unsuitable_nodes_are_not_batched(
         )
 
     for suitable in (False, True):
-        for i in range(64):
+        for i in range(ACTIVATE_AT):
             add(i, suitable)
-        wait_for_scene_node(viser_page, f"/{suitable}/63")
+        wait_for_scene_node(viser_page, f"/{suitable}/{ACTIVATE_AT - 1}")
         _render(client)
         assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == suitable
 
@@ -371,9 +368,7 @@ def test_batched_nodes_are_clickable(
     assert viser_page.evaluate(JS_NUM_BATCHES) == 1
 
     canvas = viser_page.locator("canvas").first
-    bbox = canvas.bounding_box()
-    assert bbox is not None
-    center = (bbox["x"] + bbox["width"] / 2, bbox["y"] + bbox["height"] / 2)
+    center = canvas_center(viser_page)
     _click_until(viser_page, center, event)
     assert set(clicked) == {"/center"}
 
@@ -417,9 +412,7 @@ def test_children_of_batched_nodes_bubble_clicks(
     viser_page.wait_for_timeout(500)
     assert viser_page.evaluate(JS_NUM_BATCHES) == 1
 
-    bbox = viser_page.locator("canvas").first.bounding_box()
-    assert bbox is not None
-    center = (bbox["x"] + bbox["width"] / 2, bbox["y"] + bbox["height"] / 2)
+    center = canvas_center(viser_page)
     _click_until(viser_page, center, event)
 
 
@@ -521,13 +514,7 @@ def test_point_clouds_bubble_clicks(
         position=(-30.0, 0.0, 0.0),
     )
     wait_for_scene_node(viser_page, "/parent/points")
-    bbox = viser_page.locator("canvas").first.bounding_box()
-    assert bbox is not None
-    _click_until(
-        viser_page,
-        (bbox["x"] + bbox["width"] / 2, bbox["y"] + bbox["height"] / 2),
-        event,
-    )
+    _click_until(viser_page, canvas_center(viser_page), event)
 
 
 def test_batched_axes_outline_follows_instance(
@@ -546,10 +533,7 @@ def test_batched_axes_outline_follows_instance(
     )
     axes.on_click(lambda _: None)
     wait_for_scene_node(viser_page, "/axes")
-    bbox = viser_page.locator("canvas").first.bounding_box()
-    assert bbox is not None
-    x = bbox["x"] + bbox["width"] / 2
-    y = bbox["y"] + bbox["height"] / 2
+    x, y = canvas_center(viser_page)
     for i in range(20):
         viser_page.mouse.move(x + i % 2, y)
         viser_page.wait_for_timeout(200)
