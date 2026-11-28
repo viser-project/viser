@@ -4,6 +4,7 @@ import { GlbMessage } from "../WebsocketMessages";
 import { useGlbLoader } from "./GlbLoaderUtils";
 import { useFrame, useThree } from "@react-three/fiber";
 import { HoverableContext } from "../HoverContext";
+import { useDepthlessSurface } from "../scene/useDepthlessSurface";
 import { ViewerContext } from "../ViewerContext";
 import { OutlinesMaterial } from "../OutlinesMaterial";
 import { normalizeScale } from "../utils/normalizeScale";
@@ -84,6 +85,7 @@ export const SingleGlbAsset = React.forwardRef<
     typeof message.props.receive_shadow === "number"
       ? message.props.receive_shadow
       : 0.0;
+  useDepthlessSurface(shadowOpacity > 0);
 
   if (!gltf) return null;
 

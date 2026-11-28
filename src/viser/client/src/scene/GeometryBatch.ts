@@ -32,6 +32,8 @@ type Member = { shard: Shard; geometryId: number; instanceId: number };
 class Shard {
   readonly mesh: THREE.BatchedMesh;
   numMembers = 0;
+  /** Id of the source for each instance. */
+  readonly sourceIds: number[] = [];
   /** Space taken up by geometries that haven't been deleted. */
   private liveVertices = 0;
   private liveIndices = 0;
@@ -62,8 +64,15 @@ class Shard {
     // bounds for the batch.
     mesh.frustumCulled = false;
     mesh.boundingSphere = new THREE.Sphere();
-    // Front to back, like individual meshes. This reduces overdraw.
+    // Front to back, which reduces overdraw. Meshes in the same place are drawn in
+    // the order that they were created.
     mesh.sortObjects = true;
+    mesh.setCustomSort((list) => {
+      const { sourceIds } = this;
+      (list as unknown as { z: number; index: number }[]).sort(
+        (a, b) => a.z - b.z || sourceIds[a.index] - sourceIds[b.index],
+      );
+    });
     mesh.raycast = () => undefined;
     this.mesh = mesh;
   }
@@ -98,10 +107,11 @@ class Shard {
     return true;
   }
 
-  add(geometry: THREE.BufferGeometry): Member {
+  add(geometry: THREE.BufferGeometry, sourceId: number): Member {
     this.reserve(geometry.attributes.position.count, geometry.index!.count);
     const geometryId = this.mesh.addGeometry(geometry);
     const instanceId = this.mesh.addInstance(geometryId);
+    this.sourceIds[instanceId] = sourceId;
     const range = this.mesh.getGeometryRangeAt(geometryId)!;
     this.endVertices = range.vertexStart + range.reservedVertexCount;
     this.endIndices = range.indexStart + range.reservedIndexCount;
@@ -165,7 +175,7 @@ export class GeometryBatch implements InstanceBatch {
     geometry.setIndex(new THREE.BufferAttribute(faces, 1));
     geometry.boundingSphere = computeBoundingSphere(vertices);
 
-    const member = shard.add(geometry);
+    const member = shard.add(geometry, source.id);
     this.members.set(source, member);
     this.writeColor(source, member);
     this.updateTransform(source);

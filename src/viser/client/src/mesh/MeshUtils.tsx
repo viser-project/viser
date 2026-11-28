@@ -1,3 +1,4 @@
+import { useDepthlessSurface } from "../scene/useDepthlessSurface";
 import React from "react";
 import * as THREE from "three";
 import {
@@ -98,6 +99,7 @@ export function ShadowMesh({
   position?: THREE.Vector3 | [number, number, number];
   rotation?: THREE.Euler;
 }) {
+  useDepthlessSurface(opacity > 0);
   if (opacity <= 0) return null;
   return (
     <mesh
@@ -127,6 +129,7 @@ export function ShadowSkinnedMesh({
   skeleton: THREE.Skeleton;
   scale?: [number, number, number] | number;
 }) {
+  useDepthlessSurface(opacity > 0);
   if (opacity <= 0) return null;
   return (
     <skinnedMesh

@@ -260,8 +260,42 @@ def test_invalid_faces_are_not_batched(
     assert viser_page.evaluate(JS_NUM_BATCHES) == 0
 
 
-def test_lines_are_not_batched_with_filled_frustums(
-    viser_server: viser.ViserServer, viser_page: Page
+@pytest.mark.parametrize("kind", ["vertices", "faces", "subdivisions", "scale"])
+def test_unsuitable_nodes_are_not_batched(
+    viser_server: viser.ViserServer, viser_page: Page, kind: str
+) -> None:
+    """Batching dense nodes would cost memory and prevent culling. Shaders would
+    underflow for tiny scales."""
+    client = get_client_handle(viser_server)
+
+    def add(i: int, suitable: bool) -> None:
+        name = f"/{suitable}/{i}"
+        if kind == "subdivisions":
+            viser_server.scene.add_icosphere(name, subdivisions=3 if suitable else 9)
+            return
+        num_vertices, num_faces, scale = 1024, 2048, 1.0
+        if not suitable:
+            num_vertices += kind == "vertices"
+            num_faces += kind == "faces"
+            scale = 1e-13 if kind == "scale" else 1.0
+        viser_server.scene.add_mesh_simple(
+            name,
+            0.01 * np.random.default_rng(i).uniform(size=(num_vertices, 3)),
+            np.tile([[0, 1, 2]], (num_faces, 1)),
+            scale=scale,
+        )
+
+    for suitable in (False, True):
+        for i in range(64):
+            add(i, suitable)
+        wait_for_scene_node(viser_page, f"/{suitable}/63")
+        _render(client)
+        assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == suitable
+
+
+@pytest.mark.parametrize("kind", ["filled", "shadow"])
+def test_lines_are_not_batched_with_depthless_surfaces(
+    viser_server: viser.ViserServer, viser_page: Page, kind: str
 ) -> None:
     """Antialiased edges need to be sorted relative to transparent surfaces."""
     client = get_client_handle(viser_server)
@@ -278,13 +312,17 @@ def test_lines_are_not_batched_with_filled_frustums(
     wait_for_scene_node(viser_page, f"/frustums/{NUM_NODES - 1}")
     _render(client)
     assert viser_page.evaluate(JS_NUM_BATCHES) > 0
-    filled = viser_server.scene.add_camera_frustum(
-        "/filled", fov=1.0, aspect=1.0, variant="filled"
-    )
-    wait_for_scene_node(viser_page, "/filled")
+    surface: viser.SceneNodeHandle
+    if kind == "filled":
+        surface = viser_server.scene.add_camera_frustum(
+            "/surface", fov=1.0, aspect=1.0, variant="filled"
+        )
+    else:
+        surface = viser_server.scene.add_box("/surface", receive_shadow=0.5)
+    wait_for_scene_node(viser_page, "/surface")
     _render(client)
     assert viser_page.evaluate(JS_NUM_BATCHES) == 0
-    filled.remove()
+    surface.remove()
     _render(client)
     assert viser_page.evaluate(JS_NUM_BATCHES) > 0
 

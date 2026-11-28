@@ -153,15 +153,18 @@ export function createKeyedStore<V>(
   );
   // Per-key listeners.
   const keyListeners = new Map<string, Set<Listener>>();
-  // Per-key version counters (bumped on every change to that key).
+  // Versions of existing keys, which are replaced on every change. They're unique
+  // across keys and time, so versions of deleted keys don't need to be kept.
   const keyVersions = new Map<string, number>();
+  let nextVersion = 1;
 
   function getVersion(key: string): number {
     return keyVersions.get(key) ?? 0;
   }
 
   function bumpVersion(key: string): void {
-    keyVersions.set(key, getVersion(key) + 1);
+    if (map.has(key)) keyVersions.set(key, nextVersion++);
+    else keyVersions.delete(key);
   }
 
   const allListeners = new Set<(key: string) => void>();

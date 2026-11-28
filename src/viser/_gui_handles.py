@@ -28,7 +28,7 @@ from typing import (
 import numpy as np
 from typing_extensions import Protocol, Self, TypeAlias, override
 
-from ._assignable_props_api import AssignablePropsBase
+from ._assignable_props_api import AssignablePropsBase, state_lock
 from ._icons import svg_from_icon
 from ._icons_enum import IconName
 from ._messages import (
@@ -264,23 +264,24 @@ class _GuiInputHandle(
         # Convert to internal type early so we can compare.
         value = type(self._impl.value)(value)  # type: ignore
 
-        # Skip if value hasn't changed (but always process buttons).
-        if not self._impl.is_button:
-            try:
-                if self._impl.value == value:
-                    return
-            except (TypeError, ValueError):
-                pass
+        with state_lock(self._impl):
+            # Skip if value hasn't changed (but always process buttons).
+            if not self._impl.is_button:
+                try:
+                    if self._impl.value == value:
+                        return
+                except (TypeError, ValueError):
+                    pass
 
-        # Send to client, except for buttons.
-        if not self._impl.is_button:
-            self._impl.gui_api._websock_interface.queue_message(
-                GuiUpdateMessage(self._impl.uuid, {"value": value})
-            )
+            # Send to client, except for buttons.
+            if not self._impl.is_button:
+                self._impl.gui_api._websock_interface.queue_message(
+                    GuiUpdateMessage(self._impl.uuid, {"value": value})
+                )
 
-        # Set internal state.
-        self._impl.value = value  # type: ignore
-        self._impl.update_timestamp = time.time()
+            # Set internal state.
+            self._impl.value = value  # type: ignore
+            self._impl.update_timestamp = time.time()
 
         # Call update callbacks.
         for cb in self._impl.update_cb:
@@ -740,14 +741,9 @@ class GuiDropdownHandle(
         options = tuple(options)
         if len(options) == 0:
             raise ValueError("Dropdown requires at least one option.")
-        self._impl.props.options = options
-
-        self._impl.gui_api._websock_interface.queue_message(
-            GuiUpdateMessage(
-                self._impl.uuid,
-                {"options": options},
-            )
-        )
+        with state_lock(self._impl):
+            self._impl.props.options = options
+            self._queue_update("options", options)
         if self.value not in options:
             self.value = options[0]
 

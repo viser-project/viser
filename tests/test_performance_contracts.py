@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import struct
+import sys
 import threading
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -991,3 +992,89 @@ def test_encoding_cache_is_released() -> None:
         assert buffer._encoding_cache is None
 
     run_isolated(lambda: asyncio.run(scenario()))
+
+
+# --- Concurrent assignments -------------------------------------------------
+
+
+def _last_sent(buffer: AsyncMessageBuffer, kind: str) -> Any:
+    out = None
+    for m in list(buffer.message_from_id.values()):
+        if kind == "position" and isinstance(m, vm.SetPositionMessage):
+            out = m.position[0]
+        elif kind == "visible" and isinstance(m, vm.SetSceneNodeVisibilityMessage):
+            out = m.visible
+        elif kind == "color" and isinstance(m, vm.SceneNodeUpdateMessage):
+            out = m.updates["color"]
+        elif kind == "value" and isinstance(m, vm.GuiUpdateMessage):
+            out = m.updates["value"]
+    return out
+
+
+@pytest.mark.parametrize("kind", ["position", "visible", "color", "value"])
+def test_concurrent_assignments_match_what_is_sent(
+    server: viser.ViserServer, kind: str
+) -> None:
+    """The stored state used to be able to differ from the last update. After that,
+    assigning the stored value was dropped as redundant."""
+    buffer = server._websock_server._broadcast_buffer
+    if kind == "value":
+        handle: Any = server.gui.add_number("x", 0)
+    else:
+        handle = server.scene.add_box("/box")
+
+    def to_value(i: int) -> Any:
+        if kind == "position":
+            return (float(i), 0.0, 0.0)
+        if kind == "visible":
+            return bool(i % 2)
+        if kind == "color":
+            return (i % 256, i // 256 % 256, 0)
+        return i
+
+    def work(offset: int) -> None:
+        barrier.wait()
+        for i in range(30):
+            setattr(handle, kind, to_value(offset + i))
+
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-5)
+    try:
+        for _ in range(60):
+            barrier = threading.Barrier(4)
+            threads = [
+                threading.Thread(target=work, args=(i * 37 + 1,)) for i in range(4)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            stored = getattr(handle, kind)
+            if kind == "position":
+                stored = stored[0]
+            assert stored == _last_sent(buffer, kind)
+    finally:
+        sys.setswitchinterval(interval)
+
+
+def test_assignments_in_callbacks_do_not_deadlock(server: viser.ViserServer) -> None:
+    """Locks are shared between handles, so callbacks can't run while one's held."""
+    handles = [server.gui.add_number(str(i), 0) for i in range(200)]
+    for i, handle in enumerate(handles):
+        other = handles[-1 - i]
+
+        @handle.on_update
+        def _(_, other=other) -> None:
+            if other.value < 5:
+                other.value += 1
+
+    def work(i: int) -> None:
+        for j in range(len(handles)):
+            handles[(j * 7 + i) % len(handles)].value = 1 + i
+
+    threads = [threading.Thread(target=work, args=(i,), daemon=True) for i in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20.0)
+        assert not thread.is_alive()

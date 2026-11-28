@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import functools
+import threading
 from typing import (
     Any,
     Dict,
@@ -25,6 +26,20 @@ class HasProps(Protocol):
 
 
 TImpl = TypeVar("TImpl", bound=HasProps)
+
+
+_STATE_LOCKS = tuple(threading.RLock() for _ in range(64))
+
+
+def state_lock(impl: Any) -> threading.RLock:
+    """Lock for storing a handle's state and queueing the matching update. If
+    these interleave between threads, the last update that clients see can
+    differ from what's stored. Later assignments of the stored value are then
+    dropped as redundant, so clients never catch up.
+
+    Locks are shared between handles, to avoid costing memory for each. So code
+    that holds one should never acquire another, or call user code."""
+    return _STATE_LOCKS[id(impl) >> 4 & 63]
 
 
 def colors_to_uint8(colors: np.ndarray) -> npt.NDArray[np.uint8]:
@@ -232,54 +247,55 @@ def props_setattr(self, name: str, value: Any) -> None:
         # Handle type casting (arrays, tuples of arrays, etc.).
         raw_value = value
         value = self._cast_value_recursive(self._prop_hints[name], value, name)
-        current_value = getattr(self._impl.props, name)
+        with state_lock(self._impl):
+            current_value = getattr(self._impl.props, name)
 
-        # Skip update if value hasn't changed.
-        try:
-            hash(current_value)
-            if current_value == value:
-                return
-        except (TypeError, ValueError):
-            pass
-
-        # Update the value based on type.
-        if isinstance(value, np.ndarray):
-            if hasattr(current_value, "dtype"):
-                # Ensure consistent dtype.
-                if value.dtype != current_value.dtype:
-                    value = value.astype(current_value.dtype)
-                # Stored snapshots are immutable. So even if the caller is
-                # assigning an array that we handed out, which may have been
-                # modified in-place (`handle.points += 1.0`), this compares
-                # against what was last sent.
-                if arrays_equal(current_value, value):
+            # Skip update if value hasn't changed.
+            try:
+                hash(current_value)
+                if current_value == value:
                     return
+            except (TypeError, ValueError):
+                pass
 
-            # Store and queue one immutable snapshot. It must not alias the
-            # caller's array, which the caller may mutate after assignment
-            # (e.g. an animation loop reusing one buffer).
-            if (
-                isinstance(raw_value, np.ndarray)
-                and value is not raw_value
-                and value.base is None
-                and value.flags.c_contiguous
-                and value.flags.owndata
-            ):
-                # Casting already produced a fresh array.
-                value.flags.writeable = False
+            # Update the value based on type.
+            if isinstance(value, np.ndarray):
+                if hasattr(current_value, "dtype"):
+                    # Ensure consistent dtype.
+                    if value.dtype != current_value.dtype:
+                        value = value.astype(current_value.dtype)
+                    # Stored snapshots are immutable. So even if the caller is
+                    # assigning an array that we handed out, which may have been
+                    # modified in-place (`handle.points += 1.0`), this compares
+                    # against what was last sent.
+                    if arrays_equal(current_value, value):
+                        return
+
+                # Store and queue one immutable snapshot. It must not alias the
+                # caller's array, which the caller may mutate after assignment
+                # (e.g. an animation loop reusing one buffer).
+                if (
+                    isinstance(raw_value, np.ndarray)
+                    and value is not raw_value
+                    and value.base is None
+                    and value.flags.c_contiguous
+                    and value.flags.owndata
+                ):
+                    # Casting already produced a fresh array.
+                    value.flags.writeable = False
+                else:
+                    value = array_snapshot(value)
+                setattr(self._impl.props, name, value)
+                forget_readable_copy(self, name)
+                queued: Any = value
             else:
-                value = array_snapshot(value)
-            setattr(self._impl.props, name, value)
-            forget_readable_copy(self, name)
-            queued: Any = value
-        else:
-            # Non-array properties (immutable / already a fresh cast).
-            setattr(self._impl.props, name, value)
-            queued = value
+                # Non-array properties (immutable / already a fresh cast).
+                setattr(self._impl.props, name, value)
+                queued = value
+            self._queue_update(name, queued)
     else:
         return object.__setattr__(self, name, value)
 
-    self._queue_update(name, queued)
     self._on_prop_assigned(name)
 
 

@@ -33,6 +33,7 @@ from ._assignable_props_api import (
     cast_vector,
     colors_to_uint8,
     forget_readable_copy,
+    state_lock,
 )
 from .infra._infra import (
     WebsockClientConnection,
@@ -389,12 +390,13 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         # wxyz is assumed to be a unit quaternion (the client applies it to the
         # object's rotation without normalizing).
         impl = self._impl
-        value = _cast_pose_vector_if_changed(impl.wxyz, wxyz, 4)
-        if value is not None:
-            impl.wxyz = value
-            impl.api._queue_scene_message(
-                _messages.SetOrientationMessage(impl.name, value)
-            )
+        with state_lock(impl):
+            value = _cast_pose_vector_if_changed(impl.wxyz, wxyz, 4)
+            if value is not None:
+                impl.wxyz = value
+                impl.api._queue_scene_message(
+                    _messages.SetOrientationMessage(impl.name, value)
+                )
 
     @property
     def position(self) -> npt.NDArray[np.float64]:
@@ -406,12 +408,13 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
     @position.setter
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
         impl = self._impl
-        value = _cast_pose_vector_if_changed(impl.position, position, 3)
-        if value is not None:
-            impl.position = value
-            impl.api._queue_scene_message(
-                _messages.SetPositionMessage(impl.name, value)
-            )
+        with state_lock(impl):
+            value = _cast_pose_vector_if_changed(impl.position, position, 3)
+            if value is not None:
+                impl.position = value
+                impl.api._queue_scene_message(
+                    _messages.SetPositionMessage(impl.name, value)
+                )
 
     @property
     def visible(self) -> bool:
@@ -420,12 +423,14 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
 
     @visible.setter
     def visible(self, visible: bool) -> None:
-        if visible == self._impl.visible:
-            return
-        self._impl.api._queue_scene_message(
-            _messages.SetSceneNodeVisibilityMessage(self._impl.name, visible)
-        )
-        self._impl.visible = visible
+        impl = self._impl
+        with state_lock(impl):
+            if visible == impl.visible:
+                return
+            impl.api._queue_scene_message(
+                _messages.SetSceneNodeVisibilityMessage(impl.name, visible)
+            )
+            impl.visible = visible
 
     def remove(self) -> None:
         """Remove the node from the scene."""
@@ -1162,11 +1167,12 @@ class PointCloudHandle(
         dtype = {"float16": np.float16, "float32": np.float32}[
             self._impl.props.precision
         ]
-        points = self._impl.props.points
-        if points.dtype != dtype:
-            new_points = array_snapshot(points.astype(dtype))
-            self._impl.props.points = new_points
-            self._queue_update("points", new_points)
+        with state_lock(self._impl):
+            points = self._impl.props.points
+            if points.dtype != dtype:
+                new_points = array_snapshot(points.astype(dtype))
+                self._impl.props.points = new_points
+                self._queue_update("points", new_points)
 
 
 class BatchedAxesHandle(
@@ -1268,9 +1274,10 @@ class GaussianSplatHandle(
         """Store and send a buffer from `_make_update_buffer()`. Takes
         ownership of the buffer."""
         buffer.flags.writeable = False
-        self._impl.props.buffer = buffer
-        forget_readable_copy(self, "buffer")
-        self._queue_update("buffer", buffer)
+        with state_lock(self._impl):
+            self._impl.props.buffer = buffer
+            forget_readable_copy(self, "buffer")
+            self._queue_update("buffer", buffer)
 
     @staticmethod
     def _pack_centers(buffer: np.ndarray, centers: np.ndarray) -> None:
@@ -1465,12 +1472,15 @@ class MeshSkinnedBoneHandle:
         # wxyz is assumed to be a unit quaternion (see SceneNodeHandle.wxyz).
         self._ensure_mesh_not_removed()
         impl = self._impl
-        value = _cast_pose_vector_if_changed(impl.wxyz, wxyz, 4)
-        if value is not None:
-            impl.wxyz = value
-            impl.mesh_impl.api._queue_scene_message(
-                _messages.SetBoneOrientationMessage(impl.name, impl.bone_index, value)
-            )
+        with state_lock(impl):
+            value = _cast_pose_vector_if_changed(impl.wxyz, wxyz, 4)
+            if value is not None:
+                impl.wxyz = value
+                impl.mesh_impl.api._queue_scene_message(
+                    _messages.SetBoneOrientationMessage(
+                        impl.name, impl.bone_index, value
+                    )
+                )
 
     @property
     def position(self) -> npt.NDArray[np.float64]:
@@ -1483,12 +1493,13 @@ class MeshSkinnedBoneHandle:
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
         self._ensure_mesh_not_removed()
         impl = self._impl
-        value = _cast_pose_vector_if_changed(impl.position, position, 3)
-        if value is not None:
-            impl.position = value
-            impl.mesh_impl.api._queue_scene_message(
-                _messages.SetBonePositionMessage(impl.name, impl.bone_index, value)
-            )
+        with state_lock(impl):
+            value = _cast_pose_vector_if_changed(impl.position, position, 3)
+            if value is not None:
+                impl.position = value
+                impl.mesh_impl.api._queue_scene_message(
+                    _messages.SetBonePositionMessage(impl.name, impl.bone_index, value)
+                )
 
 
 class GridHandle(

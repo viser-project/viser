@@ -314,17 +314,67 @@ describe("SpatialBatch", () => {
     const batch = new SpatialBatch(makeMeshBatch);
     // Large objects that are far apart, in millimeters for example.
     for (let i = 0; i < 100; i++)
-      batch.add(
-        makeSource(i * 1000, { ...meshAppearance, radius: 500 } as any),
-      );
+      batch.add(makeSource(i * 1000, { ...meshAppearance, radius: 500 }));
     expect(batch.object.children.length).toBe(1);
     // Small objects that are far apart.
     const small = new SpatialBatch(makeMeshBatch);
     for (let i = 0; i < 10; i++)
-      small.add(
-        makeSource(i * 1000, { ...meshAppearance, radius: 0.01 } as any),
-      );
+      small.add(makeSource(i * 10_000, { ...meshAppearance, radius: 0.01 }));
     expect(small.object.children.length).toBe(10);
+  });
+
+  it("accounts for scales of parents", () => {
+    const batch = new SpatialBatch(makeMeshBatch);
+    const parent = new THREE.Group();
+    parent.scale.setScalar(0.001);
+    parent.position.x = 900.3337;
+    const sources = Array.from({ length: 100 }, (_, i) =>
+      makeSource(i * 0.37, meshAppearance),
+    );
+    sources.forEach((source) => {
+      parent.add(source);
+      batch.add(source);
+    });
+    parent.updateMatrixWorld(true);
+    expect(maxError(batch, sources)).toBeLessThan(1e-3 * 0.001);
+
+    // Cells are coarser for larger objects, and the other way around.
+    parent.scale.setScalar(1);
+    parent.position.x = 4e6;
+    parent.updateMatrixWorld(true);
+    expect(maxError(batch, sources)).toBeLessThan(1e-3);
+    expect(batch.object.children.length).toBe(1);
+  });
+
+  it("doesn't split up small objects that are sparse", () => {
+    const batch = new SpatialBatch(makeMeshBatch);
+    for (let i = 0; i < 1000; i++) {
+      const source = makeSource(5 * (i % 10), {
+        ...meshAppearance,
+        radius: 0.005,
+      });
+      source.position.y = 5 * (Math.floor(i / 10) % 10);
+      source.position.z = 5 * Math.floor(i / 100);
+      source.updateMatrix();
+      source.updateMatrixWorld();
+      batch.add(source);
+    }
+    expect(batch.object.children.length).toBeLessThanOrEqual(8);
+  });
+
+  it("preserves draw order when sources leave a cell and return", () => {
+    const batch = new SpatialBatch(makeMeshBatch);
+    const sources = Array.from({ length: 5 }, () =>
+      makeSource(0, meshAppearance),
+    );
+    sources.forEach((source) => batch.add(source));
+    for (const x of [1e7, 0]) {
+      sources[1].position.x = x;
+      sources[1].updateMatrix();
+      sources[1].updateMatrixWorld();
+      batch.flush();
+    }
+    expect(sources.map((source) => source.batchIndex)).toEqual([0, 1, 2, 3, 4]);
   });
 
   it("moves sources when they're resized", () => {
@@ -408,6 +458,39 @@ describe("GeometryBatch", () => {
       if (source.displayed) expect(matrix.elements[12]).toBe(source.position.x);
     });
   }
+
+  it("draws front to back, and then in order of creation", () => {
+    const batch = new GeometryBatch(
+      new THREE.MeshBasicMaterial(),
+      false,
+      false,
+    );
+    const sources = [0, 0, 0, 0].map((x) => makeSource(x, makeAppearance(3)));
+    sources.forEach((source) => batch.add(source));
+    // Instance ids are reused, so they don't determine the order.
+    batch.remove(sources[0]);
+    batch.remove(sources[2]);
+    batch.add(sources[2]);
+    batch.add(sources[0]);
+    sources[1].position.z = 1; // Closer to the camera.
+    sources[1].updateMatrix();
+    sources[1].updateMatrixWorld();
+
+    // @ts-ignore Private.
+    const members = batch.members;
+    const mesh = batch.object.children[0] as THREE.BatchedMesh;
+    const list = sources.map((source) => ({
+      z: 10 - source.position.z,
+      index: members.get(source)!.instanceId,
+    }));
+    list.reverse();
+    // @ts-ignore Only for tests.
+    mesh.customSort(list);
+    expect(list.map(({ index }) => index)).toEqual(
+      [1, 0, 2, 3].map((i) => members.get(sources[i])!.instanceId),
+    );
+    expect(mesh.sortObjects).toBe(true);
+  });
 
   it("survives churn", () => {
     const batch = new GeometryBatch(

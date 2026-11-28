@@ -96,13 +96,16 @@ export function markRange(
   attribute.needsUpdate = true;
 }
 
-/** Draws displayed sources from a dense array, in the order that they were added.
+/** Draws displayed sources from a dense array, in the order that they were created.
  * The order matters for objects that are in the same place. */
 export abstract class DenseBatch implements InstanceBatch {
   abstract readonly object: THREE.Object3D;
   private readonly members = new Set<InstanceSource>();
   /** Set when sources need to be assigned to different positions in the array. */
   private needsRebuild = false;
+  /** Set when members aren't in order of creation. */
+  private needsSort = false;
+  private lastId = -1;
   private capacity = 0;
 
   /** (Re)allocate buffers. All contents are written afterwards. */
@@ -118,6 +121,8 @@ export abstract class DenseBatch implements InstanceBatch {
     source.batch = this;
     source.batchIndex = -1;
     this.members.add(source);
+    if (source.id < this.lastId) this.needsSort = true;
+    else this.lastId = source.id;
     if (source.displayed) this.needsRebuild = true;
   }
 
@@ -145,6 +150,12 @@ export abstract class DenseBatch implements InstanceBatch {
   flush(): void {
     if (!this.needsRebuild) return;
     this.needsRebuild = false;
+    if (this.needsSort) {
+      this.needsSort = false;
+      const sorted = [...this.members].sort((a, b) => a.id - b.id);
+      this.members.clear();
+      sorted.forEach((source) => this.members.add(source));
+    }
 
     let count = 0;
     this.members.forEach((source) => {
@@ -180,14 +191,45 @@ export function matrixRelativeTo(
   return out;
 }
 
-/** Size of a source's cell. Errors from storing a position in single precision are
- * proportional to its distance from the origin of the cell. So cells are sized
- * relative to the objects in them. */
-function cellSize(source: InstanceSource): number {
-  const radius = source.appearance?.radius ?? 0;
-  if (!(radius > 0 && radius < Infinity)) return 1024;
-  // Coarse, so objects with slightly different sizes share a cell.
-  return 2048 * 8 ** Math.round(Math.log2(radius) / 3);
+/** Errors from storing a position in single precision are proportional to its
+ * distance from the origin of the cell. So cells are sized relative to the objects
+ * in them: errors are at most around 0.1% of the size of an object. Cells also need
+ * to be as large as possible, because each of them is a separate draw. */
+const CELL_SIZE_IN_RADII = 8192;
+
+/** Ideal size for a source's cell. */
+function idealCellSize(source: InstanceSource): number {
+  // Parents can have scales, too.
+  const e = source.matrixWorld.elements;
+  const scaleSq = Math.max(
+    e[0] * e[0] + e[1] * e[1] + e[2] * e[2],
+    e[4] * e[4] + e[5] * e[5] + e[6] * e[6],
+    e[8] * e[8] + e[9] * e[9] + e[10] * e[10],
+  );
+  const radius = (source.appearance?.radius ?? 0) * Math.sqrt(scaleSq);
+  // Zero, infinite, or NaN.
+  if (!(radius > 1e-30 && radius < 1e30)) return 1024;
+  return radius * CELL_SIZE_IN_RADII;
+}
+
+/** Rounded coarsely, so objects with slightly different sizes share a cell. */
+function roundCellSize(size: number): number {
+  return 8 ** Math.round(Math.log2(size) / 3);
+}
+
+/** Whether a source still belongs in a cell. Includes hysteresis. */
+function fitsInCell(source: InstanceSource, cell: Cell): boolean {
+  const e = source.matrixWorld.elements;
+  const { center } = cell;
+  const limit = 0.75 * cell.size;
+  if (
+    Math.abs(e[12] - center.x) > limit ||
+    Math.abs(e[13] - center.y) > limit ||
+    Math.abs(e[14] - center.z) > limit
+  )
+    return false;
+  const ratio = idealCellSize(source) / cell.size;
+  return ratio > 0.2 && ratio < 5.0;
 }
 
 type Cell = {
@@ -209,7 +251,7 @@ export class SpatialBatch implements InstanceBatch {
   constructor(private readonly makeBatch: () => InstanceBatch) {}
 
   private getCell(source: InstanceSource): Cell {
-    const size = cellSize(source);
+    const size = roundCellSize(idealCellSize(source));
     const e = source.matrixWorld.elements;
     const index = [12, 13, 14].map((i) => {
       const value = Math.round(e[i] / size);
@@ -258,30 +300,19 @@ export class SpatialBatch implements InstanceBatch {
 
   updateTransform(source: InstanceSource): void {
     const cell = this.cellFromSource.get(source)!;
-    const e = source.matrixWorld.elements;
-    const { center } = cell;
-    // Hysteresis: cells extend to 0.5 in each direction.
-    const limit = 0.75 * cell.size;
-    if (
-      Math.abs(e[12] - center.x) > limit ||
-      Math.abs(e[13] - center.y) > limit ||
-      Math.abs(e[14] - center.z) > limit
-    ) {
-      this.remove(source);
-      this.add(source);
-    } else {
-      cell.batch.updateTransform(source);
-    }
+    if (fitsInCell(source, cell)) cell.batch.updateTransform(source);
+    else this.move(source);
   }
 
   updateAppearance(source: InstanceSource): void {
     const cell = this.cellFromSource.get(source)!;
-    if (cellSize(source) !== cell.size) {
-      this.remove(source);
-      this.add(source);
-    } else {
-      cell.batch.updateAppearance(source);
-    }
+    if (fitsInCell(source, cell)) cell.batch.updateAppearance(source);
+    else this.move(source);
+  }
+
+  private move(source: InstanceSource): void {
+    this.remove(source);
+    this.add(source);
   }
 
   flush(): void {

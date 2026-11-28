@@ -5,6 +5,7 @@ import { InstanceSource } from "./scene/AutoInstancer";
 import { ViewerContext } from "./ViewerContext";
 import { LineBatch } from "./scene/LineBatch";
 import { useDrawable, useMarkTransformsDirty } from "./scene/SceneNodeContext";
+import { useDepthlessSurface } from "./scene/useDepthlessSurface";
 import { useInstanceSource } from "./scene/useInstanceSource";
 import * as THREE from "three";
 import { CameraFrustumMessage } from "./WebsocketMessages";
@@ -142,9 +143,7 @@ export const CameraFrustumComponent = React.forwardRef<
   );
   const { autoInstancer } = React.useContext(ViewerContext)!;
   const filled = message.props.variant === "filled";
-  React.useLayoutEffect(() => {
-    if (filled) return autoInstancer.addDepthlessSurface();
-  }, [autoInstancer, filled]);
+  useDepthlessSurface(filled);
   const hasDepthlessSurfaces = React.useSyncExternalStore(
     autoInstancer.subscribeDepthless,
     autoInstancer.hasDepthlessSurfaces,
