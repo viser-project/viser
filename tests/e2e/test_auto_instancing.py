@@ -223,6 +223,8 @@ def test_visibility_does_not_change_draw_order(
 ) -> None:
     """The order that coincident objects are drawn in determines which is visible."""
     client = get_client_handle(viser_server)
+    # Adaptive resolution would affect renders.
+    viser_page.evaluate("window.__viserTestpoints.devSettings.set({ fixedDpr: 1 })")
     handles = [
         viser_server.scene.add_box(
             f"/boxes/{i}",
