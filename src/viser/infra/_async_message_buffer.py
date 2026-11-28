@@ -5,6 +5,7 @@ import collections
 import contextlib
 import dataclasses
 import threading
+import time
 from asyncio.events import AbstractEventLoop
 from typing import (
     Any,
@@ -31,6 +32,15 @@ class MessageWindow(List[Message]):
         super().__init__()
         self.ids: List[int] = []
         """Buffer ids of the messages, excluding the end-of-replay marker."""
+
+    def split(self, index: int) -> Tuple[MessageWindow, MessageWindow]:
+        """Split into windows that are before and after an index."""
+        before, after = MessageWindow(), MessageWindow()
+        before.extend(self[:index])
+        before.ids = self.ids[:index]
+        after.extend(self[index:])
+        after.ids = self.ids[index:]
+        return before, after
 
 
 @dataclasses.dataclass
@@ -71,6 +81,7 @@ class AsyncMessageBuffer:
     window_duration_sec: float = 1.0 / 60.0
     done: bool = False
     atomic_counter: int = 0
+    _atomic_start_time: float = 0.0
     _wake_scheduled: bool = False
     """True while a ``_wake`` callback is queued on the event loop. Pushes
     coalesce onto it, since each ``call_soon_threadsafe`` costs a self-pipe write."""
@@ -322,6 +333,8 @@ class AsyncMessageBuffer:
         # and `+=`/`-=` are non-atomic read-modify-writes. A lost update would
         # leave the counter stuck != 0 and stall message delivery permanently.
         with self.buffer_lock:
+            if self.atomic_counter == 0:
+                self._atomic_start_time = time.monotonic()
             self.atomic_counter += 1
 
     def atomic_end(self) -> None:
@@ -330,6 +343,14 @@ class AsyncMessageBuffer:
             self.atomic_counter -= 1
             if self.atomic_counter == 0:
                 self._schedule_wake_locked()
+
+    def atomic_duration(self) -> float:
+        """Seconds since the current atomic block started, or 0.0 if we're not in
+        one."""
+        with self.buffer_lock:
+            if self.atomic_counter == 0:
+                return 0.0
+            return time.monotonic() - self._atomic_start_time
 
     def flush(self) -> None:
         """Flush the message buffer; signals to yield a message window immediately."""
@@ -475,18 +496,28 @@ class AsyncMessageBuffer:
                     assert backlog_done_message is not None
                     window.append(backlog_done_message)
 
+                # An atomic block is keeping us from sending messages.
+                blocked = len(window) == 0 and (
+                    last_sent_id < most_recent_message_id or backlog_done_pending
+                )
+
                 if len(window) > 0:
                     # Yield a window!
                     yield window
                 else:
-                    # Wait for a new message to come in.
+                    # Wait for a new message to come in, or for an atomic block to
+                    # end.
                     await self.message_event.wait()
                     self.message_event.clear()
 
                 # Add a delay if either (a) we failed to yield or (b) there's
-                # currently no messages to send.
+                # currently no messages to send. But if an atomic block just
+                # ended, then messages should be sent right away: a delay could
+                # make us run into the next one, again and again.
                 most_recent_message_id = self.message_counter - 1
-                if len(window) == 0 or most_recent_message_id == last_sent_id:
+                if not blocked and (
+                    len(window) == 0 or most_recent_message_id == last_sent_id
+                ):
                     done, pending = await asyncio.wait(
                         [flush_wait], timeout=self.window_duration_sec
                     )

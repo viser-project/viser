@@ -2387,6 +2387,9 @@ class GetRenderRequestMessage(Message, include_in_scene_serialization=False):
     """Message from server->client requesting a render from a specified camera
     pose."""
 
+    # Renders should contain the entire scene.
+    after_replay: ClassVar[bool] = True
+
     format: Literal["image/jpeg", "image/png"]
     height: int
     width: int

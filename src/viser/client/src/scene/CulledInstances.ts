@@ -155,6 +155,11 @@ export class CulledInstances extends THREE.Mesh {
 
   /** Should be called before each render. */
   beginRender(): void {
+    // Lights may have been removed. Nothing is used when we're hidden.
+    if (this.numViewsUsed > 0)
+      this.views
+        .splice(this.numViewsUsed)
+        .forEach(({ mesh }) => mesh.dispose());
     this.numViewsUsed = 0;
     this.children = [];
   }

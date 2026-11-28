@@ -403,10 +403,16 @@ describe("culling", () => {
     batch.flush(camera);
     const meshes = [0, 1, 2].map(() => drawnMeshes(batch.object)[0]);
     expect(new Set(meshes).size).toBe(3);
-    batch.flush(camera);
-    expect(drawnMeshes(batch.object)).toEqual([meshes[0]]);
     const onDispose = vi.fn();
     meshes.forEach((mesh) => mesh.addEventListener("dispose", onDispose));
+    batch.flush(camera);
+    expect(drawnMeshes(batch.object)).toEqual([meshes[0]]);
+    expect(onDispose).toHaveBeenCalledTimes(0);
+    batch.flush(camera);
+    expect(onDispose).toHaveBeenCalledTimes(2);
+    batch.flush(camera); // Hidden.
+    batch.flush(camera);
+    expect(onDispose).toHaveBeenCalledTimes(2);
     batch.dispose();
     expect(onDispose).toHaveBeenCalledTimes(3);
   });
