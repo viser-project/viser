@@ -244,21 +244,17 @@ export class SpatialBatch implements InstanceBatch {
 
     // Otherwise, use a cell in a grid.
     const e = source.matrixWorld.elements;
-    let size = 8 ** Math.floor(Math.log2(worldRadius(source) * 16384) / 3);
+    let size = 8 ** Math.floor(Math.log2(worldRadius(source) * 8192) / 3);
     if (!(size > 0 && size < Infinity)) size = 1024;
-    const index = [12, 13, 14].map((i) => {
-      const value = Math.round(e[i] / size);
-      return Number.isFinite(value) ? value : 0;
-    });
-    const key = `${size}|${index.join("|")}`;
+    const key = [size, e[12], e[13], e[14]]
+      .map((value, i) => (i === 0 ? value : Math.round(value / size)))
+      .join("|");
     let cell = this.cells.get(key);
     if (cell === undefined) {
       const batch = this.makeBatch();
-      const center = new THREE.Vector3(
-        index[0] * size,
-        index[1] * size,
-        index[2] * size,
-      );
+      // Centered on the first source, because others are usually close to it.
+      const center = new THREE.Vector3(e[12], e[13], e[14]);
+      if (!Number.isFinite(center.x + center.y + center.z)) center.set(0, 0, 0);
       batch.setViewportSize?.(...this.viewportSize);
       batch.object.position.copy(center);
       this.object.add(batch.object);
