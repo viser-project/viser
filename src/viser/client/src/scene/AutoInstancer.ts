@@ -181,50 +181,43 @@ export function matrixRelativeTo(
   return out;
 }
 
-/** Errors from storing a position in single precision are proportional to its
- * distance from the origin of the cell. So cells are sized relative to the objects
- * in them: errors are at most around 0.1% of the size of an object. Cells also need
- * to be as large as possible, because each of them is a separate draw. */
-const CELL_SIZE_IN_RADII = 8192;
+/** Furthest that a source can be from the center of its cell, relative to its
+ * radius. Errors from storing a position in single precision are proportional to
+ * the distance: this keeps them below 0.1% of the size of an object. Otherwise,
+ * it should be as large as possible, because each cell is a separate draw. */
+const MAX_CELL_DISTANCE = 12288;
+/** Hysteresis: don't move back and forth between cells. */
+const MAX_CELL_DISTANCE_BEFORE_MOVING = 1.25 * MAX_CELL_DISTANCE;
 
-/** Ideal size for a source's cell. */
-function idealCellSize(source: InstanceSource): number {
-  // Parents can have scales, too.
+/** Size of a source, including scales of parents. */
+function worldRadius(source: InstanceSource): number {
   const e = source.matrixWorld.elements;
   const scaleSq = Math.max(
     e[0] * e[0] + e[1] * e[1] + e[2] * e[2],
     e[4] * e[4] + e[5] * e[5] + e[6] * e[6],
     e[8] * e[8] + e[9] * e[9] + e[10] * e[10],
   );
-  const radius = (source.appearance?.radius ?? 0) * Math.sqrt(scaleSq);
-  // Zero, infinite, or NaN.
-  if (!(radius > 1e-30 && radius < 1e30)) return 1024;
-  return radius * CELL_SIZE_IN_RADII;
+  return (source.appearance?.radius ?? 0) * Math.sqrt(scaleSq);
 }
 
-/** Rounded coarsely, so objects with slightly different sizes share a cell. */
-function roundCellSize(size: number): number {
-  return 8 ** Math.round(Math.log2(size) / 3);
-}
-
-/** Whether a source still belongs in a cell. Includes hysteresis. */
-function fitsInCell(source: InstanceSource, cell: Cell): boolean {
+function fitsInCell(
+  source: InstanceSource,
+  cell: Cell,
+  maxDistance: number,
+): boolean {
   const e = source.matrixWorld.elements;
   const { center } = cell;
-  const limit = 0.75 * cell.size;
-  if (
-    Math.abs(e[12] - center.x) > limit ||
-    Math.abs(e[13] - center.y) > limit ||
-    Math.abs(e[14] - center.z) > limit
-  )
-    return false;
-  const ratio = idealCellSize(source) / cell.size;
-  return ratio > 0.2 && ratio < 5.0;
+  const distance = Math.max(
+    Math.abs(e[12] - center.x),
+    Math.abs(e[13] - center.y),
+    Math.abs(e[14] - center.z),
+  );
+  // Comparisons are false if there are NaNs, which aren't worth moving for.
+  return !(distance > worldRadius(source) * maxDistance);
 }
 
 type Cell = {
   key: string;
-  size: number;
   center: THREE.Vector3;
   batch: InstanceBatch;
   numMembers: number;
@@ -241,8 +234,18 @@ export class SpatialBatch implements InstanceBatch {
   constructor(private readonly makeBatch: () => InstanceBatch) {}
 
   private getCell(source: InstanceSource): Cell {
-    const size = roundCellSize(idealCellSize(source));
+    // Prefer existing cells: draw order is only preserved within them. They're
+    // ordered from oldest to newest, and there's usually only one.
+    let numChecked = 0;
+    for (const cell of this.cells.values()) {
+      if (fitsInCell(source, cell, MAX_CELL_DISTANCE)) return cell;
+      if (++numChecked === 4) break;
+    }
+
+    // Otherwise, use a cell in a grid.
     const e = source.matrixWorld.elements;
+    let size = 8 ** Math.floor(Math.log2(worldRadius(source) * 16384) / 3);
+    if (!(size > 0 && size < Infinity)) size = 1024;
     const index = [12, 13, 14].map((i) => {
       const value = Math.round(e[i] / size);
       return Number.isFinite(value) ? value : 0;
@@ -260,7 +263,7 @@ export class SpatialBatch implements InstanceBatch {
       batch.object.position.copy(center);
       this.object.add(batch.object);
       batch.object.updateMatrixWorld(true);
-      cell = { key, size, center, batch, numMembers: 0 };
+      cell = { key, center, batch, numMembers: 0 };
       this.cells.set(key, cell);
     }
     return cell;
@@ -290,13 +293,15 @@ export class SpatialBatch implements InstanceBatch {
 
   updateTransform(source: InstanceSource): void {
     const cell = this.cellFromSource.get(source)!;
-    if (fitsInCell(source, cell)) cell.batch.updateTransform(source);
+    if (fitsInCell(source, cell, MAX_CELL_DISTANCE_BEFORE_MOVING))
+      cell.batch.updateTransform(source);
     else this.move(source);
   }
 
   updateAppearance(source: InstanceSource): void {
     const cell = this.cellFromSource.get(source)!;
-    if (fitsInCell(source, cell)) cell.batch.updateAppearance(source);
+    if (fitsInCell(source, cell, MAX_CELL_DISTANCE_BEFORE_MOVING))
+      cell.batch.updateAppearance(source);
     else this.move(source);
   }
 
@@ -307,6 +312,11 @@ export class SpatialBatch implements InstanceBatch {
 
   flush(): void {
     this.cells.forEach((cell) => cell.batch.flush());
+  }
+
+  /** Whether sources are so spread out that batching isn't worth it. */
+  isSparse(): boolean {
+    return this.cells.size > 16 + this.cellFromSource.size / 8;
   }
 
   setViewportSize(width: number, height: number): void {
@@ -324,6 +334,10 @@ export class BatchEntry {
   private readonly members = new Set<InstanceSource>();
   private readonly listeners = new Set<() => void>();
   private batch: SpatialBatch | null = null;
+  /** False while members still need to start drawing themselves, see `flush()`. */
+  private active = false;
+  /** Set when members turned out to be too spread out. */
+  private sparse = false;
 
   constructor(
     private readonly instancer: AutoInstancer,
@@ -332,7 +346,7 @@ export class BatchEntry {
   ) {}
 
   /** Whether members are currently drawn by a batch. */
-  isActive = (): boolean => this.batch !== null;
+  isActive = (): boolean => this.active;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -347,14 +361,15 @@ export class BatchEntry {
 
   add(source: InstanceSource): void {
     this.members.add(source);
-    if (this.batch !== null) {
-      this.batch.add(source);
-    } else if (this.members.size >= ACTIVATE_AT) {
+    if (this.active) {
+      this.batch!.add(source);
+    } else if (!this.sparse && this.members.size >= ACTIVATE_AT) {
       const batch = new SpatialBatch(this.makeBatch);
       batch.setViewportSize(...this.instancer.viewportSize);
       this.batch = batch;
       this.members.forEach((member) => batch.add(member));
       this.instancer.group.add(batch.object);
+      this.active = true;
       this.notify();
     }
   }
@@ -362,15 +377,24 @@ export class BatchEntry {
   remove(source: InstanceSource): void {
     if (!this.members.delete(source)) return;
     this.batch?.remove(source);
-    if (this.batch !== null && this.members.size < DEACTIVATE_BELOW) {
-      const batch = this.batch;
-      this.batch = null;
-      this.members.forEach((member) => batch.remove(member));
-      this.instancer.group.remove(batch.object);
-      batch.dispose();
+    if (this.active && this.members.size < DEACTIVATE_BELOW) {
+      this.disposeBatch();
       this.notify();
     }
-    if (this.members.size === 0) this.instancer.deleteEntry(this.key);
+    if (this.members.size === 0) {
+      this.disposeBatch();
+      this.instancer.deleteEntry(this.key);
+    }
+  }
+
+  private disposeBatch(): void {
+    const { batch } = this;
+    this.active = false;
+    this.batch = null;
+    if (batch === null) return;
+    this.members.forEach((member) => batch.remove(member));
+    this.instancer.group.remove(batch.object);
+    batch.dispose();
   }
 
   setViewportSize(width: number, height: number): void {
@@ -378,7 +402,18 @@ export class BatchEntry {
   }
 
   flush(): void {
-    this.batch?.flush();
+    if (this.batch === null) return;
+    if (!this.active) {
+      // Members have had time to start drawing themselves.
+      this.disposeBatch();
+      return;
+    }
+    this.batch.flush();
+    if (this.batch.isSparse()) {
+      this.sparse = true;
+      this.active = false;
+      this.notify();
+    }
   }
 }
 
@@ -422,30 +457,29 @@ export class AutoInstancer {
   }
 
   // The antialiasing skirts of world-space lines can't be sorted relative to
-  // transparent objects once they're batched. That's a problem for surfaces that
-  // don't write depth, which need to cover lines that are behind them.
-  private numDepthlessSurfaces = 0;
-  private readonly depthlessListeners = new Set<() => void>();
+  // transparent surfaces once they're batched. Surfaces that write depth would
+  // hide skirts that are behind them, and ones that don't wouldn't cover them.
+  private numTransparentSurfaces = 0;
+  private readonly transparentListeners = new Set<() => void>();
 
-  /** Declare a transparent surface that doesn't write depth. Returns a cleanup
-   * function. */
-  addDepthlessSurface(): () => void {
-    this.numDepthlessSurfaces += 1;
-    if (this.numDepthlessSurfaces === 1)
-      this.depthlessListeners.forEach((listener) => listener());
+  /** Declare a transparent surface. Returns a cleanup function. */
+  addTransparentSurface(): () => void {
+    this.numTransparentSurfaces += 1;
+    if (this.numTransparentSurfaces === 1)
+      this.transparentListeners.forEach((listener) => listener());
     return () => {
-      this.numDepthlessSurfaces -= 1;
-      if (this.numDepthlessSurfaces === 0)
-        this.depthlessListeners.forEach((listener) => listener());
+      this.numTransparentSurfaces -= 1;
+      if (this.numTransparentSurfaces === 0)
+        this.transparentListeners.forEach((listener) => listener());
     };
   }
 
-  hasDepthlessSurfaces = (): boolean => this.numDepthlessSurfaces > 0;
+  hasTransparentSurfaces = (): boolean => this.numTransparentSurfaces > 0;
 
-  subscribeDepthless = (listener: () => void): (() => void) => {
-    this.depthlessListeners.add(listener);
+  subscribeTransparent = (listener: () => void): (() => void) => {
+    this.transparentListeners.add(listener);
     return () => {
-      this.depthlessListeners.delete(listener);
+      this.transparentListeners.delete(listener);
     };
   };
 }

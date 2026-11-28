@@ -28,7 +28,11 @@ from typing import (
 import numpy as np
 from typing_extensions import Protocol, Self, TypeAlias, override
 
-from ._assignable_props_api import AssignablePropsBase, state_lock
+from ._assignable_props_api import (
+    AssignablePropsBase,
+    ensure_not_removed,
+    state_lock,
+)
 from ._icons import svg_from_icon
 from ._icons_enum import IconName
 from ._messages import (
@@ -194,7 +198,8 @@ class _GuiHandle(Generic[T], AssignablePropsBase[_GuiHandleState]):
                 stacklevel=2,
             )
             return
-        self._impl.removed = True
+        with state_lock(self._impl):
+            self._impl.removed = True
 
         gui_api = self._impl.gui_api
         gui_api._websock_interface.queue_message(GuiRemoveMessage(self._impl.uuid))
@@ -265,6 +270,8 @@ class _GuiInputHandle(
         value = type(self._impl.value)(value)  # type: ignore
 
         with state_lock(self._impl):
+            ensure_not_removed(self, "value")
+
             # Skip if value hasn't changed (but always process buttons).
             if not self._impl.is_button:
                 try:

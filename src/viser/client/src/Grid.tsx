@@ -11,6 +11,7 @@
 
 import * as React from "react";
 import * as THREE from "three";
+import { useTransparentSurface } from "./scene/sceneNodeHooks";
 import { useFrame } from "@react-three/fiber";
 
 const vertexShader = /* glsl */ `
@@ -258,6 +259,9 @@ export const Grid = React.forwardRef<THREE.Mesh, GridProps>(function Grid(
     shadowOpacity,
     side,
   ]);
+
+  // Lines and shadows cover little enough to be ignored.
+  useTransparentSurface(planeOpacity > 0);
 
   useFrame((state) => {
     const mesh = ref.current;

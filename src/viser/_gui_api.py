@@ -39,7 +39,7 @@ from viser import theme
 from viser._backwards_compat_shims import deprecated_positional_shim
 
 from . import _messages, uplot
-from ._assignable_props_api import cast_vector
+from ._assignable_props_api import cast_vector, state_lock
 from ._gui_handles import (
     CONTROL_PANEL_ID,
     CommandEvent,
@@ -387,55 +387,57 @@ class GuiApi:
             return
         handle_state = handle._impl
 
-        has_changed = False
-        updates_cast = {}
-        for prop_name, prop_value in message.updates.items():
-            assert hasattr(handle_state, prop_name)
-            current_value = getattr(handle_state, prop_name)
+        # No awaits or user code while this is held.
+        with state_lock(handle_state):
+            has_changed = False
+            updates_cast = {}
+            for prop_name, prop_value in message.updates.items():
+                assert hasattr(handle_state, prop_name)
+                current_value = getattr(handle_state, prop_name)
 
-            # Do some type casting. This is brittle, but necessary (1) when we
-            # expect floats but the Javascript side gives us integers or (2)
-            # when we expect tuples but the Javascript side gives us lists.
-            if prop_name == "value":
-                if isinstance(handle_state.value, tuple):
-                    if len(handle_state.value) > 0:
-                        # We currently assume non-empty tuple types have length
-                        # greater than 0, and contents are all the same type.
-                        typ = type(handle_state.value[0])
-                        assert all([type(x) == typ for x in handle_state.value])
-                        prop_value = tuple([typ(new) for new in prop_value])
+                # Do some type casting. This is brittle, but necessary (1) when we
+                # expect floats but the Javascript side gives us integers or (2)
+                # when we expect tuples but the Javascript side gives us lists.
+                if prop_name == "value":
+                    if isinstance(handle_state.value, tuple):
+                        if len(handle_state.value) > 0:
+                            # We currently assume non-empty tuple types have length
+                            # greater than 0, and contents are all the same type.
+                            typ = type(handle_state.value[0])
+                            assert all([type(x) == typ for x in handle_state.value])
+                            prop_value = tuple([typ(new) for new in prop_value])
+                        else:
+                            # Empty tuple.
+                            prop_value = tuple(prop_value)
                     else:
-                        # Empty tuple.
-                        prop_value = tuple(prop_value)
-                else:
-                    prop_value = type(handle_state.value)(prop_value)
+                        prop_value = type(handle_state.value)(prop_value)
 
-            # Update handle property.
-            if current_value != prop_value:
-                has_changed = True
-                setattr(handle_state, prop_name, prop_value)
+                # Update handle property.
+                if current_value != prop_value:
+                    has_changed = True
+                    setattr(handle_state, prop_name, prop_value)
 
-            # Save value, which might have been cast.
-            updates_cast[prop_name] = prop_value
+                # Save value, which might have been cast.
+                updates_cast[prop_name] = prop_value
 
-        # Only call update when value has actually changed.
-        if not handle_state.is_button and not has_changed:
-            return
+            # Only call update when value has actually changed.
+            if not handle_state.is_button and not has_changed:
+                return
 
-        # GUI element has been updated!
-        handle_state.update_timestamp = time.time()
+            # GUI element has been updated!
+            handle_state.update_timestamp = time.time()
 
-        # Broadcast to the other clients BEFORE awaiting update callbacks, so
-        # the mutation above and its broadcast are adjacent on the event loop:
-        # with the broadcast after the awaits, (a) two near-simultaneous
-        # updates could interleave at a callback's await point and leave the
-        # buffer coalesced to a different value than the server state, and
-        # (b) a callback that writes back (e.g. clamps handle.value) had its
-        # own broadcast clobbered by the stale echo of the pre-clamp value --
-        # every OTHER client (and every late joiner) kept the un-clamped
-        # value while the server and the acting client held the clamped one.
-        if handle_state.sync_cb is not None:
-            handle_state.sync_cb(client_id, updates_cast)
+            # Broadcast to the other clients BEFORE awaiting update callbacks, so
+            # the mutation above and its broadcast are adjacent on the event loop:
+            # with the broadcast after the awaits, (a) two near-simultaneous
+            # updates could interleave at a callback's await point and leave the
+            # buffer coalesced to a different value than the server state, and
+            # (b) a callback that writes back (e.g. clamps handle.value) had its
+            # own broadcast clobbered by the stale echo of the pre-clamp value --
+            # every OTHER client (and every late joiner) kept the un-clamped
+            # value while the server and the acting client held the clamped one.
+            if handle_state.sync_cb is not None:
+                handle_state.sync_cb(client_id, updates_cast)
 
         client = self._resolve_client(client_id)
         if client is None:

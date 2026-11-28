@@ -17,7 +17,7 @@ export type GeometryAppearance = InstanceAppearance & {
 /** Vertices that are drawn together. Bounds the cost of growing buffers. */
 const MAX_SHARD_VERTICES = 1 << 20;
 const MAX_SHARD_MEMBERS = 1 << 14;
-const INITIAL_SHARD_VERTICES = 1 << 12;
+const INITIAL_SHARD_VERTICES = 1 << 10;
 const INITIAL_INSTANCES = 32;
 
 const tempMatrix = /* @__PURE__ */ new THREE.Matrix4();
@@ -61,13 +61,12 @@ class Shard {
     // bounds for the batch.
     mesh.frustumCulled = false;
     mesh.boundingSphere = new THREE.Sphere();
-    // Front to back, which reduces overdraw. Meshes in the same place are drawn in
-    // the order that they were created.
+    // Draw in order of creation, like individual meshes.
     mesh.sortObjects = true;
     mesh.setCustomSort((list) => {
       const { sourceIds } = this;
-      (list as unknown as { z: number; index: number }[]).sort(
-        (a, b) => a.z - b.z || sourceIds[a.index] - sourceIds[b.index],
+      (list as unknown as { index: number }[]).sort(
+        (a, b) => sourceIds[a.index] - sourceIds[b.index],
       );
     });
     mesh.raycast = () => undefined;

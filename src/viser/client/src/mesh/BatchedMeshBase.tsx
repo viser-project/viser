@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect } from "react";
 import * as THREE from "three";
+import { useTransparentSurface } from "../scene/sceneNodeHooks";
 import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
 import { createBackToFrontRadixSort } from "./backToFrontRadixSort";
 // Import the simplifier entry point directly: the package root re-exports the
@@ -144,6 +145,12 @@ export const BatchedMeshBase = React.forwardRef<
     draggable?: boolean;
   }
 >(function BatchedMeshBase(props, ref) {
+  const materials = Array.isArray(props.material)
+    ? props.material
+    : [props.material];
+  const transparent = materials.some((material) => material.transparent);
+  useTransparentSurface(transparent);
+
   // Store the mesh instance in state so effects can depend on it.
   const [mesh, setMesh] = React.useState<InstancedMesh2 | null>(null);
 
@@ -185,10 +192,7 @@ export const BatchedMeshBase = React.forwardRef<
     // so blending is only sorted within each group, not across groups; with
     // LODs, three.js's object-level sort decides order *between* LOD levels
     // arbitrarily, so only instances within a level are ordered.
-    const materialList = Array.isArray(props.material)
-      ? props.material
-      : [props.material];
-    if (materialList.some((material) => material.transparent)) {
+    if (transparent) {
       newMesh.sortObjects = true;
       newMesh.customSort = createBackToFrontRadixSort();
     }

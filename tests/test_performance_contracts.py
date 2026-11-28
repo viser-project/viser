@@ -1059,6 +1059,87 @@ def test_concurrent_assignments_match_what_is_sent(
         sys.setswitchinterval(interval)
 
 
+def test_concurrent_client_updates_match_what_is_sent(
+    server: viser.ViserServer,
+) -> None:
+    handle = server.gui.add_number("x", 0)
+    buffer = server._websock_server._broadcast_buffer
+    message = vm.GuiUpdateMessage(handle._impl.uuid, {"value": 0})
+
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-5)
+    try:
+        for i in range(1000):
+            message.updates = {"value": 2 * i + 1}
+            thread = threading.Thread(target=setattr, args=(handle, "value", 2 * i + 2))
+            thread.start()
+            asyncio.run_coroutine_threadsafe(
+                server.gui._handle_gui_updates(0, message),  # type: ignore
+                server.get_event_loop(),
+            ).result()
+            thread.join()
+            assert handle.value == _last_sent(buffer, "value")
+    finally:
+        sys.setswitchinterval(interval)
+
+
+def test_updates_are_not_queued_after_removal(server: viser.ViserServer) -> None:
+    def work() -> None:
+        barrier.wait()
+        with contextlib.suppress(RuntimeError):
+            for j in range(6):
+                handle.position = (j + 1.0, 0.0, 0.0)
+                handle.axes_length = j + 1.0
+
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        for i in range(300):
+            handle = server.scene.add_frame(f"/{i}")
+            barrier = threading.Barrier(2)
+            thread = threading.Thread(target=work)
+            thread.start()
+            barrier.wait()
+            handle.remove()
+            thread.join()
+            assert not any(
+                getattr(m, "name", None) == f"/{i}"
+                and isinstance(m, (vm.SetPositionMessage, vm.SceneNodeUpdateMessage))
+                for m in broadcast_messages(server)
+            )
+    finally:
+        sys.setswitchinterval(interval)
+
+
+def test_redundant_assignment_discards_inplace_edits(
+    server: viser.ViserServer,
+) -> None:
+    cloud = server.scene.add_point_cloud(
+        "/p", np.zeros((4, 3)), (1, 2, 3), precision="float32"
+    )
+    cloud.points[:] = 5
+    cloud.points = np.zeros((4, 3), np.float32)
+    assert not cloud.points.any()
+    assert not _updates(server, "/p", "points")
+
+
+def test_partial_splat_updates_include_inplace_edits(
+    server: viser.ViserServer,
+) -> None:
+    splats = server.scene.add_gaussian_splats(
+        "/splats",
+        centers=np.zeros((4, 3)),
+        covariances=np.tile(np.eye(3), (4, 1, 1)),
+        rgbs=np.zeros((4, 3)),
+        opacities=np.ones((4, 1)),
+    )
+    splats.centers[1] = 3.0
+    splats.opacities = np.full((4, 1), 0.5)
+    np.testing.assert_array_equal(splats.centers[1], 3.0)
+    buffer = _updates(server, "/splats", "buffer")[-1]
+    np.testing.assert_array_equal(buffer[1, :3].view(np.float32), 3.0)
+
+
 def test_assignments_in_callbacks_do_not_deadlock(server: viser.ViserServer) -> None:
     """Locks are shared between handles, so callbacks can't run while one's held."""
     handles = [server.gui.add_number(str(i), 0) for i in range(200)]

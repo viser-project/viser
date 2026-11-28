@@ -14,6 +14,7 @@ import { BatchedMeshHoverOutlines } from "./mesh/BatchedMeshHoverOutlines";
 import { MeshBasicMaterial } from "three";
 import { normalizeScale } from "./utils/normalizeScale";
 import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
+import { useTransparentSurface } from "./scene/sceneNodeHooks";
 import { ViewerContext } from "./ViewerContext";
 import { geometryRadius, MeshBatch } from "./scene/MeshBatch";
 import { InstanceSource, MIN_INSTANCE_SCALE } from "./scene/AutoInstancer";
@@ -658,6 +659,7 @@ export const ViserImage = React.forwardRef<
     message.props._format,
     message.props._data,
   );
+  useTransparentSurface(message.props._format === "png");
   return (
     <group ref={ref}>
       <group scale={normalizeScale(message.props.scale)}>

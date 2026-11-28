@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 import numpy as np
 import pytest
+import trimesh
 from playwright.sync_api import Page
 
 import viser
@@ -243,6 +244,47 @@ def test_visibility_does_not_change_draw_order(
         np.testing.assert_array_equal(_render(client), before)
 
 
+def test_coplanar_meshes_are_drawn_in_order(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """The order shouldn't depend on the camera."""
+    client = get_client_handle(viser_server)
+    viser_page.evaluate("window.__viserTestpoints.devSettings.set({ fixedDpr: 1 })")
+    rng = np.random.default_rng(0)
+    centers = rng.uniform(-2.0, 2.0, (NUM_NODES, 3)) * (1.0, 1.0, 0.0)
+
+    def render(batched: bool) -> np.ndarray:
+        prefix = f"/batched_{batched}"
+        root = viser_server.scene.add_frame(prefix, show_axes=False)
+        for i in range(NUM_NODES):
+            viser_server.scene.add_mesh_simple(
+                f"{prefix}/{i}",
+                centers[i] + [[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]],
+                np.array([[0, 1, 2], [0, 2, 3]]),
+                color=(i * 3, 255 - i * 3, 100),
+                material="unlit",
+                side="double",
+                cast_shadow=False,
+                receive_shadow=False,
+                flat_shading=not batched and i % 2 == 1,
+            )
+        wait_for_scene_node(viser_page, f"{prefix}/{NUM_NODES - 1}")
+        out = client.get_render(
+            height=200,
+            width=300,
+            wxyz=(0.0, 1.0, 0.0, 0.0),
+            position=(0.5, 0.3, 6.0),
+            fov=1.0,
+            transport_format="png",
+        ).astype(np.int32)
+        assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == batched
+        root.remove()
+        return out
+
+    a, b = render(True), render(False)
+    assert (np.abs(a - b).max(axis=-1) > 16).mean() < 0.002
+
+
 def test_invalid_faces_are_not_batched(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:
@@ -290,8 +332,10 @@ def test_unsuitable_nodes_are_not_batched(
         assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == suitable
 
 
-@pytest.mark.parametrize("kind", ["filled", "shadow"])
-def test_lines_are_not_batched_with_depthless_surfaces(
+@pytest.mark.parametrize(
+    "kind", ["filled", "shadow", "opacity", "image", "grid", "glb"]
+)
+def test_lines_are_not_batched_with_transparent_surfaces(
     viser_server: viser.ViserServer, viser_page: Page, kind: str
 ) -> None:
     """Antialiased edges need to be sorted relative to transparent surfaces."""
@@ -314,8 +358,20 @@ def test_lines_are_not_batched_with_depthless_surfaces(
         surface = viser_server.scene.add_camera_frustum(
             "/surface", fov=1.0, aspect=1.0, variant="filled"
         )
-    else:
+    elif kind == "shadow":
         surface = viser_server.scene.add_box("/surface", receive_shadow=0.5)
+    elif kind == "opacity":
+        surface = viser_server.scene.add_box("/surface", opacity=0.5)
+    elif kind == "image":
+        surface = viser_server.scene.add_image(
+            "/surface", np.zeros((4, 4, 4), np.uint8), 1.0, 1.0, format="png"
+        )
+    elif kind == "grid":
+        surface = viser_server.scene.add_grid("/surface", plane_opacity=0.5)
+    else:
+        mesh = trimesh.creation.box()
+        mesh.visual.vertex_colors = np.full((len(mesh.vertices), 4), 100, np.uint8)
+        surface = viser_server.scene.add_mesh_trimesh("/surface", mesh)
     wait_for_scene_node(viser_page, "/surface")
     _render(client)
     assert viser_page.evaluate(JS_NUM_BATCHES) == 0

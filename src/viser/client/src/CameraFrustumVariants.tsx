@@ -5,7 +5,7 @@ import { InstanceSource } from "./scene/AutoInstancer";
 import { ViewerContext } from "./ViewerContext";
 import { LineBatch } from "./scene/LineBatch";
 import {
-  useDepthlessSurface,
+  useTransparentSurface,
   useDrawable,
   useMarkTransformsDirty,
 } from "./scene/sceneNodeHooks";
@@ -146,15 +146,17 @@ export const CameraFrustumComponent = React.forwardRef<
   );
   const { autoInstancer } = React.useContext(ViewerContext)!;
   const filled = message.props.variant === "filled";
-  useDepthlessSurface(filled);
-  const hasDepthlessSurfaces = React.useSyncExternalStore(
-    autoInstancer.subscribeDepthless,
-    autoInstancer.hasDepthlessSurfaces,
+  useTransparentSurface(
+    filled || (imageTexture !== undefined && message.props._format === "png"),
+  );
+  const hasTransparentSurfaces = React.useSyncExternalStore(
+    autoInstancer.subscribeTransparent,
+    autoInstancer.hasTransparentSurfaces,
   );
   const [source] = React.useState(() => new InstanceSource());
   const mode = useInstanceSource(
     source,
-    isHovered || filled || (worldUnits && hasDepthlessSurfaces)
+    isHovered || filled || (worldUnits && hasTransparentSurfaces)
       ? null
       : {
           key: `lines|${frustumPoints.length}|${thickness}|${worldUnits}`,

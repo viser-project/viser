@@ -203,6 +203,15 @@ class AssignablePropsBase(Generic[TImpl]):
         an array's dtype in sync with another field). No-op by default."""
 
 
+def ensure_not_removed(handle: Any, name: str) -> None:
+    """Raise an error if a handle has been removed. Should be called with the
+    state lock, which is also held when handles are marked as removed."""
+    if handle._impl.removed:
+        raise RuntimeError(
+            f"Cannot assign to {name!r} on a removed {type(handle).__name__}."
+        )
+
+
 def forget_readable_copy(handle: Any, name: str) -> None:
     """Free the copy that was handed out for a property, see `props_getattr()`."""
     handle.__dict__.get("_readable_copies", {}).pop(name, None)
@@ -221,10 +230,8 @@ def props_setattr(self, name: str, value: Any) -> None:
     # entity) because the client blindly processes incoming updates. Guard
     # both the @property.setter path (e.g. `value` on GUI input handles) and
     # the _prop_hints path (generic props forwarded to _queue_update).
-    if (prop_setter is not None or is_prop_hint) and self._impl.removed:
-        raise RuntimeError(
-            f"Cannot assign to {name!r} on a removed {type(self).__name__}."
-        )
+    if prop_setter is not None or is_prop_hint:
+        ensure_not_removed(self, name)
 
     if prop_setter is not None:
         prop_setter(self, value)
@@ -236,6 +243,7 @@ def props_setattr(self, name: str, value: Any) -> None:
         raw_value = value
         value = self._cast_value_recursive(self._prop_hints[name], value, name)
         with state_lock(self._impl):
+            ensure_not_removed(self, name)
             current_value = getattr(self._impl.props, name)
 
             # Skip update if value hasn't changed.
@@ -257,6 +265,7 @@ def props_setattr(self, name: str, value: Any) -> None:
                     # modified in-place (`handle.points += 1.0`), this compares
                     # against what was last sent.
                     if arrays_equal(current_value, value):
+                        forget_readable_copy(self, name)
                         return
 
                 # Store and queue one immutable snapshot. It must not alias the

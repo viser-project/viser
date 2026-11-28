@@ -1,6 +1,6 @@
-import { useDepthlessSurface } from "../scene/sceneNodeHooks";
 import React from "react";
 import * as THREE from "three";
+import { useTransparentSurface } from "../scene/sceneNodeHooks";
 import {
   rgbToInt,
   assertUnreachable,
@@ -19,6 +19,7 @@ export type { StandardMaterialProps } from "./meshMaterialUtils";
 export function ViserStandardMeshMaterial(props: StandardMaterialProps) {
   const color = props.color === undefined ? 0xffffff : rgbToInt(props.color);
   const transparent = props.opacity !== null && props.opacity < 1.0;
+  useTransparentSurface(transparent);
   const opacity = props.opacity ?? 1.0;
   const side = sideMap[props.side];
 
@@ -95,7 +96,7 @@ export function ShadowMesh({
   geometry: THREE.BufferGeometry;
   scale?: [number, number, number] | number;
 }) {
-  useDepthlessSurface(opacity > 0);
+  useTransparentSurface(opacity > 0);
   if (opacity <= 0) return null;
   return (
     <mesh geometry={geometry} receiveShadow scale={scale}>
@@ -119,7 +120,7 @@ export function ShadowSkinnedMesh({
   skeleton: THREE.Skeleton;
   scale?: [number, number, number] | number;
 }) {
-  useDepthlessSurface(opacity > 0);
+  useTransparentSurface(opacity > 0);
   if (opacity <= 0) return null;
   return (
     <skinnedMesh

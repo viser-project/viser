@@ -32,6 +32,7 @@ from ._assignable_props_api import (
     array_snapshot,
     cast_vector,
     colors_to_uint8,
+    ensure_not_removed,
     forget_readable_copy,
     state_lock,
 )
@@ -301,7 +302,8 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
                 #    so a later old_handle.remove() would otherwise find the
                 #    REPLACEMENT in the registry and delete it (marking the new
                 #    handle removed) out from under the caller.
-                old_handle._impl.removed = True
+                with state_lock(old_handle._impl):
+                    old_handle._impl.removed = True
                 old_handle._on_remove()
                 # 2. The old node's per-axis updates must not replay onto the new
                 #    node: the new create replaces the old one in the persistent
@@ -392,6 +394,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
         # object's rotation without normalizing).
         impl = self._impl
         with state_lock(impl):
+            ensure_not_removed(self, "wxyz")
             value = _cast_pose_vector_if_changed(impl.wxyz, wxyz, 4)
             if value is not None:
                 impl.wxyz = value
@@ -411,6 +414,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
     def position(self, position: tuple[float, float, float] | np.ndarray) -> None:
         impl = self._impl
         with state_lock(impl):
+            ensure_not_removed(self, "position")
             value = _cast_pose_vector_if_changed(impl.position, position, 3)
             if value is not None:
                 impl.position = value
@@ -427,6 +431,7 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
     def visible(self, visible: bool) -> None:
         impl = self._impl
         with state_lock(impl):
+            ensure_not_removed(self, "visible")
             if visible == impl.visible:
                 return
             impl.api._queue_scene_message(
@@ -516,7 +521,8 @@ class SceneNodeHandle(AssignablePropsBase[_SceneNodeHandleState]):
             api._children_from_node_name.pop(node_name, None)
             if handle is None:
                 continue
-            handle._impl.removed = True
+            with state_lock(handle._impl):
+                handle._impl.removed = True
             handle._on_remove()
 
         # Remove from parent's children set.
@@ -1166,10 +1172,10 @@ class PointCloudHandle(
         # and `points` can be assigned in either order.
         if name != "precision":
             return
-        dtype = {"float16": np.float16, "float32": np.float32}[
-            self._impl.props.precision
-        ]
         with state_lock(self._impl):
+            dtype = {"float16": np.float16, "float32": np.float32}[
+                self._impl.props.precision
+            ]
             points = self._impl.props.points
             if points.dtype != dtype:
                 new_points = points.astype(dtype)
@@ -1235,7 +1241,7 @@ class BatchedGlbHandle(
     """Handle for batched GLB objects."""
 
 
-_splat_update_lock = threading.Lock()
+_splat_update_lock = threading.RLock()
 """Held while updating part of a splat buffer. Each update replaces the whole
 buffer, so concurrent ones would otherwise lose attributes."""
 
@@ -1259,7 +1265,8 @@ class GaussianSplatHandle(
         """Returns a private buffer to write updated attributes into: a copy of
         the current one, or default values (white, opaque, small covariances,
         centers at origin) if the number of Gaussians is changing."""
-        current = self._impl.props.buffer
+        # Includes in-place edits, for example to `handle.centers[i]`.
+        current = self.buffer
         if current.shape[0] == num_gaussians:
             return current.copy()
 

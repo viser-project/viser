@@ -81,6 +81,41 @@ describe("AutoInstancer", () => {
     expect(instancer.getEntry("key", makeMeshBatch)).not.toBe(entry);
   });
 
+  it("stops batching sources that are too spread out", () => {
+    const instancer = new AutoInstancer();
+    const entry = instancer.getEntry("key", makeMeshBatch);
+    const sources = Array.from({ length: 100 }, (_, i) =>
+      makeSource(i, meshAppearance),
+    );
+    sources.forEach((source) => entry.add(source));
+    instancer.flush();
+    expect(entry.isActive()).toBe(true);
+
+    sources.forEach((source, i) => {
+      source.position.x = i * 1e6;
+      source.updateMatrix();
+      source.updateMatrixWorld();
+    });
+    const listener = vi.fn();
+    entry.subscribe(listener);
+    instancer.flush();
+    // Drawn by the batch until members had time to draw themselves.
+    expect(entry.isActive()).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(instancer.group.children.length).toBe(1);
+    sources[0].setDisplayed(false);
+    entry.remove(sources[1]);
+    instancer.flush();
+    expect(instancer.group.children.length).toBe(0);
+    expect(sources[2].batch).toBe(null);
+
+    entry.add(sources[1]);
+    instancer.flush();
+    expect(entry.isActive()).toBe(false);
+    sources.forEach((source) => entry.remove(source));
+    expect(instancer.getEntry("key", makeMeshBatch)).not.toBe(entry);
+  });
+
   it("tells new batches about the viewport", () => {
     const instancer = new AutoInstancer();
     instancer.setViewportSize(3, 4);
@@ -365,6 +400,17 @@ describe("SpatialBatch", () => {
     expect(batch.object.children.length).toBeLessThanOrEqual(8);
   });
 
+  it("preserves draw order between sources of different sizes", () => {
+    const batch = new SpatialBatch(makeMeshBatch);
+    const sources = [100, 0.01, 10, 0.1, 1].map((radius) =>
+      makeSource(5, { ...meshAppearance, radius }),
+    );
+    sources.forEach((source) => batch.add(source));
+    batch.flush();
+    expect(batch.object.children.length).toBe(1);
+    expect(sources.map((source) => source.batchIndex)).toEqual([0, 1, 2, 3, 4]);
+  });
+
   it("preserves draw order when sources leave a cell and return", () => {
     const batch = new SpatialBatch(makeMeshBatch);
     const sources = Array.from({ length: 5 }, () =>
@@ -462,7 +508,7 @@ describe("GeometryBatch", () => {
     });
   }
 
-  it("draws front to back, and then in order of creation", () => {
+  it("draws in order of creation", () => {
     const batch = new GeometryBatch(
       new THREE.MeshBasicMaterial(),
       false,
@@ -475,22 +521,18 @@ describe("GeometryBatch", () => {
     batch.remove(sources[2]);
     batch.add(sources[2]);
     batch.add(sources[0]);
-    sources[1].position.z = 1; // Closer to the camera.
-    sources[1].updateMatrix();
-    sources[1].updateMatrixWorld();
-
     // @ts-ignore Private.
     const members = batch.members;
     const mesh = batch.object.children[0] as THREE.BatchedMesh;
-    const list = sources.map((source) => ({
-      z: 10 - source.position.z,
+    const list = sources.map((source, i) => ({
+      z: (i * 7) % 4,
       index: members.get(source)!.instanceId,
     }));
     list.reverse();
     // @ts-ignore Only for tests.
     mesh.customSort(list);
     expect(list.map(({ index }) => index)).toEqual(
-      [1, 0, 2, 3].map((i) => members.get(sources[i])!.instanceId),
+      sources.map((source) => members.get(source)!.instanceId),
     );
     expect(mesh.sortObjects).toBe(true);
   });
