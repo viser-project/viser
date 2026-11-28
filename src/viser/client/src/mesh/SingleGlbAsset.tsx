@@ -4,7 +4,7 @@ import { GlbMessage } from "../WebsocketMessages";
 import { useGlbLoader } from "./GlbLoaderUtils";
 import { useFrame, useThree } from "@react-three/fiber";
 import { HoverableContext } from "../HoverContext";
-import { useDepthlessSurface } from "../scene/useDepthlessSurface";
+import { useDepthlessSurface } from "../scene/sceneNodeHooks";
 import { ViewerContext } from "../ViewerContext";
 import { OutlinesMaterial } from "../OutlinesMaterial";
 import { normalizeScale } from "../utils/normalizeScale";

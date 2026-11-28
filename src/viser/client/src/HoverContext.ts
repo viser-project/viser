@@ -34,19 +34,14 @@ export const HoverableContext = React.createContext<{
   raycastable: boolean;
 } | null>(null);
 
-const subscribeToNothing = () => () => undefined;
+/** Used outside of scene nodes. */
+const neverHovered = new HoverState();
 
 /** Reactively read whether the enclosing scene node is hovered. */
 export function useIsHovered(): boolean {
-  const state = React.useContext(HoverableContext)?.state;
+  const state = React.useContext(HoverableContext)?.state ?? neverHovered;
   return React.useSyncExternalStore(
-    React.useMemo(
-      () =>
-        state === undefined
-          ? subscribeToNothing
-          : (listener: () => void) => state.subscribe(listener),
-      [state],
-    ),
-    () => state?.isHovered ?? false,
+    React.useCallback((listener) => state.subscribe(listener), [state]),
+    () => state.isHovered,
   );
 }

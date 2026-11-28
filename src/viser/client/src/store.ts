@@ -26,6 +26,8 @@ export interface Store<T> {
 export function createStore<T extends object>(initialState: T): Store<T> {
   let state = initialState;
   const listeners = new Set<Listener>();
+  let batchDepth = 0;
+  let notifyAfterBatch = false;
 
   function get(): T {
     return state;
@@ -44,8 +46,6 @@ export function createStore<T extends object>(initialState: T): Store<T> {
     listeners.forEach((l) => l());
   }
 
-  let batchDepth = 0;
-  let notifyAfterBatch = false;
   function batch<U>(fn: () => U): U {
     batchDepth += 1;
     try {
@@ -275,6 +275,13 @@ export function createKeyedStore<V>(
     };
   }
 
+  function subscribeAll(listener: (key: string) => void): () => void {
+    allListeners.add(listener);
+    return () => {
+      allListeners.delete(listener);
+    };
+  }
+
   // The callable hook with overloads.
   function useKeyedStore(key: string): V | undefined;
   function useKeyedStore<U>(
@@ -331,12 +338,7 @@ export function createKeyedStore<V>(
   useKeyedStore.set = set;
   useKeyedStore.setAll = setAll;
   useKeyedStore.subscribe = subscribeToKey;
-  useKeyedStore.subscribeAll = (listener: (key: string) => void) => {
-    allListeners.add(listener);
-    return () => {
-      allListeners.delete(listener);
-    };
-  };
+  useKeyedStore.subscribeAll = subscribeAll;
   useKeyedStore.batch = batch;
 
   return useKeyedStore as KeyedStore<V>;

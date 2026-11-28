@@ -94,3 +94,19 @@ export function computeBoundingSphere(
   out.radius = Math.sqrt(maxDistanceSq);
   return out;
 }
+
+/** Indexed geometry with vertex normals and a bounding sphere. */
+export function makeMeshGeometry(
+  vertices: Float32Array,
+  faces: Uint32Array,
+): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+  geometry.setAttribute(
+    "normal",
+    new THREE.BufferAttribute(computeVertexNormals(vertices, faces), 3),
+  );
+  geometry.setIndex(new THREE.BufferAttribute(faces, 1));
+  geometry.boundingSphere = computeBoundingSphere(vertices);
+  return geometry;
+}

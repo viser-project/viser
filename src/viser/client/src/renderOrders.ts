@@ -8,6 +8,9 @@
  * the ordering; the e2e suite in tests/e2e/test_label_render_order.py pins
  * the visible result.
  */
+/** Antialiasing skirts of batched lines: after other transparent objects. There's no
+ * single depth that they could be sorted by. */
+export const LINE_FRINGE_RENDER_ORDER = 1;
 export const SPLAT_RENDER_ORDER = 10_000;
 export const LABEL_BACKGROUND_RENDER_ORDER = SPLAT_RENDER_ORDER + 1;
 export const LABEL_TEXT_RENDER_ORDER = SPLAT_RENDER_ORDER + 2;

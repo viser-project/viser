@@ -1,7 +1,9 @@
 import "../patchLineMaterial";
+import { LINE_FRINGE_RENDER_ORDER } from "../renderOrders";
 import * as THREE from "three";
 import {
   LineMaterial,
+  LineMaterialParameters,
   LineSegments2,
   LineSegmentsGeometry,
 } from "three-stdlib";
@@ -39,7 +41,7 @@ export class LineBatch extends DenseBatch {
     worldUnits: boolean,
   ) {
     super();
-    const makeMaterial = (params: object) => {
+    const makeMaterial = (params: LineMaterialParameters) => {
       const material = new LineMaterial({
         color: 0xffffff,
         vertexColors: true,
@@ -89,9 +91,7 @@ export class LineBatch extends DenseBatch {
       const line = new LineSegments2(geometry, material);
       line.frustumCulled = false;
       line.raycast = () => undefined;
-      // The antialiasing skirt is transparent. There's no single depth that it
-      // could be sorted by, so draw it on top of other transparent objects.
-      if (material.transparent) line.renderOrder = 1;
+      if (material.transparent) line.renderOrder = LINE_FRINGE_RENDER_ORDER;
       this.object.add(line);
     }
   }

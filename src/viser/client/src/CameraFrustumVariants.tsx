@@ -1,11 +1,14 @@
 import { Line } from "./Line";
 import React from "react";
-import { HoverableContext, useIsHovered } from "./HoverContext";
+import { useIsHovered } from "./HoverContext";
 import { InstanceSource } from "./scene/AutoInstancer";
 import { ViewerContext } from "./ViewerContext";
 import { LineBatch } from "./scene/LineBatch";
-import { useDrawable, useMarkTransformsDirty } from "./scene/SceneNodeContext";
-import { useDepthlessSurface } from "./scene/useDepthlessSurface";
+import {
+  useDepthlessSurface,
+  useDrawable,
+  useMarkTransformsDirty,
+} from "./scene/sceneNodeHooks";
 import { useInstanceSource } from "./scene/useInstanceSource";
 import * as THREE from "three";
 import { CameraFrustumMessage } from "./WebsocketMessages";
@@ -137,7 +140,7 @@ export const CameraFrustumComponent = React.forwardRef<
     () => ({
       color: lineColor,
       points: frustumPoints,
-      radius: frustumPoints.reduce((max, v) => Math.max(max, Math.abs(v)), 0),
+      radius: Math.hypot(x, y, z),
     }),
     [lineColor, frustumPoints],
   );
@@ -149,7 +152,7 @@ export const CameraFrustumComponent = React.forwardRef<
     autoInstancer.hasDepthlessSurfaces,
   );
   const [source] = React.useState(() => new InstanceSource());
-  const drawIndividually = useInstanceSource(
+  const mode = useInstanceSource(
     source,
     isHovered || filled || (worldUnits && hasDepthlessSurfaces)
       ? null
@@ -160,20 +163,19 @@ export const CameraFrustumComponent = React.forwardRef<
           appearance,
         },
   );
-  const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
   useDrawable(filled || imageTexture !== undefined);
   useMarkTransformsDirty([imageTexture]);
 
   return (
     <primitive object={source} ref={ref}>
-      {drawIndividually || raycastable ? (
+      {mode !== null ? (
         <Line
           points={frustumPoints}
           color={isHovered ? 0xfbff00 : lineColor}
           lineWidth={isHovered ? 1.5 * thickness : thickness}
           worldUnits={worldUnits}
           segments={true}
-          raycastOnly={!drawIndividually}
+          raycastOnly={mode === "raycast"}
         />
       ) : null}
 

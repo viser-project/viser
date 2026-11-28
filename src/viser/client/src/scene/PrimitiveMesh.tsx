@@ -6,17 +6,14 @@ import {
   rgbToInt,
   StandardMaterialProps,
 } from "../mesh/meshMaterialUtils";
-import { HoverableContext } from "../HoverContext";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import {
   InstanceSource,
-  geometryRadius,
-  MeshBatch,
   MAX_INSTANCED_VERTICES,
   MIN_INSTANCE_SCALE,
-  raycastOnlyLayers,
-  raycastOnlyMaterials,
 } from "./AutoInstancer";
+import { geometryRadius, MeshBatch } from "./MeshBatch";
+import { raycastOnlyLayers, raycastOnlyMaterials } from "./raycastOnly";
 import { InstancingSpec, useInstanceSource } from "./useInstanceSource";
 
 /** Scene node that draws a geometry which is shared between many nodes. Large
@@ -45,14 +42,12 @@ export const PrimitiveMesh = React.forwardRef<
   },
   ref,
 ) {
-  const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
   const color = rgbToInt(material.color);
   const [sx, sy, sz] = scale;
 
   // Not instanced:
   // - Transparent meshes, which need to be depth-sorted.
   // - Meshes with a separate shadow mesh.
-  // - Mirrored meshes: front faces are determined for all instances at once.
   const eligible =
     (material.opacity === null || material.opacity >= 1.0) &&
     typeof receiveShadow !== "number" &&
@@ -89,11 +84,11 @@ export const PrimitiveMesh = React.forwardRef<
       }
     : null;
   const [source] = React.useState(() => new InstanceSource());
-  const drawIndividually = useInstanceSource(source, spec);
+  const mode = useInstanceSource(source, spec);
 
   return (
     <primitive object={source} ref={ref}>
-      {drawIndividually ? (
+      {mode === "drawn" ? (
         <mesh
           // Keys are needed because `material` is a prop for one mesh, and a child
           // of the other. R3F resets removed props after attaching children.
@@ -106,7 +101,7 @@ export const PrimitiveMesh = React.forwardRef<
           <ViserStandardMeshMaterial {...material} />
           <OutlinesIfHovered enableCreaseAngle={outlineCreaseAngle} />
         </mesh>
-      ) : raycastable ? (
+      ) : mode === "raycast" ? (
         <mesh
           key="raycast"
           geometry={geometry}

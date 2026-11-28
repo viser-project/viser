@@ -1,9 +1,6 @@
 import React from "react";
 import * as THREE from "three";
-import {
-  computeBoundingSphere,
-  computeVertexNormals,
-} from "../utils/meshGeometry";
+import { makeMeshGeometry } from "../utils/meshGeometry";
 import { ViserStandardMeshMaterial, ShadowSkinnedMesh } from "./MeshUtils";
 import { SkinnedMeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
@@ -39,19 +36,11 @@ export const SkinnedMesh = React.forwardRef<
   // Create geometry and skeleton using memoization.
   const { geometry, skeleton } = React.useMemo(() => {
     // Setup geometry.
-    const geometry = new THREE.BufferGeometry();
     // Vertices and faces arrive as Float32Array / Uint32Array views.
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(message.props.vertices, 3),
+    const geometry = makeMeshGeometry(
+      message.props.vertices,
+      message.props.faces,
     );
-    geometry.setIndex(new THREE.BufferAttribute(message.props.faces, 1));
-    const { vertices, faces } = message.props;
-    geometry.setAttribute(
-      "normal",
-      new THREE.BufferAttribute(computeVertexNormals(vertices, faces), 3),
-    );
-    geometry.boundingSphere = computeBoundingSphere(vertices);
 
     // Bone data arrives as Float32Array views. Use directly.
     const bone_wxyzs = message.props.bone_wxyzs;

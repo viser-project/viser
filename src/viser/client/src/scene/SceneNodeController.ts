@@ -39,19 +39,6 @@ type SceneNodeHandlers = {
   onPointerOut: (e: ThreeEvent<PointerEvent>) => void;
 };
 
-/** Explicit undefined values: this makes sure that R3F clears handlers. */
-export const noSceneNodeHandlers: {
-  [key in keyof SceneNodeHandlers]: undefined;
-} = {
-  onPointerDown: undefined,
-  onContextMenu: undefined,
-  onPointerMove: undefined,
-  onPointerUp: undefined,
-  onPointerCancel: undefined,
-  onPointerOver: undefined,
-  onPointerOut: undefined,
-};
-
 /** Non-React half of a scene node component. Scenes can have tens of thousands
  * of nodes, and most of them are never interacted with. One object per node uses
  * a lot less memory than a ref or a callback for everything in here would. */
@@ -320,8 +307,7 @@ export class SceneNodeController {
    * events.
    *  - onPointerDown resets the click state (dragged = false)
    *  - onPointerMove, if triggered, sets dragged = true
-   *  - onPointerUp, if triggered, sends a click if dragged = false.
-   * Note: It would be cool to have dragged actions too... */
+   *  - onPointerUp, if triggered, sends a click if dragged = false. */
   getHandlers(): SceneNodeHandlers {
     const { name, viewer } = this;
     const { interaction } = viewer;

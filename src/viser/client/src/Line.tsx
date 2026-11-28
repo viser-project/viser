@@ -19,7 +19,7 @@ import {
 } from "three-stdlib";
 import { ForwardRefComponent } from "@react-three/drei/helpers/ts-utils";
 import type { LineSegmentsMessage } from "./WebsocketMessages";
-import { raycastOnlyLayers } from "./scene/AutoInstancer";
+import { raycastOnlyLayers } from "./scene/raycastOnly";
 import { normalizeScale } from "./utils/normalizeScale";
 
 export type LineProps = {

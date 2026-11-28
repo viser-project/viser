@@ -1,4 +1,4 @@
-import { useDepthlessSurface } from "../scene/useDepthlessSurface";
+import { useDepthlessSurface } from "../scene/sceneNodeHooks";
 import React from "react";
 import * as THREE from "three";
 import {
@@ -90,25 +90,15 @@ export function ShadowMesh({
   opacity,
   geometry,
   scale,
-  position,
-  rotation,
 }: {
   opacity: number;
   geometry: THREE.BufferGeometry;
   scale?: [number, number, number] | number;
-  position?: THREE.Vector3 | [number, number, number];
-  rotation?: THREE.Euler;
 }) {
   useDepthlessSurface(opacity > 0);
   if (opacity <= 0) return null;
   return (
-    <mesh
-      geometry={geometry}
-      receiveShadow
-      scale={scale}
-      position={position}
-      rotation={rotation}
-    >
+    <mesh geometry={geometry} receiveShadow scale={scale}>
       <shadowMaterial opacity={opacity} color={0x000000} depthWrite={false} />
     </mesh>
   );

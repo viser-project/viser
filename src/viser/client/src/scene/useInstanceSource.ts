@@ -7,7 +7,7 @@ import {
   InstanceSource,
 } from "./AutoInstancer";
 import { HoverableContext } from "../HoverContext";
-import { useDrawable, useMarkTransformsDirty } from "./SceneNodeContext";
+import { useDrawable, useMarkTransformsDirty } from "./sceneNodeHooks";
 
 /** How a scene node can be drawn as part of a batch. */
 export type InstancingSpec = {
@@ -24,15 +24,16 @@ const alwaysFalse = () => false;
 
 /** Batch a scene node together with similar ones, if there are many of them.
  *
- * The source should be rendered as the root of the scene node. Returns whether
- * the node needs to draw itself.
+ * The source should be rendered as the root of the scene node. Returns what
+ * the node needs to mount itself: a mesh that's drawn, one that's only used for
+ * raycasting, or nothing.
  *
  * When a node isn't eligible for batching, the spec should be null. Anything
  * that's always drawn individually should be declared with `useDrawable()`. */
 export function useInstanceSource(
   source: InstanceSource,
   spec: InstancingSpec | null,
-): boolean {
+): "drawn" | "raycast" | null {
   const { autoInstancer } = React.useContext(ViewerContext)!;
   const key = spec?.key ?? null;
   const makeBatch = spec?.makeBatch;
@@ -68,9 +69,10 @@ export function useInstanceSource(
     joined?.entry.isActive ?? alwaysFalse,
   );
   const drawIndividually = key === null || (joined?.key === key && !active);
-  useDrawable(drawIndividually);
-  // Components may mount or unmount meshes when either of these changes.
   const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
-  useMarkTransformsDirty([drawIndividually, raycastable]);
-  return drawIndividually;
+  const mode = drawIndividually ? "drawn" : raycastable ? "raycast" : null;
+  useDrawable(drawIndividually);
+  // Components mount or unmount meshes when this changes.
+  useMarkTransformsDirty([mode]);
+  return mode;
 }

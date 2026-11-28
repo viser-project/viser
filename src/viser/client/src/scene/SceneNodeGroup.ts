@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { parentNameOf } from "../SceneTreeState";
 
 // Object3D.updateWorldMatrix(true, false) is what getWorldPosition() and friends
 // use to bring an object and its ancestors up to date. It's written with the
@@ -18,13 +19,11 @@ THREE.Object3D.prototype.updateWorldMatrix = function (
 
   const stale = this.matrixWorldNeedsUpdate || force;
   previousMatrixWorld.copy(this.matrixWorld);
-  // @ts-ignore The third argument is missing from type definitions.
   originalUpdateWorldMatrix.call(this, false, false, true);
   const changed = stale || !previousMatrixWorld.equals(this.matrixWorld);
 
   if (updateChildren) {
     for (const child of this.children) {
-      // @ts-ignore The third argument is missing from type definitions.
       child.updateWorldMatrix(false, true, true);
     }
   } else if (changed) {
@@ -74,14 +73,12 @@ type NodeRecord = {
   dynamics: number;
 };
 
-function forEachAncestor(
-  name: string,
-  callback: (name: string) => boolean | void,
-): void {
-  // Node names are either empty (the root) or start with a slash.
-  for (;;) {
-    if (callback(name) === false || name === "") return;
-    name = name.slice(0, Math.max(0, name.lastIndexOf("/")));
+/** Call a function with the name of a node, and then those of its ancestors. */
+function forEachAncestor(name: string, callback: (name: string) => void): void {
+  callback(name);
+  while (name !== "") {
+    name = parentNameOf(name);
+    callback(name);
   }
 }
 

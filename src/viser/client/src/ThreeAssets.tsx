@@ -15,14 +15,9 @@ import { MeshBasicMaterial } from "three";
 import { normalizeScale } from "./utils/normalizeScale";
 import { syncPointCloudGeometry } from "./utils/pointCloudGeometry";
 import { ViewerContext } from "./ViewerContext";
-import { HoverableContext } from "./HoverContext";
-import {
-  geometryRadius,
-  InstanceSource,
-  MeshBatch,
-  MIN_INSTANCE_SCALE,
-  raycastOnlyLayers,
-} from "./scene/AutoInstancer";
+import { geometryRadius, MeshBatch } from "./scene/MeshBatch";
+import { InstanceSource, MIN_INSTANCE_SCALE } from "./scene/AutoInstancer";
+import { raycastOnlyLayers } from "./scene/raycastOnly";
 import { useInstanceSource } from "./scene/useInstanceSource";
 import {
   LabelRendererContext,
@@ -399,7 +394,6 @@ function FrameAxes(props: {
     () => getFrameGeometry(axesLength, axesRadius, originRadius, originColor),
     [axesLength, axesRadius, originRadius, originColor],
   );
-  const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
 
   const [sx, sy, sz] = props.scale;
   const appearance = React.useMemo(
@@ -410,10 +404,8 @@ function FrameAxes(props: {
     }),
     [geometry, sx, sy, sz],
   );
-  const drawIndividually = useInstanceSource(
+  const mode = useInstanceSource(
     props.source,
-    // Mirrored meshes can't be instanced: front faces are determined for all
-    // instances at once.
     Math.min(sx, sy, sz) > MIN_INSTANCE_SCALE
       ? {
           key: `frame|${geometry.uuid}`,
@@ -423,21 +415,19 @@ function FrameAxes(props: {
         }
       : null,
   );
-  if (!drawIndividually && !raycastable) return null;
+  if (mode === null) return null;
   return (
     <mesh
-      key={drawIndividually ? "drawn" : "raycast"}
+      key={mode}
       geometry={geometry}
       scale={props.scale}
       material={frameMaterial}
-      layers={drawIndividually ? defaultLayers : raycastOnlyLayers}
+      layers={mode === "raycast" ? raycastOnlyLayers : undefined}
     >
       <OutlinesIfHovered enableCreaseAngle />
     </mesh>
   );
 }
-
-const defaultLayers = new THREE.Layers();
 
 /** Helper for adding batched/instanced coordinate frames as scene nodes. */
 export const InstancedAxes = React.forwardRef<

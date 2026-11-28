@@ -8,7 +8,7 @@ import * as THREE from "three";
 import React from "react";
 import { AutoInstancer } from "./scene/AutoInstancer";
 import { SceneNodeGraph } from "./scene/SceneNodeGroup";
-import { SceneNodeUpdates } from "./sceneNodeUpdates";
+import { SceneNodeUpdates } from "./scene/SceneNodeUpdates";
 import { useSceneTreeState } from "./SceneTreeState";
 
 import { UseGui } from "./ControlPanel/GuiState";

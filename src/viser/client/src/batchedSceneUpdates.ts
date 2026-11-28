@@ -45,16 +45,9 @@ export function createParkedSceneUpdates(
   store: KeyedStore<SceneNode>,
   actions: SceneTreeActions,
 ): ParkedSceneUpdates {
-  type AttrEntry = {
-    name: string;
-    owner: string;
-    updates: Partial<SceneNode>;
-  };
-  type PropsEntry = {
-    name: string;
-    owner: string;
-    updates: { [key: string]: any };
-  };
+  type Entry<T> = { name: string; owner: string; updates: T };
+  type AttrEntry = Entry<Partial<SceneNode>>;
+  type PropsEntry = Entry<{ [key: string]: any }>;
   // Maps rather than plain objects: names are arbitrary strings, and entries
   // need to be applied in the order that they were parked.
   const attrUpdates = new Map<string, AttrEntry>();
@@ -64,11 +57,11 @@ export function createParkedSceneUpdates(
   const ownersFromName = new Map<string, string[]>();
 
   /** Merge an update into the entry for (owner, name). */
-  function park(
-    table: Map<string, { name: string; owner: string; updates: object }>,
+  function park<T extends object>(
+    table: Map<string, Entry<T>>,
     owner: string,
     name: string,
-    updates: object,
+    updates: T,
   ) {
     const key = variantKey(owner, name);
     const entry = table.get(key);
@@ -86,7 +79,7 @@ export function createParkedSceneUpdates(
    * Returns true when a visibility change merged into the effective
    * variant. */
   function applyAttr(
-    entry: { name: string; owner: string; updates: Partial<SceneNode> },
+    entry: AttrEntry,
     out: { [name: string]: SceneNode },
   ): boolean {
     if (actions.routeShadowedUpdate(entry.name, entry.owner, entry.updates))
@@ -101,7 +94,7 @@ export function createParkedSceneUpdates(
   }
 
   function applyProps(
-    entry: { name: string; owner: string; updates: { [key: string]: any } },
+    entry: PropsEntry,
     out: { [name: string]: SceneNode },
   ): void {
     if (
@@ -144,7 +137,7 @@ export function createParkedSceneUpdates(
         attrUpdates.delete(key);
         const out: { [n: string]: SceneNode } = {};
         const recompute = applyAttr(entry, out);
-        if (Object.keys(out).length > 0) store.set(out);
+        store.set(out);
         if (recompute) actions.computeEffectiveVisibility(name);
       }
       for (const owner of owners) {
@@ -154,7 +147,7 @@ export function createParkedSceneUpdates(
         propsUpdates.delete(key);
         const out: { [n: string]: SceneNode } = {};
         applyProps(entry, out);
-        if (Object.keys(out).length > 0) store.set(out);
+        store.set(out);
       }
     },
     flush: () => {

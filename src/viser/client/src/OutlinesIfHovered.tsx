@@ -3,7 +3,7 @@ import { useThree } from "@react-three/fiber";
 import { HoverableContext, useIsHovered } from "./HoverContext";
 import { Outlines } from "./Outlines";
 import { OutlinesMaterial } from "./OutlinesMaterial";
-import { useDrawable, useMarkTransformsDirty } from "./scene/SceneNodeContext";
+import { useDrawable, useMarkTransformsDirty } from "./scene/sceneNodeHooks";
 import * as THREE from "three";
 
 /** Outlines object, which should be placed as a child of all meshes that might

@@ -1,21 +1,12 @@
 import * as THREE from "three";
 
-/** Layer for objects that should be raycast against, but not drawn. */
-export const RAYCAST_ONLY_LAYER = 30;
-export const raycastOnlyLayers = new THREE.Layers();
-raycastOnlyLayers.set(RAYCAST_ONLY_LAYER);
-
-export const raycastOnlyMaterials = {
-  front: new THREE.MeshBasicMaterial({ side: THREE.FrontSide }),
-  back: new THREE.MeshBasicMaterial({ side: THREE.BackSide }),
-  double: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
-};
-
 /** Geometries with more vertices are drawn individually. Draw calls aren't a
  * bottleneck for them, and each object can be culled. */
 export const MAX_INSTANCED_VERTICES = 4096;
 
-/** Smaller scales are drawn individually: shaders would underflow. */
+/** Objects with smaller scales are drawn individually: shaders would underflow.
+ * This includes mirrored ones, because front faces are determined for all
+ * instances at once. */
 export const MIN_INSTANCE_SCALE = 1e-12;
 
 /** Groups of primitives are instanced when they have this many members. Below
@@ -36,7 +27,8 @@ export interface InstanceBatch {
   updateAppearance(source: InstanceSource): void;
   /** Called before each render, after world matrices have been updated. */
   flush(): void;
-  setViewportSize(width: number, height: number): void;
+  /** Only implemented by batches whose materials depend on it. */
+  setViewportSize?(width: number, height: number): void;
   dispose(): void;
 }
 
@@ -114,8 +106,6 @@ export abstract class DenseBatch implements InstanceBatch {
   protected abstract writeTransform(source: InstanceSource): void;
   protected abstract writeAppearance(source: InstanceSource): void;
   abstract dispose(): void;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  setViewportSize(_width: number, _height: number): void {}
 
   add(source: InstanceSource): void {
     source.batch = this;
@@ -266,7 +256,7 @@ export class SpatialBatch implements InstanceBatch {
         index[1] * size,
         index[2] * size,
       );
-      batch.setViewportSize(...this.viewportSize);
+      batch.setViewportSize?.(...this.viewportSize);
       batch.object.position.copy(center);
       this.object.add(batch.object);
       batch.object.updateMatrixWorld(true);
@@ -321,7 +311,7 @@ export class SpatialBatch implements InstanceBatch {
 
   setViewportSize(width: number, height: number): void {
     this.viewportSize = [width, height];
-    this.cells.forEach((cell) => cell.batch.setViewportSize(width, height));
+    this.cells.forEach((cell) => cell.batch.setViewportSize?.(width, height));
   }
 
   dispose(): void {
@@ -329,150 +319,11 @@ export class SpatialBatch implements InstanceBatch {
   }
 }
 
-export type MeshAppearance = InstanceAppearance & {
-  color: number;
-  scale: [number, number, number];
-};
-
-/** Distance of the furthest point from a geometry's origin. */
-export function geometryRadius(geometry: THREE.BufferGeometry): number {
-  if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
-  const { center, radius } = geometry.boundingSphere!;
-  return center.length() + radius;
-}
-
-const tempBox = /* @__PURE__ */ new THREE.Box3();
-const tempMatrix = /* @__PURE__ */ new THREE.Matrix4();
-const tempScale = /* @__PURE__ */ new THREE.Vector3();
-const tempColor = /* @__PURE__ */ new THREE.Color();
-
-/** Sources that only differ in their transform, scale, and color. */
-export class MeshBatch extends DenseBatch {
-  readonly object = new THREE.Group();
-  private mesh: THREE.InstancedMesh | null = null;
-  private needsBounds = true;
-
-  constructor(
-    private readonly geometry: THREE.BufferGeometry,
-    private readonly material: THREE.Material,
-    private readonly castShadow: boolean,
-    private readonly receiveShadow: boolean,
-  ) {
-    super();
-  }
-
-  protected allocate(capacity: number): void {
-    this.disposeMesh();
-    const mesh = new THREE.InstancedMesh(
-      this.geometry,
-      this.material,
-      capacity,
-    );
-    mesh.instanceColor = new THREE.InstancedBufferAttribute(
-      new Float32Array(capacity * 3),
-      3,
-    );
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.castShadow = this.castShadow;
-    mesh.receiveShadow = this.receiveShadow;
-    // Set by updateBounds().
-    mesh.frustumCulled = false;
-    mesh.boundingSphere = new THREE.Sphere();
-    this.needsBounds = true;
-    mesh.raycast = () => undefined;
-    this.mesh = mesh;
-    this.object.add(mesh);
-  }
-
-  protected setCount(count: number): void {
-    this.mesh!.count = count;
-    this.needsBounds = true;
-  }
-
-  flush(): void {
-    super.flush();
-    if (this.needsBounds) {
-      this.needsBounds = false;
-      this.updateBounds();
-    }
-  }
-
-  /** Cull the entire batch when it's out of view. Batches that are cheap to draw
-   * aren't worth computing bounds for. */
-  private updateBounds(): void {
-    const { mesh, geometry } = this;
-    if (mesh === null) return;
-    const numVertices =
-      geometry.index?.count ?? geometry.attributes.position.count;
-    mesh.frustumCulled = mesh.count * numVertices > 50_000;
-    if (!mesh.frustumCulled) return;
-
-    const radius = geometryRadius(geometry);
-    const array = mesh.instanceMatrix.array;
-    tempBox.makeEmpty();
-    for (let i = 0; i < mesh.count * 16; i += 16) {
-      // Frobenius norm: an upper bound for the largest singular value, including
-      // when matrices have shear.
-      let scaleSq = 0;
-      for (let j = 0; j < 11; j++)
-        if (j % 4 !== 3) scaleSq += array[i + j] * array[i + j];
-      const r = Math.sqrt(scaleSq) * radius;
-      const [x, y, z] = [array[i + 12], array[i + 13], array[i + 14]];
-      if (!Number.isFinite(x + y + z + r)) {
-        mesh.frustumCulled = false;
-        return;
-      }
-      tempBox.min.set(
-        Math.min(tempBox.min.x, x - r),
-        Math.min(tempBox.min.y, y - r),
-        Math.min(tempBox.min.z, z - r),
-      );
-      tempBox.max.set(
-        Math.max(tempBox.max.x, x + r),
-        Math.max(tempBox.max.y, y + r),
-        Math.max(tempBox.max.z, z + r),
-      );
-    }
-    tempBox.getBoundingSphere(mesh.boundingSphere!);
-    mesh.boundingSphere!.radius *= 1.0 + 1e-5; // Roundoff.
-  }
-
-  protected writeTransform(source: InstanceSource): void {
-    this.needsBounds = true;
-    const attribute = this.mesh!.instanceMatrix;
-    const { scale } = source.appearance as MeshAppearance;
-    matrixRelativeTo(source.matrixWorld, this.object.position, tempMatrix)
-      .scale(tempScale.set(scale[0], scale[1], scale[2]))
-      .toArray(attribute.array, source.batchIndex * 16);
-    markRange(attribute, source.batchIndex * 16, 16);
-  }
-
-  protected writeAppearance(source: InstanceSource): void {
-    const attribute = this.mesh!.instanceColor!;
-    tempColor
-      .setHex((source.appearance as MeshAppearance).color)
-      .toArray(attribute.array, source.batchIndex * 3);
-    markRange(attribute, source.batchIndex * 3, 3);
-  }
-
-  private disposeMesh(): void {
-    if (this.mesh === null) return;
-    this.object.remove(this.mesh);
-    // Frees the instance buffers, but not the geometry or material.
-    this.mesh.dispose();
-  }
-
-  dispose(): void {
-    this.disposeMesh();
-    this.material.dispose();
-  }
-}
-
 /** Sources that want to be drawn together. */
 export class BatchEntry {
   private readonly members = new Set<InstanceSource>();
   private readonly listeners = new Set<() => void>();
-  private batch: InstanceBatch | null = null;
+  private batch: SpatialBatch | null = null;
 
   constructor(
     private readonly instancer: AutoInstancer,
@@ -519,7 +370,7 @@ export class BatchEntry {
       batch.dispose();
       this.notify();
     }
-    if (this.members.size === 0) this.instancer.deleteEntry(this.key, this);
+    if (this.members.size === 0) this.instancer.deleteEntry(this.key);
   }
 
   setViewportSize(width: number, height: number): void {
@@ -538,11 +389,11 @@ export class AutoInstancer {
    * root of the scene. */
   readonly group = new THREE.Group();
   viewportSize: [number, number] = [1, 1];
+  private readonly entries = new Map<string, BatchEntry>();
+
   constructor() {
     this.group.name = "autoInstancer";
   }
-
-  private readonly entries = new Map<string, BatchEntry>();
 
   /** Returns the entry for a key, which should describe everything that members
    * need to have in common. */
@@ -555,8 +406,8 @@ export class AutoInstancer {
     return entry;
   }
 
-  deleteEntry(key: string, entry: BatchEntry): void {
-    if (this.entries.get(key) === entry) this.entries.delete(key);
+  deleteEntry(key: string): void {
+    this.entries.delete(key);
   }
 
   setViewportSize(width: number, height: number): void {

@@ -3,7 +3,8 @@ import * as THREE from "three";
 import { SceneNodeMessage } from "./WebsocketMessages";
 import { DragBinding } from "./dragUtils";
 import { createKeyedStore, KeyedStore } from "./store";
-import { SceneNodeUpdates } from "./sceneNodeUpdates";
+import { SceneNodeUpdates } from "./scene/SceneNodeUpdates";
+import { shallowArrayEqual } from "./utils/shallowArrayEqual";
 import { NodePoseDataMap } from "./ViewerContext";
 
 export type SceneNode = {
@@ -186,12 +187,8 @@ export function createSceneTreeActions(
             if (node === undefined) return;
             const updated = [...children];
             // Don't notify for lists that ended up where they started.
-            if (
-              updated.length === node.children.length &&
-              updated.every((child, i) => child === node.children[i])
-            )
-              return;
-            store.set({ [name]: { ...node, children: updated } });
+            if (!shallowArrayEqual(updated, node.children))
+              store.set({ [name]: { ...node, children: updated } });
           });
           pendingChildren.clear();
         }
@@ -468,9 +465,9 @@ export function createSceneTreeActions(
         updates[removeName] = undefined;
         delete nodeRefFromName[removeName];
         delete nodePoseData[removeName];
+        pendingChildren.delete(removeName);
       });
       batch(() => {
-        removeNames.forEach((removeName) => pendingChildren.delete(removeName));
         store.set(updates);
         dropFromParentChildren(name);
       });

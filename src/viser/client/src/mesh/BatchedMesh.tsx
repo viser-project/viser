@@ -1,9 +1,5 @@
 import React, { useMemo } from "react";
-import * as THREE from "three";
-import {
-  computeBoundingSphere,
-  computeVertexNormals,
-} from "../utils/meshGeometry";
+import { makeMeshGeometry } from "../utils/meshGeometry";
 import { createStandardMaterial } from "./meshMaterialUtils";
 import { BatchedMeshesMessage } from "../WebsocketMessages";
 import { InstancedMesh2 } from "../vendor/instanced-mesh/index.js";
@@ -67,20 +63,8 @@ export const BatchedMesh = React.forwardRef<
 
   // Setup geometry using memoization.
   const geometry = useMemo(() => {
-    const geometry = new THREE.BufferGeometry();
     // Vertices and faces arrive as Float32Array / Uint32Array views.
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(message.props.vertices, 3),
-    );
-    geometry.setIndex(new THREE.BufferAttribute(message.props.faces, 1));
-    const { vertices, faces } = message.props;
-    geometry.setAttribute(
-      "normal",
-      new THREE.BufferAttribute(computeVertexNormals(vertices, faces), 3),
-    );
-    geometry.boundingSphere = computeBoundingSphere(vertices);
-    return geometry;
+    return makeMeshGeometry(message.props.vertices, message.props.faces);
     // Keyed on the VIEWS, not their .buffer (BasicMesh's pattern): in a
     // playback recording every array is a view on ONE shared ArrayBuffer,
     // so .buffer identity never changes and a geometry update would

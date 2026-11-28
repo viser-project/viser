@@ -11,7 +11,6 @@ import { Html } from "@react-three/drei";
 import { ownerOf, SceneNode, useSceneTreeState } from "./SceneTreeState";
 import { HoverableContext } from "./HoverContext";
 import { shallowArrayEqual } from "./utils/shallowArrayEqual";
-import { DragBinding } from "./dragUtils";
 import { useDragLayer } from "./dragLayerContext";
 import {
   CoordinateFrame,
@@ -42,16 +41,8 @@ import { SkinnedMesh } from "./mesh/SkinnedMesh";
 import { BatchedMesh } from "./mesh/BatchedMesh";
 import { SingleGlbAsset } from "./mesh/SingleGlbAsset";
 import { BatchedGlbAsset } from "./mesh/BatchedGlbAsset";
-import {
-  noSceneNodeHandlers,
-  SceneNodeController,
-} from "./scene/SceneNodeController";
+import { SceneNodeController } from "./scene/SceneNodeController";
 import { normalizeScale } from "./utils/normalizeScale";
-
-/** Shared empty array so the `dragBindings` selector returns a stable
- * reference when no bindings are set -- otherwise `?? []` would allocate a
- * fresh array per render and force downstream memoization to recompute. */
-const EMPTY_DRAG_BINDINGS: DragBinding[] = [];
 
 function rgbToInt(rgb: [number, number, number]): number {
   return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
@@ -830,13 +821,13 @@ export const SceneNodeThreeObject = React.memo(
     // Drag state lives in the viewer-level DragLayer -- nodes only dispatch
     // pointer events into it and read bindings for matching.
     const dragLayer = useDragLayer();
-    const renderState = viewer.useSceneTree(
+    const node = viewer.useSceneTree(
       props.name,
       identity,
       sceneNodeRenderEqual,
     );
-    const clickBindings = renderState?.clickBindings ?? EMPTY_DRAG_BINDINGS;
-    const dragBindings = renderState?.dragBindings ?? EMPTY_DRAG_BINDINGS;
+    const clickBindings = node?.clickBindings ?? [];
+    const dragBindings = node?.dragBindings ?? [];
     const clickable = clickBindings.length > 0;
     const draggable = dragBindings.length > 0;
     const interactive = clickable || draggable;
@@ -852,7 +843,7 @@ export const SceneNodeThreeObject = React.memo(
     // For not-fully-understood reasons, wrapping makeObject with useMemo() fixes
     // stability issues (eg breaking runtime errors) associated with
     // PivotControls.
-    const message = renderState?.message;
+    const message = node?.message;
     const [factory, objNode] = React.useMemo(() => {
       const factory = createObjectFactory(message, viewer);
       return [
@@ -925,7 +916,7 @@ export const SceneNodeThreeObject = React.memo(
     return (
       <sceneNodeGroup
         ref={controller.setGroup}
-        {...(interactive ? controller.getHandlers() : noSceneNodeHandlers)}
+        {...(interactive ? controller.getHandlers() : undefined)}
       >
         <HoverableContext.Provider value={hoverContextValue}>
           {objNode}

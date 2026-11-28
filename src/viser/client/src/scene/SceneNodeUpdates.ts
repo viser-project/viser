@@ -5,10 +5,10 @@
  * with the latest state. Anything that changes that state marks the node dirty,
  * and the render loop runs the handlers of dirty nodes once per frame.
  *
- * This replaces a useFrame() per node. Those cost a callback per node per
- * frame even when nothing changes. R3F also re-sorts its full subscriber list
- * on every subscribe and filters it on every unsubscribe, which made
- * mounting or unmounting a scene quadratic in its size. */
+ * A useFrame() per node would cost a callback per node per frame, even when
+ * nothing changes. R3F also re-sorts its full subscriber list on every subscribe
+ * and filters it on every unsubscribe, which would make mounting or unmounting a
+ * scene quadratic in its size. */
 export class SceneNodeUpdates {
   private dirty = new Set<string>();
   private readonly handlers = new Map<string, () => void>();

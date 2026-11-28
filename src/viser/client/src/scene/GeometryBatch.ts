@@ -1,8 +1,5 @@
 import * as THREE from "three";
-import {
-  computeBoundingSphere,
-  computeVertexNormals,
-} from "../utils/meshGeometry";
+import { makeMeshGeometry } from "../utils/meshGeometry";
 import {
   InstanceAppearance,
   InstanceBatch,
@@ -108,7 +105,6 @@ class Shard {
   }
 
   add(geometry: THREE.BufferGeometry, sourceId: number): Member {
-    this.reserve(geometry.attributes.position.count, geometry.index!.count);
     const geometryId = this.mesh.addGeometry(geometry);
     const instanceId = this.mesh.addInstance(geometryId);
     this.sourceIds[instanceId] = sourceId;
@@ -145,14 +141,10 @@ export class GeometryBatch implements InstanceBatch {
   add(source: InstanceSource): void {
     source.batch = this;
     const { vertices, faces } = source.appearance as GeometryAppearance;
-    let shard: Shard | null = null;
-    for (const candidate of this.shards) {
-      if (candidate.reserve(vertices.length / 3, faces.length)) {
-        shard = candidate;
-        break;
-      }
-    }
-    if (shard === null) {
+    let shard = [...this.shards].find((candidate) =>
+      candidate.reserve(vertices.length / 3, faces.length),
+    );
+    if (shard === undefined) {
       shard = new Shard(
         this.material,
         this.castShadow,
@@ -165,17 +157,8 @@ export class GeometryBatch implements InstanceBatch {
       shard.mesh.updateMatrixWorld(true);
     }
 
-    // Temporary: contents are copied into the batch.
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
-    geometry.setAttribute(
-      "normal",
-      new THREE.BufferAttribute(computeVertexNormals(vertices, faces), 3),
-    );
-    geometry.setIndex(new THREE.BufferAttribute(faces, 1));
-    geometry.boundingSphere = computeBoundingSphere(vertices);
-
-    const member = shard.add(geometry, source.id);
+    // The geometry is temporary: its contents are copied into the batch.
+    const member = shard.add(makeMeshGeometry(vertices, faces), source.id);
     this.members.set(source, member);
     this.writeColor(source, member);
     this.updateTransform(source);
@@ -198,10 +181,8 @@ export class GeometryBatch implements InstanceBatch {
   updateTransform(source: InstanceSource): void {
     const member = this.members.get(source)!;
     const { mesh } = member.shard;
-    const visible = source.displayed;
-    if (mesh.getVisibleAt(member.instanceId) !== visible)
-      mesh.setVisibleAt(member.instanceId, visible);
-    if (!visible) return;
+    mesh.setVisibleAt(member.instanceId, source.displayed);
+    if (!source.displayed) return;
     const { scale } = source.appearance as GeometryAppearance;
     mesh.setMatrixAt(
       member.instanceId,
@@ -209,7 +190,7 @@ export class GeometryBatch implements InstanceBatch {
         source.matrixWorld,
         this.object.position,
         tempMatrix,
-      ).scale(tempScale.set(scale[0], scale[1], scale[2])),
+      ).scale(tempScale.fromArray(scale)),
     );
   }
 
@@ -225,8 +206,6 @@ export class GeometryBatch implements InstanceBatch {
   }
 
   flush(): void {}
-
-  setViewportSize(): void {}
 
   dispose(): void {
     this.shards.forEach((shard) => shard.mesh.dispose());

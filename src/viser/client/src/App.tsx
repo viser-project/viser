@@ -52,10 +52,11 @@ import { Titlebar } from "./Titlebar";
 import { ViserModal } from "./Modal";
 import { CommandPalette } from "./CommandPalette";
 import { useSceneTreeState } from "./SceneTreeState";
-import { AutoInstancer, RAYCAST_ONLY_LAYER } from "./scene/AutoInstancer";
+import { AutoInstancer } from "./scene/AutoInstancer";
+import { RAYCAST_ONLY_LAYER } from "./scene/raycastOnly";
 import { SceneNodeGraph } from "./scene/SceneNodeGroup";
 import { installFastShadowPass } from "./scene/shadowPass";
-import { SceneNodeUpdates } from "./sceneNodeUpdates";
+import { SceneNodeUpdates } from "./scene/SceneNodeUpdates";
 import { useEnvironmentState } from "./EnvironmentState";
 import { useDevSettingsStore } from "./DevSettingsStore";
 import { useInitialCameraState } from "./InitialCameraState";
@@ -95,7 +96,6 @@ const getDefaultServerFromUrl = (): string => {
   return server;
 };
 
-/** Disables rendering when component is not in view. */
 /** One-time configuration of the renderer. */
 function RendererSetup() {
   const gl = useThree((state) => state.gl);
@@ -153,6 +153,7 @@ function AutoInstancedObjects() {
   return <primitive object={autoInstancer.group} />;
 }
 
+/** Disables rendering when component is not in view. */
 const DisableRender = (): null => useFrame(() => null, 1000);
 
 // ======= Main component tree =======
@@ -290,10 +291,11 @@ function ViewerRoot() {
     [],
   );
 
+  const [sceneNodeUpdates] = React.useState(() => new SceneNodeUpdates());
+  const [sceneNodeGraph] = React.useState(() => new SceneNodeGraph());
+  const [autoInstancer] = React.useState(() => new AutoInstancer());
+
   // Create the scene tree state and extract store and actions.
-  const sceneNodeUpdates = React.useState(() => new SceneNodeUpdates())[0];
-  const sceneNodeGraph = React.useState(() => new SceneNodeGraph())[0];
-  const autoInstancer = React.useState(() => new AutoInstancer())[0];
   const sceneTreeState = useSceneTreeState(
     mutable.current.nodeRefFromName,
     mutable.current.nodePoseData,

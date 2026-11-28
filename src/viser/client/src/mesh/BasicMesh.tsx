@@ -2,15 +2,10 @@ import React from "react";
 import * as THREE from "three";
 import { ViserStandardMeshMaterial, ShadowMesh } from "./MeshUtils";
 import { createStandardMaterial, rgbToInt } from "./meshMaterialUtils";
-import { HoverableContext } from "../HoverContext";
 import { MeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
-import {
-  InstanceSource,
-  MIN_INSTANCE_SCALE,
-  raycastOnlyLayers,
-  raycastOnlyMaterials,
-} from "../scene/AutoInstancer";
+import { InstanceSource, MIN_INSTANCE_SCALE } from "../scene/AutoInstancer";
+import { raycastOnlyLayers, raycastOnlyMaterials } from "../scene/raycastOnly";
 import { GeometryAppearance, GeometryBatch } from "../scene/GeometryBatch";
 import { InstancingSpec, useInstanceSource } from "../scene/useInstanceSource";
 import { normalizeScale } from "../utils/normalizeScale";
@@ -44,23 +39,22 @@ export const BasicMesh = React.forwardRef<
   const { props } = message;
   const { vertices, faces } = props;
   const [source] = React.useState(() => new InstanceSource());
-  const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
   const color = rgbToInt(props.color);
   const [sx, sy, sz] = normalizeScale(props.scale);
 
   // Streaming meshes are drawn individually.
-  const [initialGeometry] = React.useState({ vertices, faces });
-  const [isStatic, setIsStatic] = React.useState(true);
-  if (
-    isStatic &&
-    (initialGeometry.vertices !== vertices || initialGeometry.faces !== faces)
-  )
-    setIsStatic(false);
+  // Cleared when the geometry changes.
+  const [initialGeometry, setInitialGeometry] = React.useState<{
+    vertices: Float32Array;
+    faces: Uint32Array;
+  } | null>({ vertices, faces });
+  const isStatic =
+    initialGeometry?.vertices === vertices && initialGeometry.faces === faces;
+  if (initialGeometry !== null && !isStatic) setInitialGeometry(null);
 
   // Not batched:
   // - Transparent meshes, which need to be depth-sorted.
   // - Meshes with a separate shadow mesh.
-  // - Mirrored meshes: front faces are determined for all instances at once.
   const eligible =
     isStatic &&
     vertices.length <= 3 * MAX_BATCHED_VERTICES &&
@@ -72,15 +66,15 @@ export const BasicMesh = React.forwardRef<
     typeof props.receive_shadow !== "number" &&
     Math.min(sx, sy, sz) > MIN_INSTANCE_SCALE;
   // In a batch, invalid indices would refer to vertices of other meshes.
-  const hasValidFaces = React.useMemo(
+  const batchable = React.useMemo(
     () => eligible && indicesAreValid(faces, vertices.length / 3),
     [eligible, faces, vertices],
   );
   const radius = React.useMemo(() => {
-    if (!hasValidFaces) return 0;
+    if (!batchable) return 0;
     const { center, radius } = computeBoundingSphere(vertices);
     return center.length() + radius;
-  }, [hasValidFaces, vertices]);
+  }, [batchable, vertices]);
   const appearance = React.useMemo<GeometryAppearance>(
     () => ({
       vertices,
@@ -91,7 +85,7 @@ export const BasicMesh = React.forwardRef<
     }),
     [vertices, faces, color, sx, sy, sz, radius],
   );
-  const spec: InstancingSpec | null = hasValidFaces
+  const spec: InstancingSpec | null = batchable
     ? {
         key: [
           "geometry",
@@ -110,15 +104,15 @@ export const BasicMesh = React.forwardRef<
         appearance,
       }
     : null;
-  const drawIndividually = useInstanceSource(source, spec);
+  const mode = useInstanceSource(source, spec);
 
   return (
     <primitive object={source} ref={ref}>
-      {drawIndividually || raycastable ? (
+      {mode !== null ? (
         <IndividualMesh
-          key={drawIndividually ? "drawn" : "raycast"}
+          key={mode}
           message={message}
-          raycastOnly={!drawIndividually}
+          raycastOnly={mode === "raycast"}
         />
       ) : null}
       {children}

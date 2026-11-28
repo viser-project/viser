@@ -22,3 +22,12 @@ export function useMarkTransformsDirty(deps: React.DependencyList): void {
     if (name !== undefined) sceneNodeGraph.markTransformsDirty(name);
   }, [sceneNodeGraph, name, ...deps]);
 }
+
+/** Declare that a component draws a transparent surface that doesn't write depth.
+ * See `AutoInstancer.addDepthlessSurface()`. */
+export function useDepthlessSurface(active: boolean): void {
+  const { autoInstancer } = React.useContext(ViewerContext)!;
+  React.useLayoutEffect(() => {
+    if (active) return autoInstancer.addDepthlessSurface();
+  }, [autoInstancer, active]);
+}
