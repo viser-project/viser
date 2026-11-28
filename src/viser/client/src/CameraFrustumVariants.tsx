@@ -147,9 +147,8 @@ export const CameraFrustumComponent = React.forwardRef<
   );
   const { autoInstancer } = React.useContext(ViewerContext)!;
   const filled = message.props.variant === "filled";
-  useTransparentSurface(
-    filled || (imageTexture !== undefined && message.props._format === "png"),
-  );
+  // Even opaque images are drawn as transparent surfaces.
+  useTransparentSurface(filled || imageTexture !== undefined);
   const hasTransparentSurfaces = React.useSyncExternalStore(
     autoInstancer.subscribeTransparent,
     autoInstancer.hasTransparentSurfaces,

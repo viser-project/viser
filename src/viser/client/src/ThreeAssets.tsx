@@ -658,7 +658,7 @@ export const ViserImage = React.forwardRef<
     message.props._format,
     message.props._data,
   );
-  useTransparentSurface(message.props._format === "png");
+  useTransparentSurface(true);
   return (
     <group ref={ref}>
       <group scale={normalizeScale(message.props.scale)}>

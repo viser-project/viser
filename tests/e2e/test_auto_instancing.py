@@ -97,19 +97,23 @@ def _add_frame(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
 
 
 def _add_frustum(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
-    return server.scene.add_camera_frustum(
+    handle = server.scene.add_camera_frustum(
         name,
         fov=1.0,
         aspect=1.5,
         scale=0.2,
-        # World-space lines have a transparent antialiasing skirt. How it's sorted
-        # depends on how it's batched.
-        thickness_units="screen",
-        thickness=2.0 + group * 1e-6,
+        thickness=0.02,
         color=(i * 3, 255 - i * 3, 100),
         wxyz=Q,
         position=_position(i),
     )
+    if group == 1:
+        # Lines in world units are drawn individually if there are transparent
+        # objects. This one is out of view.
+        server.scene.add_icosphere(
+            f"{name}/transparent", opacity=0.5, position=(0.0, -1e3, 0.0)
+        )
+    return handle
 
 
 def _render(
@@ -384,7 +388,7 @@ def test_unsuitable_nodes_are_not_batched(
 
 
 @pytest.mark.parametrize(
-    "kind", ["filled", "shadow", "opacity", "image", "grid", "glb"]
+    "kind", ["filled", "shadow", "opacity", "image", "frustum_image", "grid", "glb"]
 )
 def test_lines_are_not_batched_with_transparent_surfaces(
     viser_server: viser.ViserServer, viser_page: Page, kind: str
@@ -415,7 +419,11 @@ def test_lines_are_not_batched_with_transparent_surfaces(
         surface = viser_server.scene.add_box("/surface", opacity=0.5)
     elif kind == "image":
         surface = viser_server.scene.add_image(
-            "/surface", np.zeros((4, 4, 4), np.uint8), 1.0, 1.0, format="png"
+            "/surface", np.zeros((4, 4, 3), np.uint8), 1.0, 1.0
+        )
+    elif kind == "frustum_image":
+        surface = viser_server.scene.add_camera_frustum(
+            "/surface", fov=1.0, aspect=1.0, image=np.zeros((4, 4, 3), np.uint8)
         )
     elif kind == "grid":
         surface = viser_server.scene.add_grid("/surface", plane_opacity=0.5)
