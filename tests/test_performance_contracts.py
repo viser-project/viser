@@ -965,7 +965,7 @@ def test_renders_wait_for_replay(server: viser.ViserServer) -> None:
             client.queue_message(render)
             client.queue_message(vm.SetPositionMessage("/after", (0.0, 0.0, 0.0)))
 
-        threading.Thread(target=push).start()
+        threading.Thread(daemon=True, target=push).start()
 
     server._websock_server.on_client_connect(on_connect)
     seen = []
@@ -1022,7 +1022,7 @@ def test_atomic_loops_are_delivered(
             time.sleep(gap)
 
     received = set()
-    thread = threading.Thread(target=animate)
+    thread = threading.Thread(daemon=True, target=animate)
     with _connect(server) as ws:
         thread.start()
         start_time = time.time()
@@ -1481,7 +1481,7 @@ def test_large_assignments_do_not_block_others(server: viser.ViserServer) -> Non
             i += 1
             handle.points = points[i % 2]
 
-    thread = threading.Thread(target=assign)
+    thread = threading.Thread(daemon=True, target=assign)
     thread.start()
     durations = []
     for i in range(50):
@@ -1514,7 +1514,7 @@ def test_rate_of_tight_loops(
 
     with _connect(server) as ws:
         _wait_for_replay(ws)
-        thread = threading.Thread(target=animate)
+        thread = threading.Thread(daemon=True, target=animate)
         thread.start()
         start_time = time.time()
         num_windows = 0

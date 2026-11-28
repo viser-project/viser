@@ -1090,7 +1090,6 @@ class _BroadcastProgress:
         self.client_id = client_id
         self.sending = False
         self.last_sent_id = -1
-        self.sent_event = asyncio.Event()
 
     async def wait(self) -> None:
         """Wait until all messages that are currently in the buffer were sent.
@@ -1105,11 +1104,7 @@ class _BroadcastProgress:
                 last_sent_id = self.buffer.generator_cursors.get(self.client_id, -1)
             if last_sent_id >= target_id:
                 return
-            self.sent_event.clear()
-            try:
-                await asyncio.wait_for(self.sent_event.wait(), timeout=0.02)
-            except asyncio.TimeoutError:
-                pass
+            await asyncio.sleep(0.002)
 
 
 async def _message_producer(
@@ -1164,7 +1159,6 @@ async def _message_producer(
                 await _send_window(websocket, buffer, outgoing, *send_args)
                 progress.sending = False
                 progress.last_sent_id = cursor
-                progress.sent_event.set()
             else:
                 for i, message in enumerate(outgoing):
                     if not message.after_broadcasts:

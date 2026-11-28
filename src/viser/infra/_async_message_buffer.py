@@ -82,10 +82,11 @@ class AsyncMessageBuffer:
     done: bool = False
     atomic_counter: int = 0
     _atomic_start_time: float = 0.0
-    _last_yield_time: float = 0.0
     _wake_scheduled: bool = False
     """True while a ``_wake`` callback is queued on the event loop. Pushes
     coalesce onto it, since each ``call_soon_threadsafe`` costs a self-pipe write."""
+
+    _wake_scheduled_time: float = 0.0
 
     _warned_push_after_done: bool = False
     """One-shot latch for the dead-connection write warning in push()."""
@@ -297,13 +298,22 @@ class AsyncMessageBuffer:
             # atomic block, this will happen when atomic_end() is called.
             if self.atomic_counter == 0:
                 self._schedule_wake_locked()
-        # Let the event loop run every now and then. Otherwise, tight loops make it
-        # wait for the GIL every time that it needs to do something.
-        if self._wake_scheduled:
-            now = time.monotonic()
-            if now - self._last_yield_time > 0.002:
-                self._last_yield_time = now
-                time.sleep(0.0)  # Releases the GIL.
+        if self.atomic_counter == 0:
+            self._yield_if_starved()
+
+    def _yield_if_starved(self) -> None:
+        """Let the event loop run, if it hasn't been able to for a while. Threads
+        that push in a tight loop can otherwise keep it waiting for the GIL, or
+        always start another atomic block before messages can be sent."""
+        now = time.monotonic()
+        if (
+            self._wake_scheduled
+            and now - self._wake_scheduled_time > 0.005
+            and self.event_loop is not asyncio._get_running_loop()
+        ):
+            self._wake_scheduled_time = now
+            # Not zero: the GIL needs to be released for long enough.
+            time.sleep(0.0005)
 
     def _schedule_wake_locked(self) -> None:
         """Pulse ``message_event`` from the event loop, unless that's already
@@ -318,6 +328,7 @@ class AsyncMessageBuffer:
             # Set before scheduling: the event loop may run _wake(), which clears
             # the flag, before call_soon_threadsafe() returns.
             self._wake_scheduled = True
+            self._wake_scheduled_time = time.monotonic()
             self.event_loop.call_soon_threadsafe(self._wake)
         except BaseException as e:
             # Includes interrupts: nothing would be delivered again if the flag
@@ -352,11 +363,11 @@ class AsyncMessageBuffer:
             if self.atomic_counter > 0 or not self.generator_cursors:
                 return
             self._schedule_wake_locked()
-        # Give consumers a chance to run between this block and the next one.
         if self.event_loop is asyncio._get_running_loop():
+            # Otherwise, we could miss gaps of a single iteration.
             self._wake()
         else:
-            time.sleep(0.0)  # Releases the GIL.
+            self._yield_if_starved()
 
     def atomic_duration(self) -> float:
         """Seconds since the current atomic block started, or 0.0 if we're not in
