@@ -20,6 +20,7 @@ import {
 import { ForwardRefComponent } from "@react-three/drei/helpers/ts-utils";
 import type { LineSegmentsMessage } from "./WebsocketMessages";
 import { drawnLayers, raycastOnlyLayers } from "./scene/raycastOnly";
+import { useTransparentSurface } from "./scene/sceneNodeHooks";
 import { normalizeScale } from "./utils/normalizeScale";
 
 export type LineProps = {
@@ -29,6 +30,8 @@ export type LineProps = {
   segments?: boolean;
   /** Raycast against this line, but don't draw it. Only for segments. */
   raycastOnly?: boolean;
+  /** Draw the antialiasing skirt of a line in world units. */
+  skirt?: boolean;
 } & Omit<LineMaterialParameters, "vertexColors" | "color"> &
   Omit<ThreeElement<typeof Line2>, "args"> &
   Omit<ThreeElement<typeof LineMaterial>, "color" | "vertexColors" | "args"> & {
@@ -51,6 +54,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
         dashed,
         worldUnits,
         raycastOnly = false,
+        skirt = true,
         ...rest
       },
       ref,
@@ -114,8 +118,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
       // patchLineMaterial): the fringe material re-draws the line with a
       // smooth edge falloff, depth-tested but not depth-written, on top of
       // the opaque depth-anchoring core.
-      const showFringe =
-        (worldUnits ?? false) && !(dashed ?? false) && !raycastOnly;
+      const showFringe = (worldUnits ?? false) && !(dashed ?? false) && skirt;
       // The fringe define is applied via callback ref rather than an effect
       // keyed on showFringe: the fringe material remounts when the
       // segments/dashed JSX branch flips while showFringe stays true, and an
@@ -243,6 +246,8 @@ export const LineSegments = React.forwardRef<
     }
   }, [colorArray]);
 
+  // Includes antialiasing skirts.
+  useTransparentSurface(props.thickness_units === "world");
   return (
     <group ref={ref}>
       <group scale={normalizeScale(props.scale)}>

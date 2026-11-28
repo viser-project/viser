@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import base64
 import threading
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import imageio.v3 as iio
 import numpy as np
@@ -26,6 +26,17 @@ NUM_NODES = 80
 # Groups for batches are children of a group with this name.
 JS_NUM_BATCHES = """
 () => window.__viserMutable.scene.getObjectByName("autoInstancer").children.length
+"""
+
+
+JS_NUM_LINE_PASSES = """
+() => {
+    let count = 0;
+    window.__viserMutable.scene.getObjectByName("autoInstancer").traverse((child) => {
+        if (child.isLineSegments2) count++;
+    });
+    return count;
+}
 """
 
 
@@ -96,26 +107,6 @@ def _add_frame(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
     )
 
 
-def _add_frustum(server: viser.ViserServer, name: str, i: int, group: int) -> Any:
-    handle = server.scene.add_camera_frustum(
-        name,
-        fov=1.0,
-        aspect=1.5,
-        scale=0.2,
-        thickness=0.02,
-        color=(i * 3, 255 - i * 3, 100),
-        wxyz=Q,
-        position=_position(i),
-    )
-    if group == 1:
-        # Lines in world units are drawn individually if there are transparent
-        # objects. This one is out of view.
-        server.scene.add_icosphere(
-            f"{name}/transparent", opacity=0.5, position=(0.0, -1e3, 0.0)
-        )
-    return handle
-
-
 def _render(
     client: viser.ClientHandle, origin: tuple[float, float, float] = (0.0, 0.0, 0.0)
 ) -> np.ndarray:
@@ -131,9 +122,7 @@ def _render(
     ).astype(np.int32)
 
 
-@pytest.mark.parametrize(
-    "add", [_add_box, _add_cylinder, _add_mesh, _add_frame, _add_frustum]
-)
+@pytest.mark.parametrize("add", [_add_box, _add_cylinder, _add_mesh, _add_frame])
 def test_batched_matches_individual(
     viser_server: viser.ViserServer, viser_page: Page, add: AddFn
 ) -> None:
@@ -205,48 +194,94 @@ def _live_canvas(page: Page) -> np.ndarray:
     return iio.imread(png, extension=".png").astype(np.int32)
 
 
-def test_batched_world_lines_match_individual(
-    viser_server: viser.ViserServer, viser_page: Page
+@pytest.mark.parametrize("units", ["world", "screen"])
+@pytest.mark.parametrize("surface", [False, True])
+@pytest.mark.parametrize(
+    "origin", [(0.0, 0.0, 0.0), (500_000.0, 4_100_000.0, 100.0)], ids=["near", "far"]
+)
+def test_batched_frustums_match_individual(
+    viser_server: viser.ViserServer,
+    viser_page: Page,
+    units: Literal["world", "screen"],
+    surface: bool,
+    origin: tuple[float, float, float],
 ) -> None:
-    """Antialiased edges of overlapping lines need to be sorted, both in renders and
-    in the live view. The latter has a reversed depth buffer."""
+    """Antialiased edges of lines in world units need to be sorted, relative to each
+    other and to other transparent surfaces. This is true both in renders and in the
+    live view. The latter has a reversed depth buffer."""
     client = get_client_handle(viser_server)
     viser_page.evaluate("window.__viserTestpoints.devSettings.set({ fixedDpr: 1 })")
-    rng = np.random.default_rng(0)
-    for i in range(100):
-        viser_server.scene.add_camera_frustum(
-            f"/frustums/{i}",
-            fov=1.0,
-            aspect=1.3,
-            scale=0.6,
-            color=((255, 0, 0), (0, 0, 255), (0, 200, 0), (255, 200, 0))[i % 4],
-            thickness=0.04 if i % 5 else 0.06,
-            thickness_units="world",
-            wxyz=rng.normal(size=4),
-            position=rng.uniform(-1.0, 1.0, 3),
-        )
-    wait_for_scene_node(viser_page, "/frustums/99")
-    client.camera.position = (0.0, -4.0, 2.0)
-    client.camera.look_at = (0.0, 0.0, 0.0)
+    if surface:
+        viser_server.scene.add_grid("/grid", width=6.0, height=6.0, position=origin)
+    client.camera.position = (origin[0], origin[1] - 4.0, origin[2] + 2.0)
+    client.camera.look_at = origin
 
-    def capture(batched: bool) -> list[np.ndarray]:
-        viser_page.wait_for_timeout(1000)
-        render = _render(client)
-        assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == batched
+    def scenario(batched: bool) -> list[np.ndarray]:
+        root = viser_server.scene.add_frame("/root", show_axes=False, position=origin)
+        rng = np.random.default_rng(0)
+
+        def add(name: str, position: Any) -> viser.CameraFrustumHandle:
+            wxyz = rng.normal(size=4)
+            return viser_server.scene.add_camera_frustum(
+                f"/root/{name}",
+                fov=1.0,
+                aspect=1.3,
+                scale=0.6,
+                color=tuple(rng.integers(0, 256, 3).tolist()),
+                thickness=float(
+                    rng.choice([0.02, 0.06] if units == "world" else [2, 3])
+                ),
+                thickness_units=units,
+                wxyz=wxyz / np.linalg.norm(wxyz),
+                position=position,
+            )
+
+        # Not enough for a batch, unless there are others that are out of view.
+        handles = [add(f"{i}", rng.uniform(-1.0, 1.0, 3)) for i in range(60)]
+        wait_for_scene_node(viser_page, "/root/59")
+        if batched:
+            for i in range(40):
+                add(f"hidden_{i}", (0.0, 0.0, 100.0))
+            wait_for_scene_node(viser_page, "/root/hidden_39")
+        rng = np.random.default_rng(1)
+
+        out = []
+        for step in range(3):
+            if step == 1:
+                for i, handle in enumerate(handles):
+                    handle.visible = i % 3 != 0
+                    if i % 3 == 1:
+                        handle.position = rng.uniform(-1.0, 1.0, 3)
+                    if i % 5 == 0:
+                        handle.color = (0, 0, 255)
+                    if i % 5 == 1:
+                        handle.scale = 0.3
+                    if i % 5 == 2:
+                        handle.thickness *= 2.0
+            elif step == 2:
+                root.wxyz = Q
+                for i, handle in enumerate(handles):
+                    handle.visible = True
+                    if i % 7 == 0:
+                        handle.remove()
+            viser_page.wait_for_timeout(1000)
+            out.append(_render(client, origin))
+            assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == batched
+            viser_page.wait_for_timeout(500)
+            out.append(_live_canvas(viser_page))
+        root.remove()
         viser_page.wait_for_timeout(500)
-        return [render, _live_canvas(viser_page)]
+        return out
 
-    batched = capture(True)
-    # Out of view. Lines are drawn individually if there are transparent objects.
-    viser_server.scene.add_icosphere("/sphere", opacity=0.5, position=(0, -50.0, 0))
-    individual = capture(False)
-    for a, b in zip(batched, individual):
+    batched = scenario(True)
+    individual = scenario(False)
+    for step, (a, b) in enumerate(zip(batched, individual)):
         drawn = (b[..., 3] > 0).sum()
         assert drawn > 1000
-        assert (np.abs(a - b).max(axis=-1) > 16).sum() / drawn < 0.01
+        assert (np.abs(a - b).max(axis=-1) > 16).sum() / drawn < 0.01, step
 
 
-@pytest.mark.parametrize("add", [_add_box, _add_mesh, _add_frame, _add_frustum])
+@pytest.mark.parametrize("add", [_add_box, _add_mesh, _add_frame])
 def test_batches_are_precise_far_from_origin(
     viser_server: viser.ViserServer, viser_page: Page, add: AddFn
 ) -> None:
@@ -388,9 +423,21 @@ def test_unsuitable_nodes_are_not_batched(
 
 
 @pytest.mark.parametrize(
-    "kind", ["filled", "shadow", "opacity", "image", "frustum_image", "grid", "glb"]
+    "kind",
+    [
+        "filled",
+        "shadow",
+        "opacity",
+        "image",
+        "frustum_image",
+        "grid",
+        "glb",
+        "lines",
+        "spline",
+        "transform_controls",
+    ],
 )
-def test_lines_are_not_batched_with_transparent_surfaces(
+def test_line_skirts_are_not_batched_with_transparent_surfaces(
     viser_server: viser.ViserServer, viser_page: Page, kind: str
 ) -> None:
     """Antialiased edges need to be sorted relative to transparent surfaces."""
@@ -407,7 +454,7 @@ def test_lines_are_not_batched_with_transparent_surfaces(
         )
     wait_for_scene_node(viser_page, f"/frustums/{NUM_NODES - 1}")
     _render(client)
-    assert viser_page.evaluate(JS_NUM_BATCHES) > 0
+    assert viser_page.evaluate(JS_NUM_LINE_PASSES) == 2
     surface: viser.SceneNodeHandle
     if kind == "filled":
         surface = viser_server.scene.add_camera_frustum(
@@ -426,17 +473,27 @@ def test_lines_are_not_batched_with_transparent_surfaces(
             "/surface", fov=1.0, aspect=1.0, image=np.zeros((4, 4, 3), np.uint8)
         )
     elif kind == "grid":
-        surface = viser_server.scene.add_grid("/surface", plane_opacity=0.5)
+        surface = viser_server.scene.add_grid("/surface")
+    elif kind == "lines":
+        surface = viser_server.scene.add_line_segments(
+            "/surface", np.zeros((2, 2, 3)), (0, 0, 0), thickness_units="world"
+        )
+    elif kind == "spline":
+        surface = viser_server.scene.add_spline_catmull_rom(
+            "/surface", np.eye(3), thickness_units="world"
+        )
+    elif kind == "transform_controls":
+        surface = viser_server.scene.add_transform_controls("/surface")
     else:
         mesh = trimesh.creation.box()
         mesh.visual.vertex_colors = np.full((len(mesh.vertices), 4), 100, np.uint8)
         surface = viser_server.scene.add_mesh_trimesh("/surface", mesh)
     wait_for_scene_node(viser_page, "/surface")
     _render(client)
-    assert viser_page.evaluate(JS_NUM_BATCHES) == 0
+    assert viser_page.evaluate(JS_NUM_LINE_PASSES) == 1
     surface.remove()
     _render(client)
-    assert viser_page.evaluate(JS_NUM_BATCHES) > 0
+    assert viser_page.evaluate(JS_NUM_LINE_PASSES) == 2
 
 
 def _click_until(

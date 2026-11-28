@@ -260,8 +260,7 @@ export const Grid = React.forwardRef<THREE.Mesh, GridProps>(function Grid(
     side,
   ]);
 
-  // Lines and shadows cover little enough to be ignored.
-  useTransparentSurface(planeOpacity > 0);
+  useTransparentSurface(true);
 
   useFrame((state) => {
     const mesh = ref.current;

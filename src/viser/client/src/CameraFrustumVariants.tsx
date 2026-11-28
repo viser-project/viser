@@ -153,30 +153,35 @@ export const CameraFrustumComponent = React.forwardRef<
     autoInstancer.subscribeTransparent,
     autoInstancer.hasTransparentSurfaces,
   );
+  // Skirts need to be sorted relative to other transparent objects.
+  const batchSkirts = worldUnits && !hasTransparentSurfaces;
   const [source] = React.useState(() => new InstanceSource());
   const mode = useInstanceSource(
     source,
-    isHovered || filled || (worldUnits && hasTransparentSurfaces)
+    isHovered || filled
       ? null
       : {
-          key: `lines|${frustumPoints.length}|${worldUnits}`,
-          makeBatch: () => new LineBatch(frustumPoints.length / 6, worldUnits),
+          key: `lines|${frustumPoints.length}|${worldUnits}|${batchSkirts}`,
+          makeBatch: () =>
+            new LineBatch(frustumPoints.length / 6, worldUnits, batchSkirts),
           appearance,
         },
   );
-  useDrawable(filled || imageTexture !== undefined);
-  useMarkTransformsDirty([imageTexture]);
+  const individualSkirt = worldUnits && (mode === "drawn" || !batchSkirts);
+  useDrawable(filled || imageTexture !== undefined || individualSkirt);
+  useMarkTransformsDirty([imageTexture, individualSkirt]);
 
   return (
     <primitive object={source} ref={ref}>
-      {mode !== null ? (
+      {mode !== null || individualSkirt ? (
         <Line
           points={frustumPoints}
           color={isHovered ? 0xfbff00 : lineColor}
           lineWidth={isHovered ? 1.5 * thickness : thickness}
           worldUnits={worldUnits}
           segments={true}
-          raycastOnly={mode === "raycast"}
+          raycastOnly={mode !== "drawn"}
+          skirt={individualSkirt}
         />
       ) : null}
 

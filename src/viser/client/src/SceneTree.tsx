@@ -42,6 +42,7 @@ import { BatchedMesh } from "./mesh/BatchedMesh";
 import { SingleGlbAsset } from "./mesh/SingleGlbAsset";
 import { BatchedGlbAsset } from "./mesh/BatchedGlbAsset";
 import { SceneNodeController } from "./scene/SceneNodeController";
+import { useTransparentSurface } from "./scene/sceneNodeHooks";
 import { normalizeScale } from "./utils/normalizeScale";
 
 function rgbToInt(rgb: [number, number, number]): number {
@@ -85,6 +86,12 @@ function flatFromVector3List(points: THREE.Vector3[]): Float32Array {
   return flat;
 }
 
+/** For components that aren't ours, but draw transparent surfaces. */
+function TransparentSurface() {
+  useTransparentSurface(true);
+  return null;
+}
+
 /** Catmull-Rom spline sampled with three's curve classes (the same ones
  * drei's CatmullRomLine uses) and rendered through viser's <Line>, which
  * handles the world-unit antialiasing passes. */
@@ -101,6 +108,8 @@ function CatmullRomSpline({ message }: { message: CatmullRomSplineMessage }) {
     );
     return flatFromVector3List(curve.getPoints(p.segments ?? 20));
   }, [p.points, p.closed, p.curve_type, p.tension, p.segments]);
+  // Includes antialiasing skirts.
+  useTransparentSurface(p.thickness_units === "world");
   return (
     <Line
       points={sampledPoints}
@@ -130,6 +139,8 @@ function CubicBezierSpline({ message }: { message: CubicBezierSplineMessage }) {
     }
     return curves;
   }, [p.points, p.control_points, p.segments]);
+  // Includes antialiasing skirts.
+  useTransparentSurface(p.thickness_units === "world");
   return (
     <>
       {sampledCurves.map((sampledPoints, i) => (
@@ -457,6 +468,7 @@ function createObjectFactory(
       return {
         makeObject: (ref, children) => (
           <group onClick={(e) => e.stopPropagation()}>
+            <TransparentSurface />
             <PivotControls
               ref={ref}
               scale={message.props.scale}

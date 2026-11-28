@@ -614,7 +614,7 @@ describe("SpatialBatch", () => {
 
 describe("LineBatch", () => {
   it("draws segments in world space", () => {
-    const batch = new LineBatch(1, true);
+    const batch = new LineBatch(1, true, true);
     const appearance = {
       color: 0xffffff,
       thickness: 0.1,
@@ -646,7 +646,7 @@ describe("LineBatch", () => {
 
   it("culls the same lines as three.js", () => {
     const points = Float32Array.of(0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 0, 0);
-    const batch = new LineBatch(2, true);
+    const batch = new LineBatch(2, true, true);
     const sources = Array.from({ length: 200 }, (_, i) =>
       makeSource(i - 100, {
         color: 0xffffff,
@@ -690,7 +690,7 @@ describe("LineBatch", () => {
 
 describe("LineBatch sorting", () => {
   it("orders skirts like three.js orders transparent objects", () => {
-    const batch = new LineBatch(1, true);
+    const batch = new LineBatch(1, true, true);
     const appearance = {
       color: 0xffffff,
       thickness: 0.1,

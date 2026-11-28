@@ -53,8 +53,8 @@ function getBounds(points: Float32Array): THREE.Sphere {
 export class LineBatch extends DenseBatch {
   readonly object = new THREE.Group();
   private readonly core: LinePass;
-  /** Antialiasing skirts, for lines in world units. They're transparent, so they
-   * have their own geometry which is sorted for each camera. */
+  /** Antialiasing skirts. They're transparent, so they have their own geometry
+   * which is sorted for each camera. */
   private readonly fringe: LinePass | null = null;
   private positions = new Float32Array(0);
   private colors = new Float32Array(0);
@@ -63,11 +63,13 @@ export class LineBatch extends DenseBatch {
   constructor(
     private readonly numSegments: number,
     worldUnits: boolean,
+    /** Whether to draw antialiasing skirts. Only for world units. */
+    skirts: boolean,
   ) {
     super();
     const params = { worldUnits };
     this.core = new LinePass({ ...params, transparent: false });
-    if (worldUnits) {
+    if (skirts) {
       this.fringe = new LinePass({
         ...params,
         transparent: true,
