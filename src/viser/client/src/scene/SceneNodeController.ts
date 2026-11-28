@@ -111,6 +111,10 @@ export class SceneNodeController {
     }
     this.object = object;
     nodeRefFromName[this.name] = object;
+    // Poses need to be applied again when an object is replaced.
+    const pose = this.viewer.mutable.current.nodePoseData[this.name];
+    if (pose?.poseUpdateState === "updated")
+      pose.poseUpdateState = "needsUpdate";
     // Poses are the only thing that modifies a node's local transform, and
     // they're applied below. Don't recompute it every frame.
     if (object.matrixAutoUpdate) {
@@ -362,8 +366,16 @@ export class SceneNodeController {
           lockCamera: dragMatches,
           onPromote: !dragMatches
             ? null
-            : (promotionModifier) =>
-                dragLayer!.beginDrag({ ...beginDragArgs, promotionModifier }),
+            : (promotionModifier) => {
+                const began = dragLayer!.beginDrag({
+                  ...beginDragArgs,
+                  promotionModifier,
+                });
+                // Ends the drag if the node has been hidden since the press.
+                viewer.sceneNodeUpdates.markDirty(name);
+                viewer.mutable.current.requestRender();
+                return began;
+              },
         });
         if (dragMatches) e.nativeEvent.preventDefault();
       },

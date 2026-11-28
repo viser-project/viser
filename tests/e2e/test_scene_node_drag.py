@@ -14,7 +14,12 @@ from playwright.sync_api import Page
 
 import viser
 
-from .utils import wait_for_connection, wait_for_scene_node
+from .utils import (
+    canvas_center,
+    get_client_handle,
+    wait_for_connection,
+    wait_for_scene_node,
+)
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
@@ -1534,3 +1539,34 @@ def test_scene_node_drag_callback_removal(
     assert not drag_started.is_set()
     assert not drag_updated.is_set()
     assert not drag_ended.is_set()
+
+
+@pytest.mark.parametrize("hide_parent", [False, True])
+def test_drag_does_not_start_on_hidden_node(
+    viser_server: viser.ViserServer, viser_page: Page, hide_parent: bool
+) -> None:
+    """Hiding a node after it's pressed, but before the pointer moves."""
+    client = get_client_handle(viser_server)
+    phases: list[str] = []
+    parent = viser_server.scene.add_frame("/parent", show_axes=False)
+    box = viser_server.scene.add_box("/parent/box", dimensions=(4.0, 4.0, 0.2))
+    box.on_drag("left")(lambda event: phases.append(event.phase))
+    client.camera.position = (0.0, 0.01, 4.0)
+    client.camera.look_at = (0.0, 0.0, 0.0)
+    wait_for_scene_node(viser_page, "/parent/box")
+    viser_page.wait_for_timeout(1000)
+
+    x, y = canvas_center(viser_page)
+    viser_page.mouse.move(x - 10, y)
+    viser_page.mouse.move(x, y)
+    viser_page.wait_for_timeout(300)
+    viser_page.mouse.down()
+    (parent if hide_parent else box).visible = False
+    viser_page.wait_for_timeout(500)
+    for i in range(10):
+        viser_page.mouse.move(x + 10 * i, y)
+        viser_page.wait_for_timeout(100)
+    viser_page.wait_for_timeout(500)
+    assert "update" not in phases
+    assert phases.count("start") == phases.count("end")
+    viser_page.mouse.up()

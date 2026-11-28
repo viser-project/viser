@@ -195,33 +195,34 @@ const ViserSpotLight = React.forwardRef<
   );
 });
 
-/** Body of a 3D GUI container: a Paper panel bridged into drei's <Html />
- * (which mounts a separate ReactDOM root, so React context doesn't flow into
- * it). The bridge lives HERE rather than in SceneNodeThreeObject on purpose:
- * its-fine's useContextBridge → useFiber does a depth-first search of the
- * whole R3F fiber tree to find the calling component, so calling it once per
- * scene node made scene construction O(N²). Only the (few) Gui3D nodes pay
- * for it now. */
-function Gui3DHtmlPanel(props: { containerUuid: string }) {
+/** 3D GUI container: a Paper panel in drei's <Html />, which mounts a separate
+ * ReactDOM root. React context needs to be bridged into it, from a component
+ * that's outside of it. This is its own component because its-fine's
+ * useContextBridge → useFiber does a depth-first search of the whole R3F fiber
+ * tree to find the calling component: calling it once per scene node would make
+ * scene construction O(N²). Only the (few) Gui3D nodes pay for it. */
+function Gui3DHtml(props: { containerUuid: string }) {
   const ContextBridge = useContextBridge();
   return (
-    <ContextBridge>
-      <Paper
-        style={{
-          width: "18em",
-          fontSize: "0.875em",
-          marginLeft: "0.5em",
-          marginTop: "0.5em",
-        }}
-        shadow="0 0 0.8em 0 rgba(0,0,0,0.1)"
-        pb="0.25em"
-        onPointerDown={(evt) => {
-          evt.stopPropagation();
-        }}
-      >
-        <GeneratedGuiContainer containerUuid={props.containerUuid} />
-      </Paper>
-    </ContextBridge>
+    <Html>
+      <ContextBridge>
+        <Paper
+          style={{
+            width: "18em",
+            fontSize: "0.875em",
+            marginLeft: "0.5em",
+            marginTop: "0.5em",
+          }}
+          shadow="0 0 0.8em 0 rgba(0,0,0,0.1)"
+          pb="0.25em"
+          onPointerDown={(evt) => {
+            evt.stopPropagation();
+          }}
+        >
+          <GeneratedGuiContainer containerUuid={props.containerUuid} />
+        </Paper>
+      </ContextBridge>
+    </Html>
   );
 }
 
@@ -558,9 +559,7 @@ function createObjectFactory(
           // THREE.Object3D.
           return (
             <group ref={ref}>
-              <Html>
-                <Gui3DHtmlPanel containerUuid={message.props.container_uuid} />
-              </Html>
+              <Gui3DHtml containerUuid={message.props.container_uuid} />
               {children}
             </group>
           );
