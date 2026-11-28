@@ -67,8 +67,8 @@ export class MeshBatch extends DenseBatch {
     this.needsBounds = true;
   }
 
-  flush(): void {
-    super.flush();
+  flush(camera: THREE.Camera): void {
+    super.flush(camera);
     if (this.needsBounds) {
       this.needsBounds = false;
       this.updateBounds();

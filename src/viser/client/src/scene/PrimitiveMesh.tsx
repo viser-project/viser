@@ -13,7 +13,7 @@ import {
   MIN_INSTANCE_SCALE,
 } from "./AutoInstancer";
 import { geometryRadius, MeshBatch } from "./MeshBatch";
-import { raycastOnlyLayers, raycastOnlyMaterials } from "./raycastOnly";
+import { drawnLayers, raycastOnlyLayers } from "./raycastOnly";
 import { InstancingSpec, useInstanceSource } from "./useInstanceSource";
 
 /** Scene node that draws a geometry which is shared between many nodes. Large
@@ -88,27 +88,16 @@ export const PrimitiveMesh = React.forwardRef<
 
   return (
     <primitive object={source} ref={ref}>
-      {mode === "drawn" ? (
+      {mode !== null ? (
+        // Remounting this would lose track of whether it's hovered.
         <mesh
-          // Keys are needed because `material` is a prop for one mesh, and a child
-          // of the other. R3F resets removed props after attaching children.
-          key="drawn"
           geometry={geometry}
           scale={scale}
-          castShadow={castShadow}
+          layers={mode === "drawn" ? drawnLayers : raycastOnlyLayers}
+          castShadow={mode === "drawn" && castShadow}
           receiveShadow={receiveShadow === true}
         >
           <ViserStandardMeshMaterial {...material} />
-          <OutlinesIfHovered enableCreaseAngle={outlineCreaseAngle} />
-        </mesh>
-      ) : mode === "raycast" ? (
-        <mesh
-          key="raycast"
-          geometry={geometry}
-          scale={scale}
-          layers={raycastOnlyLayers}
-          material={raycastOnlyMaterials[material.side]}
-        >
           <OutlinesIfHovered enableCreaseAngle={outlineCreaseAngle} />
         </mesh>
       ) : null}

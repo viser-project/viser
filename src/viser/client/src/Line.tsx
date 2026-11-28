@@ -19,7 +19,7 @@ import {
 } from "three-stdlib";
 import { ForwardRefComponent } from "@react-three/drei/helpers/ts-utils";
 import type { LineSegmentsMessage } from "./WebsocketMessages";
-import { raycastOnlyLayers } from "./scene/raycastOnly";
+import { drawnLayers, raycastOnlyLayers } from "./scene/raycastOnly";
 import { normalizeScale } from "./utils/normalizeScale";
 
 export type LineProps = {
@@ -34,8 +34,6 @@ export type LineProps = {
   Omit<ThreeElement<typeof LineMaterial>, "color" | "vertexColors" | "args"> & {
     color?: ColorRepresentation;
   };
-
-const defaultLayers = new THREE.Layers();
 
 // Fringe pass objects are visual-only; the core object handles picking.
 const noopRaycast = () => undefined;
@@ -186,7 +184,7 @@ export const Line: ForwardRefComponent<LineProps, Line2 | LineSegments2> =
           <>
             <lineSegments2
               ref={setLineRef}
-              layers={raycastOnly ? raycastOnlyLayers : defaultLayers}
+              layers={raycastOnly ? raycastOnlyLayers : drawnLayers}
               {...rest}
             >
               <primitive object={lineGeom} attach="geometry" />

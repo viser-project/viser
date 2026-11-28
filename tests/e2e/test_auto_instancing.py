@@ -554,6 +554,67 @@ def test_clickable_nodes_keep_their_materials(
     assert viser_page.evaluate(JS_DRAWN_MATERIALS, "/many/") == [red] * 10
 
 
+def _is_hovered(page: Page) -> bool:
+    return page.evaluate(
+        "() => document.body.style.cursor === 'pointer'"
+        " || window.__viserMutable.canvas.style.cursor === 'pointer'"
+    )
+
+
+@pytest.mark.parametrize("change", ["material", "side", "activate", "deactivate"])
+def test_hover_ends_after_changes(
+    viser_server: viser.ViserServer, viser_page: Page, change: str
+) -> None:
+    """Meshes shouldn't be remounted while they're hovered: the end of the hover
+    would be missed."""
+    client = get_client_handle(viser_server)
+    client.camera.position = (0.0, 0.01, 10.0)
+    client.camera.look_at = (0.0, 0.0, 0.0)
+    box = viser_server.scene.add_box("/center", dimensions=(3.0, 3.0, 0.1))
+    box.on_click(lambda _: None)
+    others = []
+
+    def add(count: int) -> None:
+        for _ in range(count):
+            others.append(
+                viser_server.scene.add_box(
+                    f"/others/{len(others)}", position=(50.0, 0.0, 0.0)
+                )
+            )
+
+    add({"activate": 60, "deactivate": 80}.get(change, 0))
+    wait_for_scene_node(viser_page, "/center")
+    _render(client)
+    x, y = canvas_center(viser_page)
+    for i in range(20):
+        viser_page.mouse.move(x + i % 2, y)
+        viser_page.wait_for_timeout(200)
+        if _is_hovered(viser_page):
+            break
+    assert _is_hovered(viser_page)
+
+    num_batches = viser_page.evaluate(JS_NUM_BATCHES)
+    if change == "material":
+        box.material = "toon3"
+    elif change == "side":
+        box.side = "double"
+    elif change == "activate":
+        add(20)
+    else:
+        for other in others[:70]:
+            other.remove()
+    viser_page.wait_for_timeout(500)
+    _render(client)
+    if change in ("activate", "deactivate"):
+        assert viser_page.evaluate(JS_NUM_BATCHES) != num_batches
+    for i in range(10):
+        viser_page.mouse.move(5 + i, y)
+        viser_page.wait_for_timeout(200)
+        if not _is_hovered(viser_page):
+            break
+    assert not _is_hovered(viser_page)
+
+
 def test_point_clouds_bubble_clicks(
     viser_server: viser.ViserServer, viser_page: Page
 ) -> None:

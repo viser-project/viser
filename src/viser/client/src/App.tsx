@@ -142,7 +142,8 @@ function AutoInstancedObjects() {
   React.useLayoutEffect(() => {
     // Runs after three.js updates world matrices, and before it decides what to
     // draw. This includes renders to images.
-    scene.onBeforeRender = () => autoInstancer.flush();
+    scene.onBeforeRender = (_renderer, _scene, camera) =>
+      autoInstancer.flush(camera);
     return () => {
       scene.onBeforeRender = () => {};
     };

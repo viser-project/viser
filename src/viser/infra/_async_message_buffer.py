@@ -4,7 +4,6 @@ import asyncio
 import collections
 import contextlib
 import dataclasses
-import operator
 import threading
 from asyncio.events import AbstractEventLoop
 from typing import (
@@ -16,7 +15,6 @@ from typing import (
     Generator,
     List,
     Optional,
-    Sequence,
     Set,
     Tuple,
 )
@@ -24,6 +22,15 @@ from typing import (
 from ._messages import Message
 
 _MAX_CACHED_ENCODING_BYTES = 4 << 20
+
+
+class MessageWindow(List[Message]):
+    """Messages that are sent together."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.ids: List[int] = []
+        """Buffer ids of the messages, excluding the end-of-replay marker."""
 
 
 @dataclasses.dataclass
@@ -84,25 +91,27 @@ class AsyncMessageBuffer:
     pending?" event is not a consumption watermark, since a backpressured
     client's cursor can sit arbitrarily far behind it."""
 
-    _encoding_cache: Optional[Tuple[Sequence[Message], List[Any]]] = None
+    _encoding_cache: Optional[Tuple[MessageWindow, List[Any]]] = None
     """Most recently encoded window and its wire payload. See
     ``get_cached_encoding()``."""
 
-    def get_cached_encoding(self, window: Sequence[Message]) -> Optional[List[Any]]:
+    def get_cached_encoding(self, window: MessageWindow) -> Optional[List[Any]]:
         """Encoded payload for a window, if another consumer just encoded the
         exact same messages. Event loop only."""
         if self._encoding_cache is None:
             return None
         cached_window, parts = self._encoding_cache
-        if len(cached_window) == len(window) and all(
-            map(operator.is_, cached_window, window)
+        # By id: messages may be mutated and then pushed again. The marker doesn't
+        # have an id, and is always last.
+        if (
+            cached_window.ids == window.ids
+            and len(cached_window) == len(window)
+            and cached_window[-1] is window[-1]
         ):
             return parts
         return None
 
-    def cache_encoding(
-        self, window: Sequence[Message], parts: Optional[List[Any]]
-    ) -> None:
+    def cache_encoding(self, window: MessageWindow, parts: Optional[List[Any]]) -> None:
         """Share an encoded window with other consumers. ``None`` clears. Event
         loop only."""
         # Don't pin payloads in memory if there's nobody to share them with, or
@@ -266,10 +275,11 @@ class AsyncMessageBuffer:
 
             # If an existing message with the same key already exists in our buffer, we
             # don't need the old one anymore. :-)
-            old_message_id = self.id_from_redundancy_key.get(redundancy_key)
-            if old_message_id is not None:
-                self.pop_message_locked(old_message_id)
-            self.id_from_redundancy_key[redundancy_key] = new_message_id
+            if redundancy_key is not None:
+                old_message_id = self.id_from_redundancy_key.get(redundancy_key)
+                if old_message_id is not None:
+                    self.pop_message_locked(old_message_id)
+                self.id_from_redundancy_key[redundancy_key] = new_message_id
 
             # Notify consumers that a new message is available. If we're in an
             # atomic block, this will happen when atomic_end() is called.
@@ -285,16 +295,20 @@ class AsyncMessageBuffer:
         # observe the message we just pushed.
         if self._wake_scheduled or not self.generator_cursors:
             return
-        # Set before scheduling: the event loop may run _wake(), which clears the
-        # flag, before call_soon_threadsafe() returns.
-        self._wake_scheduled = True
         try:
+            # Set before scheduling: the event loop may run _wake(), which clears
+            # the flag, before call_soon_threadsafe() returns.
+            self._wake_scheduled = True
             self.event_loop.call_soon_threadsafe(self._wake)
-        except RuntimeError:
+        except BaseException as e:
+            # Includes interrupts: nothing would be delivered again if the flag
+            # stayed set. An extra wake is harmless.
+            self._wake_scheduled = False
             # Event loop already closed (write after stop()); messages are
             # buffered, and a closed loop has no consumer to wake -- same
             # tolerance as set_done().
-            self._wake_scheduled = False
+            if not isinstance(e, RuntimeError):
+                raise
 
     def _wake(self) -> None:
         # Order matters: a push landing after the flag clears schedules a new
@@ -341,7 +355,7 @@ class AsyncMessageBuffer:
 
     def window_generator(
         self, client_id: int, backlog_done_message: Message | None = None
-    ) -> AsyncGenerator[Sequence[Message], None]:
+    ) -> AsyncGenerator[MessageWindow, None]:
         """Async iterator over messages. Loops infinitely, and waits when no messages
         are available.
 
@@ -371,7 +385,7 @@ class AsyncMessageBuffer:
         client_id: int,
         backlog_last_id: int,
         backlog_done_message: Message | None,
-    ) -> AsyncGenerator[Sequence[Message], None]:
+    ) -> AsyncGenerator[MessageWindow, None]:
         last_sent_id = -1
         # Ids to visit next, when there's a long gap to cross (see below).
         pending_ids: Deque[int] = collections.deque()
@@ -383,7 +397,7 @@ class AsyncMessageBuffer:
         self.generator_cursors[client_id] = last_sent_id
         try:
             while not self.done:
-                window: List[Message] = []
+                window = MessageWindow()
                 most_recent_message_id = self.message_counter - 1
                 # D51: the end-of-replay marker goes IMMEDIATELY after the
                 # connection's captured backlog. Cap the pre-marker windows at
@@ -441,6 +455,7 @@ class AsyncMessageBuffer:
                         and message.excluded_self_client != client_id
                     ):
                         window.append(message)
+                        window.ids.append(last_sent_id)
 
                 # Advance this connection's consumption cursor: everything at
                 # or below last_sent_id is either in `window` (about to be

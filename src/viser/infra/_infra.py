@@ -20,7 +20,7 @@ from asyncio.events import AbstractEventLoop
 from collections import Counter
 from collections.abc import Coroutine
 from pathlib import Path
-from typing import Any, Callable, Generator, NewType, Sequence, TypeVar
+from typing import Any, Callable, Generator, NewType, TypeVar
 from urllib.parse import unquote as _url_unquote
 
 import msgspec.msgpack
@@ -36,7 +36,7 @@ from websockets.typing import Subprotocol
 
 import viser  # Import for version checking.
 
-from ._async_message_buffer import AsyncMessageBuffer
+from ._async_message_buffer import AsyncMessageBuffer, MessageWindow
 from ._messages import Message, is_binary_placeholder
 
 
@@ -607,12 +607,12 @@ class WebsockServer(WebsockMessageHandler):
             self._live_connections[client_id] = connection
 
             def handle_incoming(message: Message) -> None:
-                message_cls = type(message)
-                for handler in (self, client_connection):
-                    if message_cls in handler._incoming_handlers:
-                        event_loop.create_task(
-                            handler._handle_incoming_message(client_id, message)
-                        )
+                event_loop.create_task(
+                    self._handle_incoming_message(client_id, message)
+                )
+                event_loop.create_task(
+                    client_connection._handle_incoming_message(client_id, message)
+                )
 
             # New connection callbacks.
             for cb in self._client_connect_cb:
@@ -1007,7 +1007,7 @@ async def _send_parts(
 async def _send_window(
     websocket: ServerConnection,
     buffer: AsyncMessageBuffer,
-    window: Sequence[Message],
+    window: MessageWindow,
     split_bytes: int,
     zstd: zstandard.ZstdCompressor,
     send_lock: asyncio.Lock,

@@ -19,8 +19,11 @@ export type InstancingSpec = {
   appearance: InstanceAppearance;
 };
 
-const subscribeToNothing = () => () => undefined;
-const alwaysFalse = () => false;
+type JoinedEntry = Pick<BatchEntry, "subscribe" | "isActive">;
+const notBatched: JoinedEntry = {
+  subscribe: () => () => undefined,
+  isActive: () => false,
+};
 
 /** Batch a scene node together with similar ones, if there are many of them.
  *
@@ -42,17 +45,17 @@ export function useInstanceSource(
   // The entry that we've joined. We don't know whether its batch will be active
   // until every node in the same commit has joined, so nothing is drawn on the
   // first pass. State updates in layout effects are flushed before the next
-  // frame.
-  const [joined, setJoined] = React.useState<{
-    key: string;
-    entry: BatchEntry;
-  } | null>(null);
+  // frame. When the key changes later, we go by the previous entry until then.
+  const [entry, setEntry] = React.useState<JoinedEntry | null>(null);
   React.useLayoutEffect(() => {
-    if (key === null) return;
+    if (key === null) {
+      setEntry(notBatched);
+      return;
+    }
     const entry = autoInstancer.getEntry(key, makeBatch!);
     source.appearance = appearance;
     entry.add(source);
-    setJoined({ key, entry });
+    setEntry(entry);
     return () => entry.remove(source);
     // The key determines makeBatch, and changes to the appearance are handled
     // below.
@@ -65,10 +68,10 @@ export function useInstanceSource(
   }, [source, appearance]);
 
   const active = React.useSyncExternalStore(
-    joined?.entry.subscribe ?? subscribeToNothing,
-    joined?.entry.isActive ?? alwaysFalse,
+    (entry ?? notBatched).subscribe,
+    (entry ?? notBatched).isActive,
   );
-  const drawIndividually = key === null || (joined?.key === key && !active);
+  const drawIndividually = key === null || (entry !== null && !active);
   const raycastable = React.useContext(HoverableContext)?.raycastable ?? false;
   const mode = drawIndividually ? "drawn" : raycastable ? "raycast" : null;
   useDrawable(drawIndividually);

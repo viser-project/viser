@@ -34,6 +34,7 @@ from ._assignable_props_api import (
     colors_to_uint8,
     ensure_not_removed,
     forget_readable_copy,
+    reset_after_fork,
     state_lock,
 )
 from .infra._infra import (
@@ -1244,6 +1245,12 @@ class BatchedGlbHandle(
 _splat_update_lock = threading.RLock()
 """Held while updating part of a splat buffer. Each update replaces the whole
 buffer, so concurrent ones would otherwise lose attributes."""
+
+
+@reset_after_fork
+def _reset_splat_update_lock() -> None:
+    global _splat_update_lock
+    _splat_update_lock = threading.RLock()
 
 
 class GaussianSplatHandle(

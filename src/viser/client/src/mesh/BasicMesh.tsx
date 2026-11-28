@@ -5,7 +5,7 @@ import { createStandardMaterial, rgbToInt } from "./meshMaterialUtils";
 import { MeshMessage } from "../WebsocketMessages";
 import { OutlinesIfHovered } from "../OutlinesIfHovered";
 import { InstanceSource, MIN_INSTANCE_SCALE } from "../scene/AutoInstancer";
-import { raycastOnlyLayers, raycastOnlyMaterials } from "../scene/raycastOnly";
+import { drawnLayers, raycastOnlyLayers } from "../scene/raycastOnly";
 import { GeometryAppearance, GeometryBatch } from "../scene/GeometryBatch";
 import { InstancingSpec, useInstanceSource } from "../scene/useInstanceSource";
 import { normalizeScale } from "../utils/normalizeScale";
@@ -109,11 +109,7 @@ export const BasicMesh = React.forwardRef<
   return (
     <primitive object={source} ref={ref}>
       {mode !== null ? (
-        <IndividualMesh
-          key={mode}
-          message={message}
-          raycastOnly={mode === "raycast"}
-        />
+        <IndividualMesh message={message} raycastOnly={mode === "raycast"} />
       ) : null}
       {children}
     </primitive>
@@ -177,37 +173,23 @@ function IndividualMesh({
   const shadowOpacity =
     typeof props.receive_shadow === "number" ? props.receive_shadow : 0.0;
   const scale = normalizeScale(props.scale);
-  const outlines = (
-    <OutlinesIfHovered
-      enableCreaseAngle={
-        geometry.attributes.position.count < 1024 &&
-        geometry.boundingSphere!.radius > 0.1
-      }
-    />
-  );
-
-  if (raycastOnly) {
-    return (
-      <mesh
-        geometry={geometry}
-        scale={scale}
-        layers={raycastOnlyLayers}
-        material={raycastOnlyMaterials[props.side]}
-      >
-        {outlines}
-      </mesh>
-    );
-  }
   return (
     <>
+      {/* Remounting this would lose track of whether it's hovered. */}
       <mesh
         geometry={geometry}
         scale={scale}
-        castShadow={props.cast_shadow}
+        layers={raycastOnly ? raycastOnlyLayers : drawnLayers}
+        castShadow={!raycastOnly && props.cast_shadow}
         receiveShadow={props.receive_shadow === true}
       >
         <ViserStandardMeshMaterial {...props} />
-        {outlines}
+        <OutlinesIfHovered
+          enableCreaseAngle={
+            geometry.attributes.position.count < 1024 &&
+            geometry.boundingSphere!.radius > 0.1
+          }
+        />
       </mesh>
       <ShadowMesh opacity={shadowOpacity} geometry={geometry} scale={scale} />
     </>

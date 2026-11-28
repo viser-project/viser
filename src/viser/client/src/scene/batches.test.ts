@@ -12,6 +12,8 @@ import { MeshAppearance, MeshBatch } from "./MeshBatch";
 import { GeometryAppearance, GeometryBatch } from "./GeometryBatch";
 import { LineBatch } from "./LineBatch";
 
+const camera = new THREE.PerspectiveCamera();
+
 function makeSource(x: number, appearance: InstanceAppearance): InstanceSource {
   const source = new InstanceSource();
   source.matrixAutoUpdate = false;
@@ -25,7 +27,7 @@ function makeSource(x: number, appearance: InstanceAppearance): InstanceSource {
 
 /** Positions that a mesh batch draws, sorted. */
 function drawnPositions(batch: MeshBatch): number[] {
-  batch.flush();
+  batch.flush(camera);
   const mesh = batch.object.children[0] as THREE.InstancedMesh;
   const matrix = new THREE.Matrix4();
   const out = [];
@@ -88,7 +90,7 @@ describe("AutoInstancer", () => {
       makeSource(i, meshAppearance),
     );
     sources.forEach((source) => entry.add(source));
-    instancer.flush();
+    instancer.flush(camera);
     expect(entry.isActive()).toBe(true);
 
     sources.forEach((source, i) => {
@@ -98,19 +100,19 @@ describe("AutoInstancer", () => {
     });
     const listener = vi.fn();
     entry.subscribe(listener);
-    instancer.flush();
+    instancer.flush(camera);
     // Drawn by the batch until members had time to draw themselves.
     expect(entry.isActive()).toBe(false);
     expect(listener).toHaveBeenCalledTimes(1);
     expect(instancer.group.children.length).toBe(1);
     sources[0].setDisplayed(false);
     entry.remove(sources[1]);
-    instancer.flush();
+    instancer.flush(camera);
     expect(instancer.group.children.length).toBe(0);
     expect(sources[2].batch).toBe(null);
 
     entry.add(sources[1]);
-    instancer.flush();
+    instancer.flush(camera);
     expect(entry.isActive()).toBe(false);
     sources.forEach((source) => entry.remove(source));
     expect(instancer.getEntry("key", makeMeshBatch)).not.toBe(entry);
@@ -183,7 +185,7 @@ describe("MeshBatch", () => {
     const batch = makeMeshBatch();
     const source = makeSource(0, meshAppearance);
     batch.add(source);
-    batch.flush();
+    batch.flush(camera);
     const mesh = batch.object.children[0] as THREE.InstancedMesh;
     const matrix = new THREE.Matrix4();
     const color = new THREE.Color();
@@ -228,7 +230,7 @@ describe("culling", () => {
     });
     const check = () => {
       parent.updateMatrixWorld(true);
-      batch.flush();
+      batch.flush(camera);
       const mesh = batch.object.children[0] as THREE.InstancedMesh;
       expect(mesh.frustumCulled).toBe(true);
       const matrix = new THREE.Matrix4();
@@ -259,14 +261,14 @@ describe("culling", () => {
     sources[5].position.x = NaN;
     sources[5].updateMatrix();
     parent.updateMatrixWorld(true);
-    batch.flush();
+    batch.flush(camera);
     expect(mesh.frustumCulled).toBe(false);
   });
 
   it("isn't used when drawing is cheap", () => {
     const batch = makeMeshBatch();
     for (let i = 0; i < 100; i++) batch.add(makeSource(i, meshAppearance));
-    batch.flush();
+    batch.flush(camera);
     expect(batch.object.children[0].frustumCulled).toBe(false);
   });
 });
@@ -279,7 +281,7 @@ describe("draw order", () => {
     );
     sources.forEach((source) => batch.add(source));
     const order = () => {
-      batch.flush();
+      batch.flush(camera);
       return sources
         .filter((s) => s.batchIndex !== -1)
         .sort((a, b) => a.batchIndex - b.batchIndex)
@@ -298,7 +300,7 @@ describe("SpatialBatch", () => {
 
   /** Errors that are introduced by single precision, for each source. */
   function maxError(batch: SpatialBatch, sources: InstanceSource[]): number {
-    batch.flush();
+    batch.flush(camera);
     batch.object.updateMatrixWorld();
     const drawn: number[] = [];
     batch.object.traverse((object) => {
@@ -406,7 +408,7 @@ describe("SpatialBatch", () => {
       makeSource(5, { ...meshAppearance, radius }),
     );
     sources.forEach((source) => batch.add(source));
-    batch.flush();
+    batch.flush(camera);
     expect(batch.object.children.length).toBe(1);
     expect(sources.map((source) => source.batchIndex)).toEqual([0, 1, 2, 3, 4]);
   });
@@ -421,7 +423,7 @@ describe("SpatialBatch", () => {
       sources[1].position.x = x;
       sources[1].updateMatrix();
       sources[1].updateMatrixWorld();
-      batch.flush();
+      batch.flush(camera);
     }
     expect(sources.map((source) => source.batchIndex)).toEqual([0, 1, 2, 3, 4]);
   });
@@ -447,7 +449,7 @@ describe("LineBatch", () => {
     };
     const sources = [makeSource(10, appearance), makeSource(20, appearance)];
     sources.forEach((source) => batch.add(source));
-    batch.flush();
+    batch.flush(camera);
     // Core and antialiasing passes.
     expect(batch.object.children.length).toBe(2);
     const geometry = (batch.object.children[0] as THREE.Mesh)
@@ -460,9 +462,66 @@ describe("LineBatch", () => {
       10, 0, 0, 11, 1, 1, 20, 0, 0, 21, 1, 1,
     ]);
     sources[0].setDisplayed(false);
-    batch.flush();
+    batch.flush(camera);
     expect(geometry.instanceCount).toBe(1);
     expect([...positions.slice(0, 6)]).toEqual([20, 0, 0, 21, 1, 1]);
+  });
+});
+
+describe("LineBatch sorting", () => {
+  it("orders skirts like three.js orders transparent objects", () => {
+    const batch = new LineBatch(1, 0.1, true);
+    const appearance = {
+      color: 0xffffff,
+      points: Float32Array.of(0, 0, 0, 1, 1, 1),
+      radius: 2,
+    };
+    const sources = [0, 1, 2, 3].map((z) => {
+      const source = makeSource(0, appearance);
+      source.position.z = [5, -5, 0, 0][z];
+      source.updateMatrix();
+      source.updateMatrixWorld();
+      batch.add(source);
+      return source;
+    });
+    const camera = new THREE.PerspectiveCamera();
+    const check = () => {
+      camera.updateMatrixWorld();
+      batch.flush(camera);
+      const [core, fringe] = batch.object.children as THREE.Mesh[];
+      const drawn = (line: THREE.Mesh) => {
+        const positions = (
+          line.geometry.attributes
+            .instanceStart as THREE.InterleavedBufferAttribute
+        ).data.array;
+        return [0, 1, 2, 3].map((i) => positions[i * 6 + 2]);
+      };
+      expect(drawn(core)).toEqual(sources.map((s) => s.position.z));
+
+      // What three.js does, see WebGLRenderer.projectObject().
+      const projection = new THREE.Matrix4().multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse,
+      );
+      const expected = sources
+        .map((source) => ({
+          z: source.position.z,
+          key: new THREE.Vector4(0.5, 0.5, 0.5, 1.0)
+            .applyMatrix4(source.matrixWorld)
+            .applyMatrix4(projection).z,
+        }))
+        .sort((a, b) => b.key - a.key);
+      expect(drawn(fringe)).toEqual(expected.map(({ z }) => z));
+    };
+    camera.position.z = 20;
+    check();
+    camera.position.z = -20;
+    camera.rotation.y = Math.PI;
+    check();
+    sources[2].position.z = 7;
+    sources[2].updateMatrix();
+    sources[2].updateMatrixWorld();
+    check();
   });
 });
 

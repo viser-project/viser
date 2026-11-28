@@ -7,7 +7,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import os
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -23,7 +25,7 @@ import viser
 from viser import _messages as vm
 from viser._assignable_props_api import array_snapshot, arrays_equal
 from viser.infra import _infra
-from viser.infra._async_message_buffer import AsyncMessageBuffer
+from viser.infra._async_message_buffer import AsyncMessageBuffer, MessageWindow
 from viser.infra._messages import (
     _deserialize_converters,
     _make_converter,
@@ -790,6 +792,13 @@ def test_split_windows_reach_every_client() -> None:
     assert received == [[f"/{i}" for i in range(12)] + [None]] * 3
 
 
+def _window(messages: list[Any], ids: list[int]) -> MessageWindow:
+    window = MessageWindow()
+    window.extend(messages)
+    window.ids.extend(ids)
+    return window
+
+
 def test_similar_windows_are_not_shared() -> None:
     """Windows that start with the same message may differ after it."""
 
@@ -801,15 +810,22 @@ def test_similar_windows_are_not_shared() -> None:
         a, b, c = [
             vm.SetPositionMessage(n, (0.0, 0.0, 0.0)) for n in ("/a", "/b", "/c")
         ]
-        buffer.cache_encoding([a, b], [b"payload"])
-        assert buffer.get_cached_encoding([a, b]) == [b"payload"]
-        for other in ([a, c], [a], [a, b, c], [b, a]):
+        marker = vm.ReplayDoneMessage()
+        window = _window([a, b], [0, 1])
+        buffer.cache_encoding(window, [b"payload"])
+        assert buffer.get_cached_encoding(_window([a, b], [0, 1])) == [b"payload"]
+        for other in (
+            _window([a, c], [0, 2]),
+            _window([a], [0]),
+            _window([a, b, c], [0, 1, 2]),
+            _window([b, a], [1, 0]),
+            _window([a, b, marker], [0, 1]),
+            # The same message, pushed again.
+            _window([a, b], [0, 3]),
+        ):
             assert buffer.get_cached_encoding(other) is None
-        # Equal, but not the same.
-        copy = vm.SetPositionMessage("/b", (0.0, 0.0, 0.0))
-        assert buffer.get_cached_encoding([a, copy]) is None
-        buffer.cache_encoding([a, b], [b"x" * (5 << 20)])
-        assert buffer.get_cached_encoding([a, b]) is None
+        buffer.cache_encoding(window, [b"x" * (5 << 20)])
+        assert buffer.get_cached_encoding(window) is None
 
     run_isolated(lambda: asyncio.run(scenario()))
 
@@ -985,7 +1001,7 @@ def test_encoding_cache_is_released() -> None:
         )
         gens = [buffer.window_generator(i) for i in range(2)]
         buffer.push(_array_update(0, 10))
-        window = list(await gens[0].__anext__())
+        window = await gens[0].__anext__()
         await gens[1].__anext__()
         buffer.cache_encoding(window, [b"payload"])
         assert buffer.get_cached_encoding(window) is not None
@@ -1161,3 +1177,125 @@ def test_assignments_in_callbacks_do_not_deadlock(server: viser.ViserServer) -> 
     for thread in threads:
         thread.join(timeout=20.0)
         assert not thread.is_alive()
+
+
+# --- Unusual uses -----------------------------------------------------------
+
+
+def test_interrupts_do_not_stop_delivery() -> None:
+    """For example, Ctrl+C while a handle is being assigned to."""
+
+    class InterruptedLoop:
+        interrupt = True
+
+        def call_soon_threadsafe(self, callback: Any) -> None:
+            if self.interrupt:
+                raise KeyboardInterrupt
+            self.scheduled = callback
+
+    async def scenario() -> None:
+        loop = InterruptedLoop()
+        buffer = AsyncMessageBuffer(loop, persistent_messages=True)  # type: ignore
+        buffer.generator_cursors[0] = -1
+        with pytest.raises(KeyboardInterrupt):
+            buffer.push(vm.SetPositionMessage("/a", (0.0, 0.0, 0.0)))
+        loop.interrupt = False
+        buffer.push(vm.SetPositionMessage("/b", (0.0, 0.0, 0.0)))
+        loop.scheduled()
+        assert buffer.message_event.is_set()
+
+    run_isolated(lambda: asyncio.run(scenario()))
+
+
+def test_messages_without_redundancy_keys_are_kept() -> None:
+    class NeverRedundant(vm.SetPositionMessage):
+        def redundancy_key(self) -> Any:
+            return None
+
+    async def scenario() -> None:
+        buffer = AsyncMessageBuffer(
+            asyncio.get_running_loop(), persistent_messages=True
+        )
+        for i in range(3):
+            buffer.push(NeverRedundant("/a", (float(i), 0.0, 0.0)))
+        assert len(buffer.message_from_id) == 3
+
+    run_isolated(lambda: asyncio.run(scenario()))
+
+
+def test_mutated_messages_are_encoded_again() -> None:
+    message = vm.SetPositionMessage("/a", (0.0, 0.0, 0.0))
+
+    async def scenario() -> list[_FakeWebsocket]:
+        buffer = AsyncMessageBuffer(
+            asyncio.get_running_loop(), persistent_messages=True
+        )
+        sockets = [_FakeWebsocket(), _FakeWebsocket()]
+        async with _producers(buffer, sockets, vm.ReplayDoneMessage()):
+            for ws in sockets:
+                await _wait_for(ws, None)
+            for i in range(3):
+                message.position = (float(i), 0.0, 0.0)
+                buffer.push(message)
+                await asyncio.sleep(0.1)
+        return sockets
+
+    for ws in run_isolated(lambda: asyncio.run(scenario())):
+        received = [m for p in ws.payloads for m in _decode(p)]
+        assert [m["position"][0] for m in received if "position" in m] == [0, 1, 2]
+
+
+def test_object_arrays_can_be_encoded(server: viser.ViserServer) -> None:
+    """These are easily created by pandas. Clients used to be disconnected."""
+    box = server.scene.add_box("/box")
+    box.color = np.array([1, 2, 3], dtype=object)  # type: ignore
+    for message in broadcast_messages(server):
+        message.as_serializable_dict([])
+
+
+def test_unusual_annotations() -> None:
+    @dataclasses.dataclass
+    class Data:
+        a: int
+
+    data = Data(1)
+    for annotation in ([int, float], {"a": int}):
+        assert _make_converter(annotation)(1.5, []) == 1.5
+    # Not specified by the annotation, so it's handled by msgspec.
+    assert _make_converter(Optional[Data])(data, []) is data
+    assert type(_make_converter(bool)(np.longdouble(1.0), [])) is float
+
+
+def test_vectors_from_unusual_arrays(server: viser.ViserServer) -> None:
+    frame = server.scene.add_frame("/frame")
+    with pytest.warns(Warning):
+        frame.position = np.array([1 + 1j, 2, 3])
+    np.testing.assert_array_equal(frame.position, (1.0, 2.0, 3.0))
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="Requires fork().")
+def test_global_locks_are_reset_after_fork() -> None:
+    """Locks may be held by a thread that doesn't exist in the child."""
+    code = """
+import os, threading
+from viser import _assignable_props_api, _scene_handles
+held = threading.Event()
+def hold():
+    for lock in (*_assignable_props_api._STATE_LOCKS, _scene_handles._splat_update_lock):
+        lock.acquire()
+    held.set()
+    threading.Event().wait()
+threading.Thread(target=hold, daemon=True).start()
+held.wait()
+pid = os.fork()
+if pid == 0:
+    ok = all(
+        lock.acquire(timeout=1.0)
+        for lock in (
+            *_assignable_props_api._STATE_LOCKS, _scene_handles._splat_update_lock
+        )
+    )
+    os._exit(0 if ok else 1)
+os._exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))
+"""
+    subprocess.run([sys.executable, "-W", "ignore", "-c", code], check=True)

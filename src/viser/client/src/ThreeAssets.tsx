@@ -18,7 +18,7 @@ import { useTransparentSurface } from "./scene/sceneNodeHooks";
 import { ViewerContext } from "./ViewerContext";
 import { geometryRadius, MeshBatch } from "./scene/MeshBatch";
 import { InstanceSource, MIN_INSTANCE_SCALE } from "./scene/AutoInstancer";
-import { raycastOnlyLayers } from "./scene/raycastOnly";
+import { drawnLayers, raycastOnlyLayers } from "./scene/raycastOnly";
 import { useInstanceSource } from "./scene/useInstanceSource";
 import {
   LabelRendererContext,
@@ -419,11 +419,10 @@ function FrameAxes(props: {
   if (mode === null) return null;
   return (
     <mesh
-      key={mode}
       geometry={geometry}
       scale={props.scale}
       material={frameMaterial}
-      layers={mode === "raycast" ? raycastOnlyLayers : undefined}
+      layers={mode === "drawn" ? drawnLayers : raycastOnlyLayers}
     >
       <OutlinesIfHovered enableCreaseAngle />
     </mesh>

@@ -5,8 +5,6 @@ export const RAYCAST_ONLY_LAYER = 30;
 export const raycastOnlyLayers = new THREE.Layers();
 raycastOnlyLayers.set(RAYCAST_ONLY_LAYER);
 
-export const raycastOnlyMaterials = {
-  front: new THREE.MeshBasicMaterial({ side: THREE.FrontSide }),
-  back: new THREE.MeshBasicMaterial({ side: THREE.BackSide }),
-  double: new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
-};
+/** Layers for objects that are drawn. Should be set explicitly by objects that may
+ * switch between the two. */
+export const drawnLayers = new THREE.Layers();

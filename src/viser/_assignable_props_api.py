@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import abc
 import functools
+import os
 import threading
 from typing import (
     Any,
+    Callable,
     Dict,
     Generic,
     Protocol,
@@ -30,7 +32,18 @@ class HasProps(Protocol):
 TImpl = TypeVar("TImpl", bound=HasProps)
 
 
-_STATE_LOCKS = tuple(threading.RLock() for _ in range(64))
+_STATE_LOCKS = [threading.RLock() for _ in range(64)]
+
+
+def reset_after_fork(reset: Callable[[], Any]) -> None:
+    """Global locks may be held by threads that don't exist in forked processes."""
+    if hasattr(os, "register_at_fork"):
+        os.register_at_fork(after_in_child=reset)
+
+
+@reset_after_fork
+def _reset_state_locks() -> None:
+    _STATE_LOCKS[:] = [threading.RLock() for _ in _STATE_LOCKS]
 
 
 def state_lock(impl: Any) -> threading.RLock:
@@ -69,7 +82,8 @@ def cast_vector(vector: TVector | np.ndarray, length: int) -> TVector:
                 f"Expected vector of shape {(length,)}, but got {vector.shape} instead"
             )
         # Much faster than converting numpy scalars one at a time.
-        vector = cast(TVector, vector.tolist())
+        if type(vector) is np.ndarray and vector.dtype.kind in "fiub":
+            return cast(TVector, tuple(map(float, vector.tolist())))
     elif len(vector) != length:
         raise ValueError(
             f"Expected vector of length {length}, but got {len(vector)} instead"

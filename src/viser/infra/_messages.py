@@ -119,11 +119,15 @@ def _deserialize_converters(cls: Type[Any]) -> Dict[str, Callable[[Any], Any]]:
 def _flat_byte_view(array: np.ndarray) -> memoryview:
     """View an array's contents as flat, C-ordered bytes. Copies only if the
     array isn't C-contiguous."""
+    if array.dtype.hasobject:
+        return memoryview(array.tobytes())
     return np.ascontiguousarray(array).reshape(-1).view(np.uint8).data
 
 
 _PASSTHROUGH_TYPES = frozenset({str, int, float, bool, bytes, type(None)})
 """Exact types that msgpack encodes as-is."""
+
+_DYNAMIC_TYPES = _PASSTHROUGH_TYPES | {tuple, list, dict}
 
 Converter = Callable[[Any, Optional[List[memoryview]]], Any]
 
@@ -167,8 +171,10 @@ def _serialize_bool(value: Any, _: Optional[List[memoryview]]) -> Any:
     if type(value) is bool:
         return value
     # Lenient about wrong annotations: don't truncate.
-    if isinstance(value, (np.floating, np.integer)):
-        return value.item()
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, np.integer):
+        return int(value)
     return bool(value)
 
 
@@ -179,11 +185,17 @@ _SCALAR_CONVERTERS: Dict[Any, Any] = {
 }
 
 
+def _get_scalar_converter(annotation: Any) -> Optional[Converter]:
+    # Annotations aren't always hashable.
+    return next((f for t, f in _SCALAR_CONVERTERS.items() if t is annotation), None)
+
+
 def _make_converter(annotation: Any) -> Converter:
     """Resolve an annotation to a serialization function once, so that the
     annotation doesn't need to be inspected for every message."""
-    if annotation in _SCALAR_CONVERTERS:
-        return _SCALAR_CONVERTERS[annotation]
+    scalar_converter = _get_scalar_converter(annotation)
+    if scalar_converter is not None:
+        return scalar_converter
 
     if dataclasses.is_dataclass(annotation):
 
@@ -202,10 +214,9 @@ def _make_converter(annotation: Any) -> Converter:
         return serialize_dataclass
 
     args = get_args(annotation)
-    if get_origin(annotation) is tuple and all(
-        a in _SCALAR_CONVERTERS for a in args if a is not Ellipsis
-    ):
-        converters = [_SCALAR_CONVERTERS[a] for a in args if a is not Ellipsis]
+    elements = [a for a in args if a is not Ellipsis]
+    converters = [c for c in map(_get_scalar_converter, elements) if c is not None]
+    if get_origin(annotation) is tuple and len(converters) == len(elements):
         variadic = len(args) == 2 and args[1] is Ellipsis
 
         def serialize_scalar_tuple(
@@ -222,14 +233,18 @@ def _make_converter(annotation: Any) -> Converter:
 
         return serialize_scalar_tuple
 
-    if get_origin(annotation) is not tuple:
-        # Scalar coercion only happens for float/int/bool annotations, so
-        # anything else depends only on the runtime value.
+    if annotation is Any:
         return _serialize_dynamic
 
-    return lambda value, binary_buffers: _prepare_for_serialization(
-        value, annotation, binary_buffers
-    )
+    def serialize_other(value: Any, binary_buffers: Optional[List[memoryview]]) -> Any:
+        # Scalar coercion only happens for float/int/bool annotations. So without a
+        # tuple annotation, containers depend only on what's in them.
+        if not is_tuple and type(value) in _DYNAMIC_TYPES:
+            return _serialize_dynamic(value, binary_buffers)
+        return _prepare_for_serialization(value, annotation, binary_buffers)
+
+    is_tuple = get_origin(annotation) is tuple
+    return serialize_other
 
 
 @functools.lru_cache(maxsize=None)
@@ -242,13 +257,14 @@ def _wire_converters(
     hints = get_type_hints_cached(cls)
     out = []
     for name in wire_field_names(cls):
-        convert = _make_converter(hints[name])
-        passthrough = {
-            _serialize_float: frozenset({float}),
-            _serialize_int: frozenset({int}),
-            _serialize_bool: frozenset({bool}),
-            _serialize_dynamic: _PASSTHROUGH_TYPES,
-        }.get(convert, frozenset())
+        hint = hints[name]
+        if _get_scalar_converter(hint) is not None:
+            passthrough = frozenset({hint})
+        elif get_origin(hint) is tuple or dataclasses.is_dataclass(hint):
+            passthrough = frozenset()
+        else:
+            passthrough = _PASSTHROUGH_TYPES
+        convert = _make_converter(hint)
         out.append((name, passthrough, convert))
     return tuple(out)
 

@@ -26,7 +26,7 @@ export interface InstanceBatch {
   /** Called when a source's appearance changes. */
   updateAppearance(source: InstanceSource): void;
   /** Called before each render, after world matrices have been updated. */
-  flush(): void;
+  flush(camera: THREE.Camera): void;
   /** Only implemented by batches whose materials depend on it. */
   setViewportSize?(width: number, height: number): void;
   dispose(): void;
@@ -92,7 +92,7 @@ export function markRange(
  * The order matters for objects that are in the same place. */
 export abstract class DenseBatch implements InstanceBatch {
   abstract readonly object: THREE.Object3D;
-  private readonly members = new Set<InstanceSource>();
+  protected readonly members = new Set<InstanceSource>();
   /** Set when sources need to be assigned to different positions in the array. */
   private needsRebuild = false;
   /** Set when members aren't in order of creation. */
@@ -137,7 +137,8 @@ export abstract class DenseBatch implements InstanceBatch {
     this.writeAppearance(source);
   }
 
-  flush(): void {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  flush(_camera: THREE.Camera): void {
     if (!this.needsRebuild) return;
     this.needsRebuild = false;
     if (this.needsSort) {
@@ -306,8 +307,8 @@ export class SpatialBatch implements InstanceBatch {
     this.add(source);
   }
 
-  flush(): void {
-    this.cells.forEach((cell) => cell.batch.flush());
+  flush(camera: THREE.Camera): void {
+    this.cells.forEach((cell) => cell.batch.flush(camera));
   }
 
   /** Whether sources are so spread out that batching isn't worth it. */
@@ -397,14 +398,14 @@ export class BatchEntry {
     this.batch?.setViewportSize(width, height);
   }
 
-  flush(): void {
+  flush(camera: THREE.Camera): void {
     if (this.batch === null) return;
     if (!this.active) {
       // Members have had time to start drawing themselves.
       this.disposeBatch();
       return;
     }
-    this.batch.flush();
+    this.batch.flush(camera);
     if (this.batch.isSparse()) {
       this.sparse = true;
       this.active = false;
@@ -448,8 +449,8 @@ export class AutoInstancer {
 
   /** Should be called before each render, after world matrices have been
    * updated. */
-  flush(): void {
-    this.entries.forEach((entry) => entry.flush());
+  flush(camera: THREE.Camera): void {
+    this.entries.forEach((entry) => entry.flush(camera));
   }
 
   // The antialiasing skirts of world-space lines can't be sorted relative to
