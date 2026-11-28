@@ -3,9 +3,11 @@ shouldn't be observable."""
 
 from __future__ import annotations
 
+import base64
 import threading
 from typing import Any, Callable
 
+import imageio.v3 as iio
 import numpy as np
 import pytest
 import trimesh
@@ -193,16 +195,10 @@ def test_batched_matches_individual(
         assert (np.abs(a - b).max(axis=-1) > 16).mean() < 0.002, step
 
 
-JS_CANVAS_PIXELS = """
-() => {
-  const canvas = window.__viserMutable.canvas;
-  const copy = document.createElement("canvas");
-  [copy.width, copy.height] = [canvas.width, canvas.height];
-  const context = copy.getContext("2d");
-  context.drawImage(canvas, 0, 0);
-  return [...context.getImageData(0, 0, copy.width, copy.height).data];
-}
-"""
+def _live_canvas(page: Page) -> np.ndarray:
+    url = page.evaluate("window.__viserMutable.canvas.toDataURL('image/png')")
+    png = base64.b64decode(url.split(",")[1])
+    return iio.imread(png, extension=".png").astype(np.int32)
 
 
 def test_batched_world_lines_match_individual(
@@ -234,8 +230,7 @@ def test_batched_world_lines_match_individual(
         render = _render(client)
         assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == batched
         viser_page.wait_for_timeout(500)
-        live = np.array(viser_page.evaluate(JS_CANVAS_PIXELS)).reshape((-1, 4))
-        return [render, live]
+        return [render, _live_canvas(viser_page)]
 
     batched = capture(True)
     # Out of view. Lines are drawn individually if there are transparent objects.
