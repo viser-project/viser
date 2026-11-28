@@ -190,6 +190,9 @@ const MAX_CELL_DISTANCE = 12288;
 /** Hysteresis: don't move back and forth between cells. */
 const MAX_CELL_DISTANCE_BEFORE_MOVING = 1.25 * MAX_CELL_DISTANCE;
 
+/** For sources without a size. */
+const DEFAULT_CELL_SIZE = 1024;
+
 /** Size of a source, including scales of parents. */
 function worldRadius(source: InstanceSource): number {
   const e = source.matrixWorld.elements;
@@ -213,8 +216,9 @@ function fitsInCell(
     Math.abs(e[13] - center.y),
     Math.abs(e[14] - center.z),
   );
+  const radius = worldRadius(source);
   // Comparisons are false if there are NaNs, which aren't worth moving for.
-  return !(distance > worldRadius(source) * maxDistance);
+  return !(distance > (radius > 0 ? radius * maxDistance : DEFAULT_CELL_SIZE));
 }
 
 type Cell = {
@@ -246,7 +250,7 @@ export class SpatialBatch implements InstanceBatch {
     // Otherwise, use a cell in a grid.
     const e = source.matrixWorld.elements;
     let size = 8 ** Math.floor(Math.log2(worldRadius(source) * 8192) / 3);
-    if (!(size > 0 && size < Infinity)) size = 1024;
+    if (!(size > 0 && size < Infinity)) size = DEFAULT_CELL_SIZE;
     const key = [size, e[12], e[13], e[14]]
       .map((value, i) => (i === 0 ? value : Math.round(value / size)))
       .join("|");
@@ -331,10 +335,11 @@ export class BatchEntry {
   private readonly members = new Set<InstanceSource>();
   private readonly listeners = new Set<() => void>();
   private batch: SpatialBatch | null = null;
-  /** False while members still need to start drawing themselves, see `flush()`. */
   private active = false;
-  /** Set when members turned out to be too spread out. */
-  private sparse = false;
+  /** Set when members were told to draw themselves, and have had time to. */
+  private disposable = false;
+  /** Number of members when they turned out to be too spread out. */
+  private numSparse = 0;
 
   constructor(
     private readonly instancer: AutoInstancer,
@@ -360,7 +365,8 @@ export class BatchEntry {
     this.members.add(source);
     if (this.active) {
       this.batch!.add(source);
-    } else if (!this.sparse && this.members.size >= ACTIVATE_AT) {
+    } else if (this.members.size >= Math.max(ACTIVATE_AT, 2 * this.numSparse)) {
+      this.disposeBatch();
       const batch = new SpatialBatch(this.makeBatch);
       batch.setViewportSize(...this.instancer.viewportSize);
       this.batch = batch;
@@ -387,6 +393,7 @@ export class BatchEntry {
   private disposeBatch(): void {
     const { batch } = this;
     this.active = false;
+    this.disposable = false;
     this.batch = null;
     if (batch === null) return;
     this.members.forEach((member) => batch.remove(member));
@@ -400,16 +407,21 @@ export class BatchEntry {
 
   flush(camera: THREE.Camera): void {
     if (this.batch === null) return;
-    if (!this.active) {
-      // Members have had time to start drawing themselves.
+    if (this.disposable) {
       this.disposeBatch();
       return;
     }
-    this.batch.flush(camera);
-    if (this.batch.isSparse()) {
-      this.sparse = true;
+    const { batch } = this;
+    batch.flush(camera);
+    if (this.active && batch.isSparse()) {
+      this.numSparse = this.members.size;
       this.active = false;
       this.notify();
+      // There may be more renders before React commits, which happens at the end
+      // of this task.
+      setTimeout(() => {
+        this.disposable = this.batch === batch && !this.active;
+      });
     }
   }
 }

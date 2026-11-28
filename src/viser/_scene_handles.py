@@ -34,6 +34,7 @@ from ._assignable_props_api import (
     colors_to_uint8,
     ensure_not_removed,
     forget_readable_copy,
+    get_readable_copy,
     reset_after_fork,
     state_lock,
 )
@@ -1272,10 +1273,10 @@ class GaussianSplatHandle(
         """Returns a private buffer to write updated attributes into: a copy of
         the current one, or default values (white, opaque, small covariances,
         centers at origin) if the number of Gaussians is changing."""
-        # Includes in-place edits, for example to `handle.centers[i]`.
-        current = self.buffer
+        current = self._impl.props.buffer
         if current.shape[0] == num_gaussians:
-            return current.copy()
+            # Includes in-place edits, for example to `handle.centers[i]`.
+            return get_readable_copy(self, "buffer", default=current).copy()
 
         buffer = np.zeros((num_gaussians, 8), dtype=np.uint32)
 

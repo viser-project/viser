@@ -84,6 +84,7 @@ describe("AutoInstancer", () => {
   });
 
   it("stops batching sources that are too spread out", () => {
+    vi.useFakeTimers();
     const instancer = new AutoInstancer();
     const entry = instancer.getEntry("key", makeMeshBatch);
     const sources = Array.from({ length: 100 }, (_, i) =>
@@ -108,12 +109,24 @@ describe("AutoInstancer", () => {
     sources[0].setDisplayed(false);
     entry.remove(sources[1]);
     instancer.flush(camera);
+    expect(instancer.group.children.length).toBe(1);
+    vi.runAllTimers();
+    vi.useRealTimers();
+    instancer.flush(camera);
     expect(instancer.group.children.length).toBe(0);
     expect(sources[2].batch).toBe(null);
 
     entry.add(sources[1]);
     instancer.flush(camera);
     expect(entry.isActive()).toBe(false);
+
+    // Tried again when there are a lot more.
+    const more = Array.from({ length: 100 }, (_, i) =>
+      makeSource(i, meshAppearance),
+    );
+    more.forEach((source) => entry.add(source));
+    expect(entry.isActive()).toBe(true);
+    more.forEach((source) => entry.remove(source));
     sources.forEach((source) => entry.remove(source));
     expect(instancer.getEntry("key", makeMeshBatch)).not.toBe(entry);
   });
@@ -402,6 +415,17 @@ describe("SpatialBatch", () => {
     expect(batch.object.children.length).toBeLessThanOrEqual(8);
   });
 
+  it("doesn't move sources without a size unnecessarily", () => {
+    const batch = new SpatialBatch(makeMeshBatch);
+    const source = makeSource(0, { ...meshAppearance, radius: 0 });
+    batch.add(source);
+    const cell = batch.object.children[0];
+    source.position.x = 10;
+    source.updateMatrix();
+    source.updateMatrixWorld();
+    expect(batch.object.children).toEqual([cell]);
+  });
+
   it("preserves draw order between sources of different sizes", () => {
     const batch = new SpatialBatch(makeMeshBatch);
     const sources = [100, 0.01, 10, 0.1, 1].map((radius) =>
@@ -441,9 +465,10 @@ describe("SpatialBatch", () => {
 
 describe("LineBatch", () => {
   it("draws segments in world space", () => {
-    const batch = new LineBatch(1, 0.1, true);
+    const batch = new LineBatch(1, true);
     const appearance = {
       color: 0xffffff,
+      thickness: 0.1,
       points: Float32Array.of(0, 0, 0, 1, 1, 1),
       radius: 2,
     };
@@ -470,9 +495,10 @@ describe("LineBatch", () => {
 
 describe("LineBatch sorting", () => {
   it("orders skirts like three.js orders transparent objects", () => {
-    const batch = new LineBatch(1, 0.1, true);
+    const batch = new LineBatch(1, true);
     const appearance = {
       color: 0xffffff,
+      thickness: 0.1,
       points: Float32Array.of(0, 0, 0, 1, 1, 1),
       radius: 2,
     };
@@ -506,14 +532,21 @@ describe("LineBatch sorting", () => {
       const expected = sources
         .map((source) => ({
           z: source.position.z,
-          key: new THREE.Vector4(0.5, 0.5, 0.5, 1.0)
-            .applyMatrix4(source.matrixWorld)
-            .applyMatrix4(projection).z,
+          key:
+            new THREE.Vector4(0.5, 0.5, 0.5, 1.0)
+              .applyMatrix4(source.matrixWorld)
+              .applyMatrix4(projection).z * (camera.reversedDepth ? -1 : 1),
         }))
         .sort((a, b) => b.key - a.key);
       expect(drawn(fringe)).toEqual(expected.map(({ z }) => z));
     };
     camera.position.z = 20;
+    check();
+    // What three.js does when rendering with a reversed depth buffer.
+    // @ts-ignore Private.
+    camera._reversedDepth = true;
+    camera.updateProjectionMatrix();
+    expect(camera.reversedDepth).toBe(true);
     check();
     camera.position.z = -20;
     camera.rotation.y = Math.PI;

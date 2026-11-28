@@ -139,10 +139,11 @@ export const CameraFrustumComponent = React.forwardRef<
   const appearance = React.useMemo(
     () => ({
       color: lineColor,
+      thickness,
       points: frustumPoints,
       radius: Math.hypot(x, y, z),
     }),
-    [lineColor, frustumPoints],
+    [lineColor, thickness, frustumPoints],
   );
   const { autoInstancer } = React.useContext(ViewerContext)!;
   const filled = message.props.variant === "filled";
@@ -159,9 +160,8 @@ export const CameraFrustumComponent = React.forwardRef<
     isHovered || filled || (worldUnits && hasTransparentSurfaces)
       ? null
       : {
-          key: `lines|${frustumPoints.length}|${thickness}|${worldUnits}`,
-          makeBatch: () =>
-            new LineBatch(frustumPoints.length / 6, thickness, worldUnits),
+          key: `lines|${frustumPoints.length}|${worldUnits}`,
+          makeBatch: () => new LineBatch(frustumPoints.length / 6, worldUnits),
           appearance,
         },
   );

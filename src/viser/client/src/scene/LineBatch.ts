@@ -17,6 +17,7 @@ import {
 
 export type LineAppearance = InstanceAppearance & {
   color: number;
+  thickness: number;
   /** Endpoints of line segments, in the source's frame. The number of segments
    * needs to be the same for all members of a batch. */
   points: Float32Array;
@@ -38,7 +39,8 @@ function getCenter(points: Float32Array): THREE.Vector3 {
   return center;
 }
 
-/** Sets of line segments, merged into a single object. The materials here should
+/** Sets of line segments, merged into a single object. This includes ones with
+ * different widths, because skirts are only sorted within a batch. The materials here should
  * match the ones in Line.tsx. */
 export class LineBatch extends DenseBatch {
   readonly object = new THREE.Group();
@@ -51,11 +53,10 @@ export class LineBatch extends DenseBatch {
 
   constructor(
     private readonly numSegments: number,
-    lineWidth: number,
     worldUnits: boolean,
   ) {
     super();
-    const params = { linewidth: lineWidth, worldUnits };
+    const params = { worldUnits };
     this.core = new LinePass({ ...params, transparent: false });
     if (worldUnits) {
       this.fringe = new LinePass({
@@ -100,7 +101,11 @@ export class LineBatch extends DenseBatch {
   }
 
   protected writeAppearance(source: InstanceSource): void {
-    const { color, points } = source.appearance as LineAppearance;
+    const { color, points, thickness } = source.appearance as LineAppearance;
+    const widths = this.core.widths!;
+    const firstSegment = source.batchIndex * this.numSegments;
+    widths.array.fill(thickness, firstSegment, firstSegment + this.numSegments);
+    markRange(widths, firstSegment, this.numSegments);
     const buffer = this.core.colors!;
     const start = source.batchIndex * points.length;
     tempColor.setHex(color);
@@ -132,7 +137,8 @@ export class LineBatch extends DenseBatch {
       const { x, y, z } = tempVector
         .copy(getCenter(points))
         .applyMatrix4(source.matrixWorld);
-      items.push({ source, z: e[2] * x + e[6] * y + e[10] * z + e[14] });
+      const depth = e[2] * x + e[6] * y + e[10] * z + e[14];
+      items.push({ source, z: camera.reversedDepth ? -depth : depth });
     });
     items.sort((a, b) => b.z - a.z || a.source.id - b.source.id);
 
@@ -145,11 +151,11 @@ export class LineBatch extends DenseBatch {
       return;
     this.needsFringeUpdate = false;
     this.fringeOrder = items.map(({ source }) => source);
-    const size = this.numSegments * 6;
-    for (const [from, to] of [
-      [this.core.positions!, fringe.positions!],
-      [this.core.colors!, fringe.colors!],
-    ]) {
+    for (const [from, to, size] of [
+      [this.core.positions!, fringe.positions!, this.numSegments * 6],
+      [this.core.colors!, fringe.colors!, this.numSegments * 6],
+      [this.core.widths!, fringe.widths!, this.numSegments],
+    ] as const) {
       const array = from.array as Float32Array;
       items.forEach(({ source: { batchIndex } }, i) =>
         (to.array as Float32Array).set(
@@ -179,6 +185,7 @@ class LinePass {
   geometry: LineSegmentsGeometry | null = null;
   positions: THREE.InstancedInterleavedBuffer | null = null;
   colors: THREE.InstancedInterleavedBuffer | null = null;
+  widths: THREE.InstancedBufferAttribute | null = null;
 
   constructor(params: LineMaterialParameters) {
     this.material = new LineMaterial({
@@ -189,6 +196,23 @@ class LinePass {
     });
     this.material.fog = true;
     this.material.worldUnits = params.worldUnits ?? false;
+    // Each instance has its own width.
+    this.material.vertexShader = this.material.vertexShader
+      .replace(
+        "uniform float linewidth;",
+        `attribute float instanceWidth;
+        flat varying float vInstanceWidth;
+        #define linewidth instanceWidth`,
+      )
+      .replace(
+        "void main() {",
+        "void main() {\n vInstanceWidth = instanceWidth;\n",
+      );
+    this.material.fragmentShader = this.material.fragmentShader.replace(
+      "uniform float linewidth;",
+      `flat varying float vInstanceWidth;
+      #define linewidth vInstanceWidth`,
+    );
   }
 
   /** Returns an object to draw. Contents need to be written afterwards. */
@@ -214,6 +238,12 @@ class LinePass {
     };
     this.positions = attach("instanceStart", "instanceEnd");
     this.colors = attach("instanceColorStart", "instanceColorEnd");
+    this.widths = new THREE.InstancedBufferAttribute(
+      new Float32Array(numSegments),
+      1,
+    );
+    this.widths.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute("instanceWidth", this.widths);
     // Not culled; only used for sorting.
     geometry.boundingSphere = new THREE.Sphere();
     this.geometry = geometry;

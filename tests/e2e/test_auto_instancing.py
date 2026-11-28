@@ -193,6 +193,60 @@ def test_batched_matches_individual(
         assert (np.abs(a - b).max(axis=-1) > 16).mean() < 0.002, step
 
 
+JS_CANVAS_PIXELS = """
+() => {
+  const canvas = window.__viserMutable.canvas;
+  const copy = document.createElement("canvas");
+  [copy.width, copy.height] = [canvas.width, canvas.height];
+  const context = copy.getContext("2d");
+  context.drawImage(canvas, 0, 0);
+  return [...context.getImageData(0, 0, copy.width, copy.height).data];
+}
+"""
+
+
+def test_batched_world_lines_match_individual(
+    viser_server: viser.ViserServer, viser_page: Page
+) -> None:
+    """Antialiased edges of overlapping lines need to be sorted, both in renders and
+    in the live view. The latter has a reversed depth buffer."""
+    client = get_client_handle(viser_server)
+    viser_page.evaluate("window.__viserTestpoints.devSettings.set({ fixedDpr: 1 })")
+    rng = np.random.default_rng(0)
+    for i in range(100):
+        viser_server.scene.add_camera_frustum(
+            f"/frustums/{i}",
+            fov=1.0,
+            aspect=1.3,
+            scale=0.6,
+            color=((255, 0, 0), (0, 0, 255), (0, 200, 0), (255, 200, 0))[i % 4],
+            thickness=0.04 if i % 5 else 0.06,
+            thickness_units="world",
+            wxyz=rng.normal(size=4),
+            position=rng.uniform(-1.0, 1.0, 3),
+        )
+    wait_for_scene_node(viser_page, "/frustums/99")
+    client.camera.position = (0.0, -4.0, 2.0)
+    client.camera.look_at = (0.0, 0.0, 0.0)
+
+    def capture(batched: bool) -> list[np.ndarray]:
+        viser_page.wait_for_timeout(1000)
+        render = _render(client)
+        assert (viser_page.evaluate(JS_NUM_BATCHES) > 0) == batched
+        viser_page.wait_for_timeout(500)
+        live = np.array(viser_page.evaluate(JS_CANVAS_PIXELS)).reshape((-1, 4))
+        return [render, live]
+
+    batched = capture(True)
+    # Out of view. Lines are drawn individually if there are transparent objects.
+    viser_server.scene.add_icosphere("/sphere", opacity=0.5, position=(0, -50.0, 0))
+    individual = capture(False)
+    for a, b in zip(batched, individual):
+        drawn = (b[..., 3] > 0).sum()
+        assert drawn > 1000
+        assert (np.abs(a - b).max(axis=-1) > 16).sum() / drawn < 0.01
+
+
 @pytest.mark.parametrize("add", [_add_box, _add_mesh, _add_frame, _add_frustum])
 def test_batches_are_precise_far_from_origin(
     viser_server: viser.ViserServer, viser_page: Page, add: AddFn

@@ -231,6 +231,14 @@ def forget_readable_copy(handle: Any, name: str) -> None:
     handle.__dict__.get("_readable_copies", {}).pop(name, None)
 
 
+def get_readable_copy(handle: Any, name: str, default: np.ndarray) -> np.ndarray:
+    """The copy that was handed out for a property, or a default."""
+    entry = handle.__dict__.get("_readable_copies", {}).get(name)
+    if entry is None or entry[0] is not getattr(handle._impl.props, name):
+        return default
+    return entry[1]
+
+
 def props_setattr(self, name: str, value: Any) -> None:
     if name == "_impl":
         return object.__setattr__(self, name, value)
