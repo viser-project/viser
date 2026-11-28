@@ -264,47 +264,59 @@ def props_setattr(self, name: str, value: Any) -> None:
         # Handle type casting (arrays, tuples of arrays, etc.).
         raw_value = value
         value = self._cast_value_recursive(self._prop_hints[name], value, name)
-        with state_lock(self._impl):
-            ensure_not_removed(self, name)
-            current_value = getattr(self._impl.props, name)
 
-            # Skip update if value hasn't changed.
+        # Compare and copy before locking. This can be slow for large values, and
+        # the event loop may be waiting for the lock.
+        current_value = getattr(self._impl.props, name)
+        unchanged = False
+        if isinstance(value, np.ndarray):
+            if hasattr(current_value, "dtype"):
+                # Ensure consistent dtype.
+                if value.dtype != current_value.dtype:
+                    value = value.astype(current_value.dtype)
+                # Stored snapshots are immutable. So even if the caller is
+                # assigning an array that we handed out, which may have been
+                # modified in-place (`handle.points += 1.0`), this compares
+                # against what was last sent.
+                unchanged = arrays_equal(current_value, value)
+
+            # Store and queue one immutable snapshot. It must not alias the
+            # caller's array, which the caller may mutate after assignment
+            # (e.g. an animation loop reusing one buffer).
+            if (
+                isinstance(raw_value, np.ndarray)
+                and value is not raw_value
+                and value.flags.c_contiguous
+                and value.flags.owndata
+            ):
+                # Casting already produced a fresh array.
+                value.flags.writeable = False
+            elif not unchanged:
+                value = array_snapshot(value)
+        else:
+            # Non-array values are immutable, or were copied by the cast.
             try:
                 hash(current_value)
-                if current_value == value:
-                    return
+                unchanged = bool(current_value == value)
             except (TypeError, ValueError):
                 pass
 
-            # Update the value based on type.
+        with state_lock(self._impl):
+            ensure_not_removed(self, name)
             if isinstance(value, np.ndarray):
-                if hasattr(current_value, "dtype"):
-                    # Ensure consistent dtype.
-                    if value.dtype != current_value.dtype:
-                        value = value.astype(current_value.dtype)
-                    # Stored snapshots are immutable. So even if the caller is
-                    # assigning an array that we handed out, which may have been
-                    # modified in-place (`handle.points += 1.0`), this compares
-                    # against what was last sent.
-                    if arrays_equal(current_value, value):
-                        forget_readable_copy(self, name)
-                        return
-
-                # Store and queue one immutable snapshot. It must not alias the
-                # caller's array, which the caller may mutate after assignment
-                # (e.g. an animation loop reusing one buffer).
-                if (
-                    isinstance(raw_value, np.ndarray)
-                    and value is not raw_value
-                    and value.flags.c_contiguous
-                    and value.flags.owndata
-                ):
-                    # Casting already produced a fresh array.
-                    value.flags.writeable = False
-                else:
-                    value = array_snapshot(value)
                 forget_readable_copy(self, name)
-            # Non-array values are immutable, or were copied by the cast.
+            stored_value = getattr(self._impl.props, name)
+            if unchanged:
+                # Skip update if value hasn't changed.
+                if stored_value is current_value:
+                    return
+                # There was another assignment in the meantime.
+                if isinstance(value, np.ndarray):
+                    value = array_snapshot(value)
+            if isinstance(value, np.ndarray) and hasattr(stored_value, "dtype"):
+                if value.dtype != stored_value.dtype:
+                    value = value.astype(stored_value.dtype)
+                    value.flags.writeable = False
             setattr(self._impl.props, name, value)
             self._queue_update(name, value)
     else:

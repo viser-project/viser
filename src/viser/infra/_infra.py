@@ -442,8 +442,8 @@ class WebsockServer(WebsockMessageHandler):
         self._stop_event: asyncio.Event | None = None
 
         self._client_state_from_id: dict[int, _ClientHandleState] = {}
-        # Raw websocket connections of live clients, for disconnect_all_clients.
-        self._live_connections: dict[int, ServerConnection] = {}
+        # Websocket connections of live clients, and locks for sending on them.
+        self._live_connections: dict[int, tuple[ServerConnection, asyncio.Lock]] = {}
         self._server_thread: threading.Thread | None = None
 
     def disconnect_all_clients(self) -> None:
@@ -455,8 +455,10 @@ class WebsockServer(WebsockMessageHandler):
         loop = self._background_event_loop
         if loop is None:
             return
-        for connection in tuple(self._live_connections.values()):
-            asyncio.run_coroutine_threadsafe(connection.close(), loop)
+        for connection, send_lock in tuple(self._live_connections.values()):
+            asyncio.run_coroutine_threadsafe(
+                _close_connection(connection, send_lock, code=1000), loop
+            )
 
     def start(self) -> None:
         """Start the server."""
@@ -604,7 +606,8 @@ class WebsockServer(WebsockMessageHandler):
             )
             client_connection = WebsockClientConnection(client_id, client_state)
             self._client_state_from_id[client_id] = client_state
-            self._live_connections[client_id] = connection
+            send_lock = asyncio.Lock()
+            self._live_connections[client_id] = (connection, send_lock)
 
             def handle_incoming(message: Message) -> None:
                 event_loop.create_task(
@@ -637,10 +640,7 @@ class WebsockServer(WebsockMessageHandler):
             # window generator's finally (which releases the GC cursor) then
             # ran only when the NEXT broadcast woke it, and on a quiet server
             # the stale cursor pinned the GC deletion floor indefinitely.
-            send_lock = asyncio.Lock()
-            replay = _Replay(self._broadcast_buffer)
-            if self._backlog_done_message is None:
-                replay.done.set()
+            progress = _BroadcastProgress(self._broadcast_buffer, client_id)
             producer_consumer_tasks = [
                 asyncio.create_task(coro)
                 for coro in (
@@ -649,7 +649,7 @@ class WebsockServer(WebsockMessageHandler):
                         client_state.message_buffer,
                         client_id,
                         send_lock=send_lock,
-                        replay=replay,
+                        progress=progress,
                     ),
                     _message_producer(
                         connection,
@@ -659,7 +659,7 @@ class WebsockServer(WebsockMessageHandler):
                         # (the per-client buffer has no persistent backlog).
                         backlog_done_message=self._backlog_done_message,
                         send_lock=send_lock,
-                        replay=replay,
+                        progress=progress,
                     ),
                     _message_consumer(connection, handle_incoming, message_class),
                 )
@@ -881,6 +881,18 @@ class WebsockServer(WebsockMessageHandler):
                         ready_sem.release()
                         assert self._stop_event is not None
                         await self._stop_event.wait()
+                        # Stop listening right away, for servers that are
+                        # started on the same port.
+                        serve_future.server.close()
+                        await asyncio.gather(
+                            *(
+                                _close_connection(connection, send_lock, code=1001)
+                                for connection, send_lock in tuple(
+                                    self._live_connections.values()
+                                )
+                            ),
+                            return_exceptions=True,
+                        )
                         return
                 except OSError:  # Port not available.
                     port_attempt += 1
@@ -936,7 +948,7 @@ scene transiently needs, and lets the event loop run between fragments."""
 
 _REPLAY_SPLIT_BYTES = 8 << 20
 """While replaying a connection's backlog, start a new payload after this many
-bytes of arrays. Big scenes then appear progressively, and the client can free
+bytes. Big scenes then appear progressively, and the client can free
 each payload's memory as the nodes in it are removed."""
 
 _LIVE_SPLIT_BYTES = 64 << 20
@@ -1009,6 +1021,17 @@ async def _send_parts(
             await websocket.send(_fragments_from_parts(parts))
 
 
+def _num_inline_bytes(serialized: dict[str, Any]) -> int:
+    """Size of values like images, files, and HTML."""
+    total = 0
+    for value in serialized.values():
+        if type(value) is bytes or type(value) is str:
+            total += len(value)
+        elif type(value) is dict:
+            total += _num_inline_bytes(value)
+    return total
+
+
 async def _send_window(
     websocket: ServerConnection,
     buffer: AsyncMessageBuffer,
@@ -1018,7 +1041,7 @@ async def _send_window(
     send_lock: asyncio.Lock,
 ) -> None:
     """Encode and send a window of messages, as multiple payloads if it contains
-    more than `split_bytes` of arrays."""
+    more than `split_bytes` of data."""
     # Clients that are caught up with a stream wake together and see identical
     # windows: only encode those once.
     parts = buffer.get_cached_encoding(window)
@@ -1028,36 +1051,63 @@ async def _send_window(
 
     messages: list[dict[str, Any]] = []
     binary_buffers: list[memoryview] = []
-    binary_bytes = 0
+    num_bytes = 0
     split = False
     for message in window:
         num_buffers = len(binary_buffers)
         messages.append(message.as_serializable_dict(binary_buffers))
-        binary_bytes += sum(map(len, binary_buffers[num_buffers:]))
-        if binary_bytes >= split_bytes and message is not window[-1]:
+        num_bytes += sum(b.nbytes for b in binary_buffers[num_buffers:])
+        num_bytes += _num_inline_bytes(messages[-1])
+        if num_bytes >= split_bytes and message is not window[-1]:
             parts = _encode_payload(messages, binary_buffers, zstd)
             await _send_parts(websocket, parts, send_lock)
             messages, binary_buffers = [], []
-            binary_bytes = 0
+            num_bytes = 0
             split = True
     parts = _encode_payload(messages, binary_buffers, zstd)
     buffer.cache_encoding(window, None if split else parts)
     await _send_parts(websocket, parts, send_lock)
 
 
-class _Replay:
-    """Replay of persistent messages, for a single connection."""
+async def _close_connection(
+    websocket: ServerConnection, send_lock: asyncio.Lock, code: int
+) -> None:
+    # If a connection is closed while a fragmented message is being sent, then
+    # it's closed abnormally and the message is lost. The lock isn't released, so
+    # there won't be any other ones.
+    try:
+        await asyncio.wait_for(send_lock.acquire(), timeout=2.0)
+    except asyncio.TimeoutError:
+        pass
+    await websocket.close(code)
 
-    def __init__(self, broadcast_buffer: AsyncMessageBuffer) -> None:
-        self.broadcast_buffer = broadcast_buffer
-        self.done = asyncio.Event()
+
+class _BroadcastProgress:
+    """Tracks which broadcasted messages were sent to a client."""
+
+    def __init__(self, buffer: AsyncMessageBuffer, client_id: int) -> None:
+        self.buffer = buffer
+        self.client_id = client_id
+        self.sending = False
+        self.last_sent_id = -1
+        self.sent_event = asyncio.Event()
 
     async def wait(self) -> None:
-        # Atomic blocks pause the replay. Give up on long ones: they could be
-        # waiting for a response to the message that's waiting for us.
-        while not (self.done.is_set() or self.broadcast_buffer.atomic_duration() > 1.0):
+        """Wait until all messages that are currently in the buffer were sent.
+
+        Atomic blocks keep messages from being sent. We give up on long ones: they
+        could be waiting for a response to the message that's waiting for us."""
+        target_id = self.buffer.message_counter - 1
+        while self.buffer.atomic_duration() < 0.1:
+            last_sent_id = self.last_sent_id
+            if not self.sending:
+                # Includes messages that were skipped.
+                last_sent_id = self.buffer.generator_cursors.get(self.client_id, -1)
+            if last_sent_id >= target_id:
+                return
+            self.sent_event.clear()
             try:
-                await asyncio.wait_for(self.done.wait(), timeout=0.1)
+                await asyncio.wait_for(self.sent_event.wait(), timeout=0.02)
             except asyncio.TimeoutError:
                 pass
 
@@ -1067,7 +1117,7 @@ async def _message_producer(
     buffer: AsyncMessageBuffer,
     client_id: int,
     send_lock: asyncio.Lock,
-    replay: _Replay,
+    progress: _BroadcastProgress,
     backlog_done_message: Message | None = None,
 ) -> None:
     """Infinite loop to broadcast windows of messages from a buffer.
@@ -1108,20 +1158,28 @@ async def _message_producer(
                 zstd,
                 send_lock,
             )
-            if not replaying and not replay.done.is_set():
+            if buffer is progress.buffer:
+                progress.sending = True
+                cursor = buffer.generator_cursors[client_id]
+                await _send_window(websocket, buffer, outgoing, *send_args)
+                progress.sending = False
+                progress.last_sent_id = cursor
+                progress.sent_event.set()
+            else:
                 for i, message in enumerate(outgoing):
-                    if not message.after_replay:
+                    if not message.after_broadcasts:
                         continue
+                    # Other messages are more urgent.
                     before, outgoing = outgoing.split(i)
                     if len(before) > 0:
                         await _send_window(websocket, buffer, before, *send_args)
-                    await replay.wait()
+                    await progress.wait()
                     break
-            await _send_window(websocket, buffer, outgoing, *send_args)
+                await _send_window(websocket, buffer, outgoing, *send_args)
+
             # The end-of-replay marker is always last in its window.
             if outgoing[-1] is backlog_done_message:
                 replaying = False
-                replay.done.set()
 
             # Don't keep arrays alive while waiting for the next window.
             del outgoing
@@ -1129,7 +1187,8 @@ async def _message_producer(
             # send() only yields to the event loop under backpressure. Let
             # other connections and incoming messages interleave with long
             # replays.
-            await asyncio.sleep(0)
+            if replaying:
+                await asyncio.sleep(0)
     finally:
         # Close the generator DETERMINISTICALLY. A cancellation delivered at
         # `websocket.send` leaves the generator suspended at its yield --

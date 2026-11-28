@@ -19,6 +19,7 @@ import msgspec
 import numpy as np
 import numpy.typing as npt
 import pytest
+import websockets.exceptions
 import zstandard
 
 import viser
@@ -35,6 +36,28 @@ from viser.infra._messages import (
 
 from .infra_utils import broadcast_messages
 from .thread_isolation import run_isolated
+
+
+def _connect(server: viser.ViserServer) -> Any:
+    from websockets.sync.client import connect
+
+    return connect(
+        f"ws://localhost:{server.get_port()}",
+        max_size=None,
+        compression=None,
+        subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
+    )
+
+
+def _recv(ws: Any, timeout: float = 10.0) -> list[dict[str, Any]]:
+    payload = ws.recv(timeout=timeout)
+    assert isinstance(payload, bytes)
+    return _decode(payload)
+
+
+def _wait_for_replay(ws: Any) -> None:
+    while not any(m["type"] == "ReplayDoneMessage" for m in _recv(ws)):
+        pass
 
 
 @pytest.fixture()
@@ -536,7 +559,12 @@ async def _producers(
     tasks = [
         asyncio.create_task(
             _infra._message_producer(
-                ws, buffer, i, asyncio.Lock(), _infra._Replay(buffer), marker
+                ws,
+                buffer,
+                i,
+                asyncio.Lock(),
+                _infra._BroadcastProgress(buffer, i),
+                marker,
             )  # type: ignore
         )
         for i, ws in enumerate(sockets, start=first_client_id)
@@ -921,7 +949,6 @@ def test_live_pushes_during_sparse_replay() -> None:
 def test_renders_wait_for_replay(server: viser.ViserServer) -> None:
     """Renders that are requested when a client connects should have the entire
     scene. Other per-client messages shouldn't wait."""
-    from websockets.sync.client import connect
 
     for i in range(30):
         server.scene.add_mesh_simple(
@@ -942,16 +969,9 @@ def test_renders_wait_for_replay(server: viser.ViserServer) -> None:
 
     server._websock_server.on_client_connect(on_connect)
     seen = []
-    with connect(
-        f"ws://localhost:{server.get_port()}",
-        max_size=None,
-        compression=None,
-        subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
-    ) as ws:
+    with _connect(server) as ws:
         while "/after" not in seen:
-            payload = ws.recv(timeout=10.0)
-            assert isinstance(payload, bytes)
-            seen.extend(m.get("name", m["type"]) for m in _decode(payload))
+            seen.extend(m.get("name", m["type"]) for m in _recv(ws))
             if "ReplayDoneMessage" not in seen:
                 time.sleep(0.05)  # Slow reader.
     expected = ["/before", "ReplayDoneMessage", "GetRenderRequestMessage", "/after"]
@@ -961,7 +981,6 @@ def test_renders_wait_for_replay(server: viser.ViserServer) -> None:
 def test_renders_do_not_wait_for_long_atomic_blocks(server: viser.ViserServer) -> None:
     """The replay can't make progress until the block ends, and the block could be
     waiting for the render."""
-    from websockets.sync.client import connect
 
     server.scene.add_frame("/frame")
     render = vm.GetRenderRequestMessage(
@@ -972,16 +991,9 @@ def test_renders_do_not_wait_for_long_atomic_blocks(server: viser.ViserServer) -
     )
     seen: list[str] = []
     with server.atomic():
-        with connect(
-            f"ws://localhost:{server.get_port()}",
-            max_size=None,
-            compression=None,
-            subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
-        ) as ws:
+        with _connect(server) as ws:
             while "GetRenderRequestMessage" not in seen:
-                payload = ws.recv(timeout=10.0)
-                assert isinstance(payload, bytes)
-                seen.extend(m["type"] for m in _decode(payload))
+                seen.extend(m["type"] for m in _recv(ws))
     assert "ReplayDoneMessage" not in seen
 
 
@@ -991,7 +1003,6 @@ def test_atomic_loops_are_delivered(
     server: viser.ViserServer, work: float, gap: float, num_updates: int
 ) -> None:
     """Delays between windows shouldn't line up with atomic blocks."""
-    from websockets.sync.client import connect
 
     frames = [
         server.scene.add_frame(f"/frame{i}", show_axes=False)
@@ -1012,23 +1023,17 @@ def test_atomic_loops_are_delivered(
 
     received = set()
     thread = threading.Thread(target=animate)
-    with connect(
-        f"ws://localhost:{server.get_port()}",
-        max_size=None,
-        compression=None,
-        subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
-    ) as ws:
+    with _connect(server) as ws:
         thread.start()
         start_time = time.time()
         while time.time() - start_time < 1.5:
             try:
-                payload = ws.recv(timeout=0.1)
+                messages = _recv(ws, timeout=0.1)
             except TimeoutError:
                 continue
-            assert isinstance(payload, bytes)
             xs = {
                 m["position"][0]
-                for m in _decode(payload)
+                for m in messages
                 if m["type"] == "SetPositionMessage" and m["position"][0] > 0.0
             }
             # Blocks aren't split up.
@@ -1044,7 +1049,6 @@ def test_client_messages_are_not_starved_by_broadcasts(
 ) -> None:
     """Per-client messages used to wait for the whole replay, or forever if large
     broadcasts kept coming."""
-    from websockets.sync.client import connect
 
     for i in range(30):
         server.scene.add_mesh_simple(
@@ -1063,12 +1067,7 @@ def test_client_messages_are_not_starved_by_broadcasts(
 
     server._websock_server.on_client_connect(on_connect)
     first_client_message = -1
-    with connect(
-        f"ws://localhost:{server.get_port()}",
-        max_size=None,
-        compression=None,
-        subprotocols=[f"viser-v{viser.__version__}"],  # type: ignore
-    ) as ws:
+    with _connect(server) as ws:
         while True:
             payload = ws.recv()
             assert isinstance(payload, bytes)
@@ -1401,10 +1400,10 @@ def test_global_locks_are_reset_after_fork() -> None:
     """Locks may be held by a thread that doesn't exist in the child."""
     code = """
 import os, threading
-from viser import _assignable_props_api, _scene_handles
+from viser import _assignable_props_api
 held = threading.Event()
 def hold():
-    for lock in (*_assignable_props_api._STATE_LOCKS, _scene_handles._splat_update_lock):
+    for lock in _assignable_props_api._STATE_LOCKS:
         lock.acquire()
     held.set()
     threading.Event().wait()
@@ -1414,11 +1413,130 @@ pid = os.fork()
 if pid == 0:
     ok = all(
         lock.acquire(timeout=1.0)
-        for lock in (
-            *_assignable_props_api._STATE_LOCKS, _scene_handles._splat_update_lock
-        )
+        for lock in _assignable_props_api._STATE_LOCKS
     )
     os._exit(0 if ok else 1)
 os._exit(os.WEXITSTATUS(os.waitpid(pid, 0)[1]))
 """
     subprocess.run([sys.executable, "-W", "ignore", "-c", code], check=True)
+
+
+@pytest.mark.parametrize("atomic", [False, True])
+def test_renders_contain_earlier_updates(
+    server: viser.ViserServer, atomic: bool
+) -> None:
+    """Even when they don't fit in one window."""
+    clients = []
+    server._websock_server.on_client_connect(clients.append)
+    frames = [server.scene.add_frame(f"/frame{i}") for i in range(3000)]
+    render = vm.GetRenderRequestMessage(
+        "image/png", 1, 1, 1, (1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 1.0, "uuid"
+    )
+    with _connect(server) as ws:
+        _wait_for_replay(ws)
+        for step in range(1, 6):
+            with server.atomic() if atomic else contextlib.nullcontext():
+                for frame in frames:
+                    frame.position = (step, 0.0, 0.0)
+            clients[0].queue_message(render)
+            server.flush()
+            clients[0].get_message_buffer().flush()
+            updated = set()
+            rendered = False
+            while not rendered:
+                for m in _recv(ws):
+                    rendered |= m["type"] == "GetRenderRequestMessage"
+                    if m["type"] == "SetPositionMessage" and not rendered:
+                        if m["position"][0] == step:
+                            updated.add(m["name"])
+            assert len(updated) == len(frames)
+
+
+def test_stop_delivers_large_updates() -> None:
+    """Connections shouldn't be closed in the middle of a message."""
+    server = viser.ViserServer(port=0, verbose=False)
+    ws = _connect(server)
+    _wait_for_replay(ws)
+    points = np.zeros((2_000_000, 3), np.float32)
+    server.scene.add_point_cloud("/points", points, colors=(0, 0, 0))
+    time.sleep(0.05)  # Longer than the delay between windows.
+    threading.Thread(target=server.stop).start()
+    assert any(m.get("name") == "/points" for m in _recv(ws))
+    with pytest.raises(websockets.exceptions.ConnectionClosedOK):
+        while True:
+            _recv(ws)
+
+
+def test_large_assignments_do_not_block_others(server: viser.ViserServer) -> None:
+    """Locks shouldn't be held during comparisons and copies: the event loop may be
+    waiting for them."""
+    rng = np.random.default_rng(0)
+    points = [rng.normal(size=(500_000, 3)).astype(np.float32) for _ in range(2)]
+    handle = server.scene.add_point_cloud("/points", points[0], colors=(0, 0, 0))
+    stop = threading.Event()
+
+    def assign() -> None:
+        i = 0
+        while not stop.is_set():
+            i += 1
+            handle.points = points[i % 2]
+
+    thread = threading.Thread(target=assign)
+    thread.start()
+    durations = []
+    for i in range(50):
+        start_time = time.perf_counter()
+        handle.point_size = 0.1 + i
+        durations.append(time.perf_counter() - start_time)
+        time.sleep(0.002)
+    stop.set()
+    thread.join()
+    assert sorted(durations)[40] < 0.02
+
+
+@pytest.mark.parametrize("atomic", [False, True])
+@pytest.mark.parametrize("gap", [None, 0.0, 0.001])
+def test_rate_of_tight_loops(
+    server: viser.ViserServer, atomic: bool, gap: float | None
+) -> None:
+    """Clients should receive a steady stream of windows, but not too many."""
+    frame = server.scene.add_frame("/frame")
+    stop = threading.Event()
+
+    def animate() -> None:
+        i = 0
+        while not stop.is_set():
+            i += 1
+            with server.atomic() if atomic else contextlib.nullcontext():
+                frame.position = (i, 0.0, 0.0)
+            if gap is not None:
+                time.sleep(gap)
+
+    with _connect(server) as ws:
+        _wait_for_replay(ws)
+        thread = threading.Thread(target=animate)
+        thread.start()
+        start_time = time.time()
+        num_windows = 0
+        while time.time() - start_time < 1.5:
+            num_windows += 1
+            _recv(ws)
+        stop.set()
+        thread.join()
+    assert 15 < num_windows < 1.5 * 70
+
+
+def test_windows_with_large_files_are_split(server: viser.ViserServer) -> None:
+    for i in range(40):
+        server.scene.add_glb(f"/glb{i}", bytes(1 << 20))
+    sizes = []
+    with _connect(server) as ws:
+        while True:
+            payload = ws.recv()
+            assert isinstance(payload, bytes)
+            # Payloads are compressed.
+            sizes.append(int.from_bytes(payload[:8], "little"))
+            if any(m["type"] == "ReplayDoneMessage" for m in _decode(payload)):
+                break
+    assert sum(sizes) > 40 << 20
+    assert max(sizes) < 12 << 20

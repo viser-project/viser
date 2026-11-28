@@ -82,6 +82,7 @@ class AsyncMessageBuffer:
     done: bool = False
     atomic_counter: int = 0
     _atomic_start_time: float = 0.0
+    _last_yield_time: float = 0.0
     _wake_scheduled: bool = False
     """True while a ``_wake`` callback is queued on the event loop. Pushes
     coalesce onto it, since each ``call_soon_threadsafe`` costs a self-pipe write."""
@@ -296,6 +297,13 @@ class AsyncMessageBuffer:
             # atomic block, this will happen when atomic_end() is called.
             if self.atomic_counter == 0:
                 self._schedule_wake_locked()
+        # Let the event loop run every now and then. Otherwise, tight loops make it
+        # wait for the GIL every time that it needs to do something.
+        if self._wake_scheduled:
+            now = time.monotonic()
+            if now - self._last_yield_time > 0.002:
+                self._last_yield_time = now
+                time.sleep(0.0)  # Releases the GIL.
 
     def _schedule_wake_locked(self) -> None:
         """Pulse ``message_event`` from the event loop, unless that's already
@@ -341,8 +349,14 @@ class AsyncMessageBuffer:
         """End an atomic block."""
         with self.buffer_lock:
             self.atomic_counter -= 1
-            if self.atomic_counter == 0:
-                self._schedule_wake_locked()
+            if self.atomic_counter > 0 or not self.generator_cursors:
+                return
+            self._schedule_wake_locked()
+        # Give consumers a chance to run between this block and the next one.
+        if self.event_loop is asyncio._get_running_loop():
+            self._wake()
+        else:
+            time.sleep(0.0)  # Releases the GIL.
 
     def atomic_duration(self) -> float:
         """Seconds since the current atomic block started, or 0.0 if we're not in
@@ -411,6 +425,7 @@ class AsyncMessageBuffer:
         # Ids to visit next, when there's a long gap to cross (see below).
         pending_ids: Deque[int] = collections.deque()
         backlog_done_pending = backlog_done_message is not None
+        next_yield_time = 0.0
         flush_wait = self.event_loop.create_task(self.flush_event.wait())
         # Register this connection's consumption cursor (see
         # generator_cursors) for the garbage collector's deletion floor;
@@ -503,6 +518,7 @@ class AsyncMessageBuffer:
 
                 if len(window) > 0:
                     # Yield a window!
+                    next_yield_time = self.event_loop.time() + self.window_duration_sec
                     yield window
                 else:
                     # Wait for a new message to come in, or for an atomic block to
@@ -511,16 +527,19 @@ class AsyncMessageBuffer:
                     self.message_event.clear()
 
                 # Add a delay if either (a) we failed to yield or (b) there's
-                # currently no messages to send. But if an atomic block just
-                # ended, then messages should be sent right away: a delay could
-                # make us run into the next one, again and again.
-                most_recent_message_id = self.message_counter - 1
+                # currently no messages to send. Otherwise, only limit the rate. If
+                # an atomic block just ended, a full delay could make us run into
+                # the next one, every time.
                 if not blocked and (
-                    len(window) == 0 or most_recent_message_id == last_sent_id
+                    len(window) == 0 or self.message_counter - 1 == last_sent_id
                 ):
-                    done, pending = await asyncio.wait(
-                        [flush_wait], timeout=self.window_duration_sec
-                    )
+                    delay = self.window_duration_sec
+                elif len(window) < self.max_window_size:
+                    delay = next_yield_time - self.event_loop.time()
+                else:
+                    delay = 0.0
+                if delay > 0.0:
+                    done, pending = await asyncio.wait([flush_wait], timeout=delay)
                     del pending
                     if flush_wait in done and not self.done:
                         self.flush_event.clear()

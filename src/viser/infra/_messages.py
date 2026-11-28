@@ -407,9 +407,9 @@ class Message(abc.ABC):
     entity_type: ClassVar[Optional[str]] = None
     lifecycle_phase: ClassVar[Optional[str]] = None
     entity_id_field: ClassVar[Optional[str]] = None
-    after_replay: ClassVar[bool] = False
-    """For per-client messages that should only be received after the replay of
-    persistent messages."""
+    after_broadcasts: ClassVar[bool] = False
+    """For per-client messages that should only be received after messages that were
+    broadcasted before them."""
 
     # Required on every viser Message subclass (enforced in
     # viser._messages.Message.__init_subclass__). Type-only declaration here
